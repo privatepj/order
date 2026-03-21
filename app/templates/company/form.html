@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ '新增公司主体' if not company else '编辑公司主体' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '新增公司主体' if not company else '编辑公司主体' }}</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">主体名称</label>
+        <input type="text" class="form-control" name="name" value="{{ company.name if company else '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">短码</label>
+        <input type="text" class="form-control" name="code" value="{{ company.code if company else '' }}" required maxlength="32">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">订单号前缀</label>
+        <input type="text" class="form-control" name="order_no_prefix" value="{{ company.order_no_prefix or '' if company else '' }}" maxlength="32" placeholder="空则使用短码">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">送货单号前缀</label>
+        <input type="text" class="form-control" name="delivery_no_prefix" value="{{ company.delivery_no_prefix or '' if company else '' }}" maxlength="32" placeholder="空则使用短码">
+        <div class="form-text">送货单号 = 此前缀 + 送货日期(YYYYMMDD) + 转月周期内序号。</div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">月结日 / 转月日（1–31）</label>
+        <input type="number" class="form-control" name="billing_cycle_day" value="{{ company.billing_cycle_day if company else 1 }}" min="1" max="31" required>
+        <div class="form-text">对账时：填 N 表示「上月 N 日至本月 N-1 日」为一个月结周期；填 1 表示按自然月。</div>
+    </div>
+    <hr>
+    <h5 class="mb-3">对账单展示（供应商信息）</h5>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">联系人</label>
+            <input type="text" class="form-control" name="contact_person" value="{{ company.contact_person or '' if company else '' }}" maxlength="64">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">电话</label>
+            <input type="text" class="form-control" name="phone" value="{{ company.phone or '' if company else '' }}" maxlength="32">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">传真</label>
+            <input type="text" class="form-control" name="fax" value="{{ company.fax or '' if company else '' }}" maxlength="32">
+        </div>
+        <div class="col-12 mb-3">
+            <label class="form-label">地址</label>
+            <input type="text" class="form-control" name="address" value="{{ company.address or '' if company else '' }}" maxlength="255">
+        </div>
+    </div>
+    <h6 class="mb-2">收款账户</h6>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">对私账户</label>
+            <input type="text" class="form-control" name="private_account" value="{{ company.private_account or '' if company else '' }}" maxlength="64">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">对公账户</label>
+            <input type="text" class="form-control" name="public_account" value="{{ company.public_account or '' if company else '' }}" maxlength="64">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">户名</label>
+            <input type="text" class="form-control" name="account_name" value="{{ company.account_name or '' if company else '' }}" maxlength="64">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">开户行</label>
+            <input type="text" class="form-control" name="bank_name" value="{{ company.bank_name or '' if company else '' }}" maxlength="128">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">对账制表人</label>
+            <input type="text" class="form-control" name="preparer_name" value="{{ company.preparer_name or '' if company else '' }}" maxlength="64">
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.company_list') }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

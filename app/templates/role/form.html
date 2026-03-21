@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{% if role %}编辑角色{% else %}新建角色{% endif %} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{% if role %}编辑角色{% else %}新建角色{% endif %}</h2>
+{% if role and role.code in ('admin', 'pending') %}
+<p class="text-muted">系统内置角色请在数据库中维护（本页不可编辑）。</p>
+<a href="{{ url_for('main.role_list') }}" class="btn btn-secondary">返回</a>
+{% else %}
+<form method="post">
+    {% if not role %}
+    <div class="mb-3">
+        <label class="form-label" for="code">角色代码 <span class="text-danger">*</span></label>
+        <input class="form-control" id="code" name="code" required maxlength="30" pattern="[a-z][a-z0-9_]*" placeholder="小写字母开头，如 sales_custom">
+        <div class="form-text">创建后不可修改；保留字：admin、pending</div>
+    </div>
+    {% else %}
+    <div class="mb-3">
+        <label class="form-label">角色代码</label>
+        <input class="form-control" value="{{ role.code }}" disabled>
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label class="form-label" for="name">角色名称 <span class="text-danger">*</span></label>
+        <input class="form-control" id="name" name="name" required maxlength="64" value="{{ role.name if role else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="description">说明</label>
+        <input class="form-control" id="description" name="description" maxlength="255" value="{{ role.description if role else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">可访问菜单</label>
+        <div class="border rounded p-3 bg-light">
+            {% for key, label in menu_choices %}
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="menu_keys" value="{{ key }}" id="mk_{{ key }}"
+                    {% if key in selected_keys %}checked{% endif %}>
+                <label class="form-check-label" for="mk_{{ key }}">{{ label }}</label>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="form-text">未勾选任何项则该角色登录后无可访问业务菜单。</div>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.role_list') }}" class="btn btn-link">取消</a>
+</form>
+{% endif %}
+{% endblock %}

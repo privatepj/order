@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}等待分配角色 - 工厂订单系统{% endblock %}
+{% block content %}
+<div class="text-center py-5">
+    <h2 class="mb-4">您的账号正在等待审批</h2>
+    <p class="text-secondary mb-2">
+        {% if current_user.requested_role %}
+            您已申请角色：<strong>{{ current_user.requested_role.name }} ({{ current_user.requested_role.code }})</strong>。
+        {% else %}
+            您已提交注册信息，当前正在等待管理员为您分配角色。
+        {% endif %}
+    </p>
+    <p class="text-secondary mb-4">管理员审批通过并分配角色后，您即可访问订单、送货等业务功能。</p>
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-secondary">退出登录</a>
+</div>
+{% endblock %}

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑客户产品' if cp and cp.id else '新增客户产品' }} - 工厂订单系统{% endblock %}
+{% block extra_css %}
+<style>
+.cp-dd { position: absolute; left: 0; right: 0; top: 100%; z-index: 1050; max-height: 220px; overflow-y: auto;
+  background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem; box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1); }
+.cp-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem; }
+.picker-wrap { position: relative; }
+</style>
+{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑客户产品' if cp and cp.id else '新增客户产品' }}</h2>
+<form method="post" id="cpForm">
+    <input type="hidden" name="customer_id" id="customerIdHidden" value="{{ customer_id_val or '' }}">
+    <input type="hidden" name="product_id" id="productIdHidden" value="{{ product_id_val or '' }}">
+    <input type="hidden" name="customer_label" id="customerLabelHidden" value="{{ customer_label or '' }}">
+    <input type="hidden" name="product_label" id="productLabelHidden" value="{{ product_label or '' }}">
+
+    <div class="mb-3 picker-wrap">
+        <label class="form-label">客户 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="customerSearch" autocomplete="off"
+            placeholder="输入编码、名称或主体关键字搜索并点选" value="{{ customer_label or '' }}">
+        <div class="cp-dd d-none" id="customerDd"></div>
+        <div class="form-text">同一名称多主体时，选项中会显示经营主体区分。</div>
+    </div>
+    <div class="mb-3 picker-wrap">
+        <label class="form-label">产品 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="productSearch" autocomplete="off"
+            placeholder="输入产品编号、名称、规格搜索并点选" value="{{ product_label or '' }}">
+        <div class="cp-dd d-none" id="productDd"></div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">客户料号</label>
+        <input type="text" class="form-control" name="customer_material_no" value="{{ cp.customer_material_no if cp else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">物料编号</label>
+        <input type="text" class="form-control" name="material_no" value="{{ cp.material_no if cp else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">单位</label>
+        <input type="text" class="form-control" name="unit" value="{{ cp.unit if cp else '' }}">
+    </div>
+    {% if is_admin %}
+    <div class="mb-3">
+        <label class="form-label">单价</label>
+        <input type="number" step="0.0001" class="form-control" name="price" value="{{ cp.price if cp and cp.price is not none else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">币种</label>
+        <input type="text" class="form-control" name="currency" value="{{ cp.currency if cp else '' }}">
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <textarea class="form-control" name="remark" rows="2">{{ cp.remark if cp else '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.customer_product_list') }}" class="btn btn-secondary">取消</a>
+</form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function(){
+    var apiCust = {{ url_for('main.customers_search_cp')|tojson }};
+    var apiProd = {{ url_for('main.products_search_cp')|tojson }};
+    var custInp = document.getElementById('customerSearch');
+    var prodInp = document.getElementById('productSearch');
+    var custDd = document.getElementById('customerDd');
+    var prodDd = document.getElementById('productDd');
+    var custId = document.getElementById('customerIdHidden');
+    var prodId = document.getElementById('productIdHidden');
+    var custLab = document.getElementById('customerLabelHidden');
+    var prodLab = document.getElementById('productLabelHidden');
+    var t1, t2;
+
+    function hideAll(){ custDd.classList.add('d-none'); prodDd.classList.add('d-none'); }
+
+    function showDd(dd, items, onPick) {
+        dd.innerHTML = '';
+        if (!items.length) {
+            dd.innerHTML = '<div class="list-group-item text-muted">无匹配</div>';
+            dd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function(it){
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'list-group-item list-group-item-action';
+            b.textContent = it.label;
+            b.onclick = function(){ onPick(it); dd.classList.add('d-none'); };
+            dd.appendChild(b);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    custInp.addEventListener('focus', function(){
+        if (!custId.value) {
+            fetch(apiCust + '?q=' + encodeURIComponent(custInp.value.trim()))
+                .then(function(r){ return r.json(); })
+                .then(function(d){ showDd(custDd, d.items || [], function(it){
+                    custId.value = it.id; custLab.value = it.label; custInp.value = it.label;
+                }); });
+        }
+    });
+    custInp.addEventListener('input', function(){
+        clearTimeout(t1);
+        custId.value = ''; custLab.value = '';
+        t1 = setTimeout(function(){
+            fetch(apiCust + '?q=' + encodeURIComponent(custInp.value.trim()))
+                .then(function(r){ return r.json(); })
+                .then(function(d){ showDd(custDd, d.items || [], function(it){
+                    custId.value = it.id; custLab.value = it.label; custInp.value = it.label;
+                }); });
+        }, 200);
+    });
+    prodInp.addEventListener('focus', function(){
+        fetch(apiProd + '?q=' + encodeURIComponent(prodInp.value.trim()))
+            .then(function(r){ return r.json(); })
+            .then(function(d){ showDd(prodDd, d.items || [], function(it){
+                prodId.value = it.id; prodLab.value = it.label; prodInp.value = it.label;
+            }); });
+    });
+    prodInp.addEventListener('input', function(){
+        clearTimeout(t2);
+        prodId.value = ''; prodLab.value = '';
+        t2 = setTimeout(function(){
+            fetch(apiProd + '?q=' + encodeURIComponent(prodInp.value.trim()))
+                .then(function(r){ return r.json(); })
+                .then(function(d){ showDd(prodDd, d.items || [], function(it){
+                    prodId.value = it.id; prodLab.value = it.label; prodInp.value = it.label;
+                }); });
+        }, 200);
+    });
+    document.addEventListener('click', function(e){
+        if (!e.target.closest('.picker-wrap')) hideAll();
+    });
+    document.getElementById('cpForm').onsubmit = function(){
+        if (!custId.value || !prodId.value) { alert('请搜索并选择客户与产品'); return false; }
+        custLab.value = custInp.value;
+        prodLab.value = prodInp.value;
+        return true;
+    };
+})();
+</script>
+{% endblock %}

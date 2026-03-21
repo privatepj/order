@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}产品列表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">产品列表</h2>
+<form class="mb-3 d-flex gap-2" method="get">
+    <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编号、名称、规格、单位、备注等">
+    <button type="submit" class="btn btn-primary">搜索</button>
+</form>
+<p>
+    <a href="{{ url_for('main.product_new') }}" class="btn btn-success me-2">新增产品</a>
+    <a href="{{ url_for('main.product_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+</p>
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>产品编号</th>
+            <th>产品名称</th>
+            <th>规格</th>
+            <th>基础单位</th>
+            <th>备注</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in pagination.items %}
+        <tr>
+            <td>{{ p.product_code }}</td>
+            <td>{{ p.name }}</td>
+            <td>{{ p.spec or '-' }}</td>
+            <td>{{ p.base_unit or '-' }}</td>
+            <td>
+                <a href="{{ url_for('main.product_edit', product_id=p.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                <form method="post" action="{{ url_for('main.product_delete', product_id=p.id) }}" class="d-inline" onsubmit="return confirm('确定删除该产品？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">暂无产品</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.product_list', page=pagination.prev_num, keyword=keyword) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.product_list', page=pagination.next_num, keyword=keyword) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+

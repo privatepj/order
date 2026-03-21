@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}送货单详情 - {{ delivery.delivery_no }}{% endblock %}
+{% block content %}
+<h2 class="mb-4">送货单详情 - {{ delivery.delivery_no }}</h2>
+<div class="card mb-4">
+    <div class="card-body">
+        <p><strong>客户：</strong>{{ delivery.customer.customer_code }} - {{ delivery.customer.name }}</p>
+        <p><strong>快递公司：</strong>{{ delivery.express_company.name if delivery.express_company else '-' }}</p>
+        <p><strong>快递单号：</strong>{{ delivery.waybill_no or '-' }}</p>
+        <p><strong>送货日期：</strong>{{ delivery.delivery_date }}</p>
+        <p><strong>状态：</strong>
+            {% if delivery.status == 'created' %}待发
+            {% elif delivery.status == 'shipped' %}已发
+            {% elif delivery.status == 'expired' %}失效
+            {% else %}{{ delivery.status }}
+            {% endif %}
+        </p>
+        <p><strong>司机 / 车号：</strong>{{ delivery.driver or '-' }} / {{ delivery.plate_no or '-' }}</p>
+        {% if delivery.remark %}<p><strong>备注：</strong>{{ delivery.remark }}</p>{% endif %}
+        <div class="d-flex gap-2 flex-wrap mt-3 no-print">
+            {% if delivery.status == 'created' %}
+            <form method="post" action="{{ url_for('main.delivery_mark_shipped', delivery_id=delivery.id) }}" onsubmit="return confirm('确认标记为已发？');">
+                <button type="submit" class="btn btn-sm btn-outline-success">标记已发</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delivery_mark_expired', delivery_id=delivery.id) }}" onsubmit="return confirm('确认将该送货单标记为失效？');">
+                <button type="submit" class="btn btn-sm btn-outline-warning">失效</button>
+            </form>
+            {% elif delivery.status == 'shipped' %}
+            <form method="post" action="{{ url_for('main.delivery_mark_created', delivery_id=delivery.id) }}" onsubmit="return confirm('确认回退为待发？');">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">回退为待发</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delivery_mark_expired', delivery_id=delivery.id) }}" onsubmit="return confirm('确认将该送货单标记为失效？');">
+                <button type="submit" class="btn btn-sm btn-outline-warning">失效</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+<h5>明细</h5>
+<div class="table-responsive app-table-scroll">
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>订单号</th>
+            <th>品名</th>
+            <th>规格</th>
+            <th>客户料号</th>
+            <th>数量</th>
+            <th>单位</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for di in delivery.items %}
+        <tr>
+            <td>{{ di.order_item.order.order_no if di.order_item else '-' }}</td>
+            <td>{{ di.product_name or '-' }}</td>
+            <td>{{ di.order_item.product_spec if di.order_item else '-' }}</td>
+            <td>{{ di.customer_material_no or '-' }}</td>
+            <td>{{ di.quantity }}</td>
+            <td>{{ di.unit or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">无明细</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+<div class="no-print">
+    <a href="{{ url_for('main.delivery_print', delivery_id=delivery.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">打印</a>
+    <a href="{{ url_for('main.delivery_list') }}" class="btn btn-secondary">返回列表</a>
+</div>
+{% endblock %}

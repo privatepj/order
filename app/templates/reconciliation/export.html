@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}对账导出 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">对账导出</h2>
+<p>按<strong>起止日期</strong>生成对账单 Excel。选择客户则下载单个文件（文件名：主体短码_客户短码_月份）；不选客户则打包 ZIP，每个客户一个 Excel。</p>
+<form method="get" action="{{ url_for('main.reconciliation_download') }}" target="_blank" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">客户（可选）</label>
+        <select name="customer_id" class="form-select">
+            <option value="">全部客户（ZIP 打包）</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.customer_code }} - {{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">开始日期</label>
+        <input type="date" name="start_date" class="form-control" required>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">结束日期</label>
+        <input type="date" name="end_date" class="form-control" required>
+    </div>
+    <div class="col-md-4 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary">生成并下载对账单</button>
+    </div>
+</form>
+{% endblock %}

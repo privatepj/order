@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>送货单 - {{ delivery.delivery_no }}</title>
+    <style>
+        body { font-family: "SimSun", "宋体", serif; font-size: 12px; color: #000; margin: 16px; }
+        .print-sheet { max-width: 800px; margin: 0 auto; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .row-full { grid-column: 1 / -1; }
+        table.delivery-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        table.delivery-table th, table.delivery-table td { border: 1px solid #000; padding: 4px 6px; }
+        table.delivery-table th { font-size: 10px; font-weight: normal; text-align: center; vertical-align: middle; }
+        table.delivery-table td { font-size: 12px; vertical-align: middle; }
+        table.delivery-table td.col-qty { text-align: right; }
+        .company-name { font-size: 20px; margin: 8px 0; }
+        .address-tel { font-size: 12px; margin: 4px 0; }
+        .title-main { font-size: 20px; font-weight: bold; margin: 10px 0; }
+        .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0; font-size: 10px; }
+        .info-row .label { font-weight: normal; }
+        .foot-notes { font-size: 12px; margin: 8px 0 4px; }
+        .sign-line { font-size: 12px; margin-top: 12px; }
+        .no-print { display: none; }
+        @media print {
+            body { margin: 0; }
+            .print-sheet { width: 100%; max-width: none; }
+            .company-name { font-size: 22px; }
+            .address-tel { font-size: 13px; }
+            .title-main { font-size: 22px; }
+            .info-row { font-size: 12px; }
+            table.delivery-table th, table.delivery-table td { padding: 8px 10px; min-height: 36px; }
+            table.delivery-table th { font-size: 13px; }
+            table.delivery-table td { font-size: 14px; }
+            .foot-notes { font-size: 13px; }
+            .sign-line { font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-sheet">
+        <div class="text-center company-name">{{ delivery.customer.company.name if delivery.customer and delivery.customer.company else '' }}</div>
+        <div class="text-center address-tel">{{ address_line }}</div>
+        <div class="text-center address-tel">{{ tel_line }}</div>
+        <div class="text-center title-main">送  货  单</div>
+
+        <div class="info-row">
+            <div>客户：{{ delivery.customer.name }}</div>
+            <div class="text-right">单号：{{ delivery.delivery_no or '' }}</div>
+        </div>
+        <div class="info-row">
+            <div>快递单号：{{ delivery.waybill_no or '送货' }}</div>
+            <div class="text-right">日期：{{ delivery.delivery_date.strftime('%Y%m%d') if delivery.delivery_date else '' }}</div>
+        </div>
+
+        <table class="delivery-table">
+            <thead>
+                <tr>
+                    <th style="width:12%">料号</th>
+                    <th style="width:12%">物料编号</th>
+                    <th style="width:28%">品名规格</th>
+                    <th style="width:8%">订购数量</th>
+                    <th style="width:8%">出货数量</th>
+                    <th style="width:8%">未交数量</th>
+                    <th style="width:8%">单位</th>
+                    <th style="width:16%">客户订单号</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td>{{ r.liao }}</td>
+                    <td>{{ r.material_no }}</td>
+                    <td>{{ r.name_spec }}</td>
+                    <td class="col-qty">{{ r.order_qty_str }}</td>
+                    <td class="col-qty">{{ r.ship_qty_str }}</td>
+                    <td class="col-qty">{{ r.remaining_str }}</td>
+                    <td>{{ r.unit }}</td>
+                    <td>{{ r.order_cell }}</td>
+                </tr>
+                {% endfor %}
+                {% for i in range(10 - rows|length) %}
+                <tr>
+                    <td></td><td></td><td></td><td class="col-qty"></td><td class="col-qty"></td><td class="col-qty"></td><td></td><td></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="foot-notes">{{ foot_notes[0] }}</div>
+        <div class="foot-notes">{{ foot_notes[1] }}</div>
+        <div class="sign-line">{{ sign_line }}</div>
+    </div>
+    <p class="no-print" style="margin-top:16px; text-align:center;">
+        <button type="button" onclick="window.print()">打印</button>
+    </p>
+    <script>
+        window.onload = function() { window.print(); };
+    </script>
+</body>
+</html>

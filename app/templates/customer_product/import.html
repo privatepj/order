@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}客户产品导入 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">客户产品导入（Excel）</h2>
+<p class="text-muted">
+    模板列顺序：客户名称、产品编号、客户料号、<strong>物料编号</strong>、单位、单价、币种、备注（从第 2 行开始为数据）。<br>
+    客户和产品必须已维护；按「客户名称 + 产品编号」定位记录。<br>
+    非管理员账号导入时，单价与币种列将被忽略。
+</p>
+<form method="post" enctype="multipart/form-data" class="mb-4">
+    <div class="mb-3">
+        <label class="form-label">选择 Excel 文件（.xlsx）</label>
+        <input type="file" name="file" accept=".xlsx" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">上传并导入</button>
+    <a href="{{ url_for('main.export_customer_product_import_template') }}" class="btn btn-outline-primary">下载模板</a>
+    <a href="{{ url_for('main.customer_product_list') }}" class="btn btn-secondary">返回客户产品列表</a>
+</form>
+{% if result %}
+    <h5>导入结果</h5>
+    <p>成功：{{ result.success }} 条</p>
+    {% if result.errors %}
+    <div class="alert alert-warning">
+        <ul class="mb-0">
+            {% for e in result.errors %}
+            <li>{{ e }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+{% endif %}
+{% endblock %}

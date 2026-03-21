@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}订单列表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">订单列表</h2>
+<form class="mb-3 row g-2 align-items-end" method="get">
+    <div class="col-auto">
+        <select name="customer_id" class="form-select">
+            <option value="">全部客户</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}" {{ 'selected' if customer_id == c.id else '' }}>
+                {{ c.name }}{% if c.company and c.company.code %} - {{ c.company.code }}{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="status" class="form-select">
+            <option value="">全部状态</option>
+            <option value="pending" {{ 'selected' if status == 'pending' else '' }}>未交货</option>
+            <option value="partial" {{ 'selected' if status == 'partial' else '' }}>部分交货</option>
+            <option value="delivered" {{ 'selected' if status == 'delivered' else '' }}>已交完</option>
+            <option value="closed" {{ 'selected' if status == 'closed' else '' }}>完成</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="payment_type" class="form-select">
+            <option value="">全部付款类型</option>
+            {% for k, lab in payment_type_labels.items() %}
+            <option value="{{ k }}" {{ 'selected' if payment_type == k else '' }}>{{ lab }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="订单号、客户订单号、客户名称、备注等">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">筛选</button>
+    </div>
+</form>
+<p><a href="{{ url_for('main.order_new') }}" class="btn btn-success">新增订单</a></p>
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>订单编号</th>
+            <th>客户</th>
+            <th>客户经营主体</th>
+            <th>客户订单号</th>
+            <th>销售人</th>
+            <th>订单日期</th>
+            <th>付款类型</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for o in pagination.items %}
+        <tr>
+            <td>{{ o.order_no }}</td>
+            <td>{{ o.customer.name }}{% if o.customer.company and o.customer.company.code %} - {{ o.customer.company.code }}{% endif %}</td>
+            <td>{{ o.customer.company.name if o.customer.company else '-' }}</td>
+            <td>{{ o.customer_order_no or '-' }}</td>
+            <td>{{ o.salesperson }}</td>
+            <td>{{ o.order_date or '-' }}</td>
+            <td>{{ payment_type_labels.get(o.payment_type or 'monthly', o.payment_type or '-') }}</td>
+            <td>
+                {% if o.status == 'pending' %}未交货{% elif o.status == 'partial' %}部分交货{% elif o.status == 'delivered' %}已交完{% else %}完成{% endif %}
+            </td>
+            <td>
+                <a href="{{ url_for('main.order_detail', order_id=o.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                {% if is_admin %}
+                <a href="{{ url_for('main.order_edit', order_id=o.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                <form method="post" action="{{ url_for('main.order_delete', order_id=o.id) }}" class="d-inline" onsubmit="return confirm('确定删除该订单？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">暂无订单</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.order_list', page=pagination.prev_num, customer_id=customer_id, status=status, payment_type=payment_type, keyword=keyword) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.order_list', page=pagination.next_num, customer_id=customer_id, status=status, payment_type=payment_type, keyword=keyword) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

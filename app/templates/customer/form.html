@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑客户' if customer and customer.id else '新增客户' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑客户' if customer and customer.id else '新增客户' }}</h2>
+<form method="post">
+    {% if customer and customer.customer_code %}
+    <div class="mb-3">
+        <label class="form-label">客户编码（系统自动生成）</label>
+        <input type="text" class="form-control" value="{{ customer.customer_code }}" readonly>
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label for="company_ids" class="form-label">经营主体 <span class="text-danger">*</span></label>
+        <select class="form-select" id="company_ids" name="company_ids" multiple required size="6">
+            {% for co in companies %}
+            <option value="{{ co.id }}" {{ 'selected' if customer and customer.company_id == co.id else '' }}>{{ co.name }}（{{ co.code }}）</option>
+            {% endfor %}
+        </select>
+        <div class="form-text">可多选：选择多个主体时将自动新增多条客户记录（每个主体一条）。</div>
+    </div>
+    <div class="mb-3">
+        <label for="short_code" class="form-label">客户短码</label>
+        <input type="text" class="form-control" id="short_code" name="short_code" value="{{ customer.short_code if customer and customer.short_code else '' }}" maxlength="32" placeholder="对账导出文件名用，可与系统编码不同">
+    </div>
+    <div class="mb-3">
+        <label for="name" class="form-label">客户名称 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="name" name="name" value="{{ customer.name if customer else '' }}" required>
+    </div>
+    {% if current_user.role_code == 'admin' %}
+    <div class="mb-3">
+        <label for="contact" class="form-label">联系人</label>
+        <input type="text" class="form-control" id="contact" name="contact" value="{{ customer.contact if customer else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="phone" class="form-label">电话</label>
+        <input type="text" class="form-control" id="phone" name="phone" value="{{ customer.phone if customer else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="fax" class="form-label">传真</label>
+        <input type="text" class="form-control" id="fax" name="fax" value="{{ customer.fax if customer and customer.fax else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="tax_point" class="form-label">税点（小数税率，如 0.13 表示 13%）</label>
+        <input type="text" class="form-control" id="tax_point" name="tax_point" value="{{ customer.tax_point if customer and customer.tax_point is not none else '' }}" placeholder="0.13">
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label for="address" class="form-label">地址</label>
+        <input type="text" class="form-control" id="address" name="address" value="{{ customer.address if customer else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="payment_terms" class="form-label">结算方式</label>
+        {% set pt = (customer.payment_terms if customer and customer.payment_terms else '') %}
+        <select class="form-select" id="payment_terms" name="payment_terms">
+            <option value="" {{ 'selected' if not pt else '' }}>（未指定）</option>
+            <option value="月结" {{ 'selected' if pt in ['月结','monthly'] else '' }}>月结</option>
+            <option value="现金" {{ 'selected' if pt in ['现金','cash'] else '' }}>现金</option>
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="remark" class="form-label">备注</label>
+        <textarea class="form-control" id="remark" name="remark" rows="2">{{ customer.remark if customer else '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.customer_list') }}" class="btn btn-secondary">取消</a>
+</form>
+{% endblock %}

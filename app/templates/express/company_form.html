@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if company %}编辑{% else %}新增{% endif %}快递公司 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{% if company %}编辑{% else %}新增{% endif %}快递公司</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">名称</label>
+        <input type="text" class="form-control" name="name" value="{{ company.name if company else '' }}" required maxlength="128">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">短码</label>
+        <input type="text" class="form-control" name="code" value="{{ company.code if company else '' }}" required maxlength="32" placeholder="如 SF">
+    </div>
+    {% if company %}
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" name="is_active" value="1" id="isActive" {{ 'checked' if company.is_active else '' }}>
+        <label class="form-check-label" for="isActive">启用</label>
+    </div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.express_company_list') }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

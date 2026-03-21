@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}工厂订单系统{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="app-body">
+    {% set ep = request.endpoint or '' %}
+    <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">工厂订单系统</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="切换导航">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user.is_authenticated %}
+                    {% if current_user.role_code == 'pending' %}
+                    <li class="nav-item">
+                        <a class="nav-link{% if ep == 'main.wait_role' %} active{% endif %}" href="{{ url_for('main.wait_role') }}"{% if ep == 'main.wait_role' %} aria-current="page"{% endif %}>等待分配角色</a>
+                    </li>
+                    {% else %}
+                    {% if user_can_menu('order') %}
+                    <li class="nav-item">
+                        <a class="nav-link{% if ep.startswith('main.order_') %} active{% endif %}" href="{{ url_for('main.order_list') }}"{% if ep.startswith('main.order_') %} aria-current="page"{% endif %}>订单</a>
+                    </li>
+                    {% endif %}
+                    {% if user_can_menu('delivery') or user_can_menu('express') %}
+                    <li class="nav-item dropdown nav-dropdown-hover">
+                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownWarehouse" role="button" data-bs-toggle="dropdown" aria-expanded="false">仓管</a>
+                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownWarehouse">
+                            {% if user_can_menu('delivery') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.delivery_') %} active{% endif %}" href="{{ url_for('main.delivery_list') }}">送货</a></li>
+                            {% endif %}
+                            {% if user_can_menu('express') %}
+                            <li><a class="dropdown-item{% if 'express_company' in ep or 'express_waybill' in ep %} active{% endif %}" href="{{ url_for('main.express_company_list') }}">快递</a></li>
+                            {% endif %}
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% if user_can_menu('customer') or user_can_menu('product') or user_can_menu('customer_product') or user_can_menu('company') or user_can_menu('user_mgmt') %}
+                    <li class="nav-item dropdown nav-dropdown-hover">
+                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownBase" role="button" data-bs-toggle="dropdown" aria-expanded="false">基础数据</a>
+                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownBase">
+                            {% if user_can_menu('customer') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.customer_') and 'customer_product' not in ep %} active{% endif %}" href="{{ url_for('main.customer_list') }}">客户</a></li>
+                            {% endif %}
+                            {% if user_can_menu('product') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.product_') %} active{% endif %}" href="{{ url_for('main.product_list') }}">产品</a></li>
+                            {% endif %}
+                            {% if user_can_menu('customer_product') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.customer_product') %} active{% endif %}" href="{{ url_for('main.customer_product_list') }}">客户产品</a></li>
+                            {% endif %}
+                            {% if user_can_menu('company') or user_can_menu('express') or user_can_menu('user_mgmt') %}
+                            <li><hr class="dropdown-divider"></li>
+                            {% endif %}
+                            {% if user_can_menu('company') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.company_') %} active{% endif %}" href="{{ url_for('main.company_list') }}">公司主体</a></li>
+                            {% endif %}
+                            {% if user_can_menu('user_mgmt') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.user_') %} active{% endif %}" href="{{ url_for('main.user_list') }}">用户管理</a></li>
+                            <li><a class="dropdown-item{% if ep.startswith('main.role_') %} active{% endif %}" href="{{ url_for('main.role_list') }}">角色管理</a></li>
+                            {% endif %}
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% if user_can_menu('reconciliation') %}
+                    <li class="nav-item dropdown nav-dropdown-hover">
+                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownFinance" role="button" data-bs-toggle="dropdown" aria-expanded="false">财务</a>
+                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownFinance">
+                            <li><a class="dropdown-item{% if 'reconciliation' in ep %} active{% endif %}" href="{{ url_for('main.reconciliation_export') }}">对账导出</a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% if user_can_menu('report_export') %}
+                    <li class="nav-item dropdown nav-dropdown-hover">
+                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownReportExport" role="button" data-bs-toggle="dropdown" aria-expanded="false">报表导出</a>
+                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownReportExport">
+                            <li><a class="dropdown-item{% if ep == 'main.report_export_delivery_notes' %} active{% endif %}" href="{{ url_for('main.report_export_delivery_notes') }}">导出送货单 Excel</a></li>
+                            <li><a class="dropdown-item{% if ep == 'main.report_export_delivery_records' %} active{% endif %}" href="{{ url_for('main.report_export_delivery_records') }}">导出送货记录 Excel</a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% endif %}
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item">
+                        <span class="navbar-text me-2">{{ current_user.name or current_user.username }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('auth.logout') }}">退出</a>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link{% if ep == 'auth.login' %} active{% endif %}" href="{{ url_for('auth.login') }}"{% if ep == 'auth.login' %} aria-current="page"{% endif %}>登录</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container my-4 app-main">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+        {% block page_wrapper %}
+        <div class="app-content-card card border-0 shadow-sm">
+            <div class="card-body p-4 p-lg-5">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+        {% endblock %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% if current_user.is_authenticated %}
+    <script src="{{ url_for('static', filename='js/audit_click.js') }}"></script>
+    {% endif %}
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

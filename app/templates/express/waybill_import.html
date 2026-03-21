@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}批量录入快递单号 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">批量录入快递单号</h2>
+<p class="text-muted">起止单号须<strong>同一前缀</strong>且<strong>数字部分等宽</strong>，系统将按数字递增全部写入（已存在则跳过）。</p>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">快递公司 <span class="text-danger">*</span></label>
+        <select name="express_company_id" class="form-select" required>
+            <option value="">请选择</option>
+            {% for c in companies %}
+            <option value="{{ c.id }}">{{ c.name }} ({{ c.code }})</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">起始单号</label>
+        <input type="text" class="form-control" name="waybill_start" required maxlength="64" placeholder="如 SF1234567890123">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">结束单号</label>
+        <input type="text" class="form-control" name="waybill_end" required maxlength="64" placeholder="如 SF1234567890150">
+    </div>
+    <button type="submit" class="btn btn-primary">录入</button>
+    <a href="{{ url_for('main.express_company_list') }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

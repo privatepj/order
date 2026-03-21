@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{% if user.is_pending_approval %}审批用户{% else %}编辑用户{% endif %} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">
+    {% if user.is_pending_approval %}
+        审批用户 - {{ user.username }}
+    {% else %}
+        编辑用户 - {{ user.username }}
+    {% endif %}
+</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">用户名</label>
+        <input type="text" class="form-control" value="{{ user.username }}" disabled>
+        <div class="form-text">用户名不可修改</div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">姓名</label>
+        <input type="text" class="form-control" name="name" value="{{ user.name or '' }}" maxlength="64" placeholder="选填">
+    </div>
+    {% if user.is_pending_approval and requested_role %}
+    <div class="mb-3">
+        <label class="form-label">申请角色</label>
+        <input type="text" class="form-control" value="{{ requested_role.name }} ({{ requested_role.code }})" disabled>
+        <div class="form-text">该用户在注册时选择的目标角色，审批通过后将按此角色使用系统。</div>
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label class="form-label">角色</label>
+        <select name="role_id" class="form-select" required>
+            {% for r in roles %}
+            <option value="{{ r.id }}" {{ 'selected' if user.role_id == r.id else '' }}>{{ r.name }} ({{ r.code }})</option>
+            {% endfor %}
+        </select>
+        <div class="form-text">分配角色后用户即可访问对应菜单与页面</div>
+    </div>
+    <div class="mb-4">
+        <label class="form-label">状态</label>
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input" name="is_active" value="1" id="is_active" {{ 'checked' if user.is_active else '' }}>
+            <label class="form-check-label" for="is_active">启用（禁用后该用户无法登录）</label>
+        </div>
+    </div>
+    {% if user.is_pending_approval and requested_role %}
+    <div class="mb-4">
+        <span class="form-text d-block mb-2">该用户当前为待审批状态，审批通过后其角色将从 pending 切换为申请角色。</span>
+        <button type="submit" name="action" value="approve" class="btn btn-success me-2">审批通过并分配角色</button>
+        <button type="submit" name="action" value="reject" class="btn btn-outline-danger me-2">驳回申请</button>
+        <button type="submit" name="action" value="save" class="btn btn-secondary">仅保存当前修改</button>
+    </div>
+    {% else %}
+    <button type="submit" name="action" value="save" class="btn btn-primary">保存</button>
+    {% endif %}
+    <a href="{{ url_for('main.user_list') }}" class="btn btn-secondary">返回列表</a>
+</form>
+{% endblock %}

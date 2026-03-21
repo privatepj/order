@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}角色管理 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">角色管理</h2>
+<p class="text-muted mb-3">为角色配置可访问菜单后，将该角色分配给用户即可生效。</p>
+<p><a class="btn btn-primary" href="{{ url_for('main.role_new') }}">新建角色</a></p>
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>名称</th>
+            <th>代码</th>
+            <th>说明</th>
+            <th>菜单</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in roles %}
+        <tr>
+            <td>{{ r.name }}</td>
+            <td><code>{{ r.code }}</code></td>
+            <td>{{ r.description or '-' }}</td>
+            <td>
+                {% if r.code == 'admin' %}
+                <span class="text-muted">全部（管理员）</span>
+                {% else %}
+                {% set keys = r.parsed_menu_key_set()|list|sort %}
+                {% if keys %}
+                <small>{% for k in keys %}{{ menu_labels.get(k, k) }}{% if not loop.last %}、{% endif %}{% endfor %}</small>
+                {% else %}
+                <span class="text-muted">未配置</span>
+                {% endif %}
+                {% endif %}
+            </td>
+            <td>
+                {% if r.code not in ('admin', 'pending') %}
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.role_edit', role_id=r.id) }}">编辑</a>
+                <form class="d-inline" method="post" action="{{ url_for('main.role_delete', role_id=r.id) }}" onsubmit="return confirm('确定删除该角色？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% else %}
+                <span class="text-muted">内置</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

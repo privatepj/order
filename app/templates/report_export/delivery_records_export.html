@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}导出送货记录 Excel - 报表导出{% endblock %}
+{% block content %}
+<h2 class="mb-4">导出送货记录 Excel</h2>
+
+<form method="get" action="{{ url_for('main.delivery_export_records') }}" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">公司主体</label>
+        <select name="company_id" class="form-select">
+            <option value="">全部主体</option>
+            {% for co in companies %}
+            <option value="{{ co.id }}">{{ co.name }} ({{ co.code }})</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">送货日期起 <span class="text-danger">*</span></label>
+        <input type="date" class="form-control" name="delivery_date_from" value="{{ export_today }}" required>
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">送货日期止 <span class="text-danger">*</span></label>
+        <input type="date" class="form-control" name="delivery_date_to" value="{{ export_today }}" required>
+    </div>
+
+    <div class="col-md-2">
+        <label class="form-label">付款类型</label>
+        <select name="payment_type" class="form-select">
+            <option value="">全部</option>
+            {% for k, lab in payment_type_labels.items() %}
+            <option value="{{ k }}">{{ lab }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">客户</label>
+        <select name="export_customer_id" class="form-select">
+            <option value="">全部客户</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-12 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary">下载 Excel</button>
+    </div>
+</form>
+{% endblock %}
+

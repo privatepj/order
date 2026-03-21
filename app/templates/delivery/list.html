@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}送货列表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">送货列表</h2>
+<form class="mb-3 row g-2 align-items-end" method="get">
+    <div class="col-auto">
+        <select name="customer_id" class="form-select">
+            <option value="">全部客户</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}" {{ 'selected' if customer_id == c.id else '' }}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="status" class="form-select">
+            <option value="">全部状态</option>
+            <option value="created" {{ 'selected' if status == 'created' else '' }}>待发</option>
+            <option value="shipped" {{ 'selected' if status == 'shipped' else '' }}>已发</option>
+            <option value="expired" {{ 'selected' if status == 'expired' else '' }}>失效</option>
+        </select>
+    </div>
+    <div class="col-md-4">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="送货单号、客户、司机、车牌、备注等">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">筛选</button>
+    </div>
+</form>
+<p>
+    <a href="{{ url_for('main.delivery_new') }}" class="btn btn-success">新建送货单</a>
+</p>
+
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>送货单号</th>
+            <th>快递</th>
+            <th>快递单号</th>
+            <th>客户</th>
+            <th>客户经营主体</th>
+            <th>送货日期</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for d in pagination.items %}
+        <tr>
+            <td>{{ d.delivery_no }}</td>
+            <td>{{ d.express_company.name if d.express_company else '-' }}</td>
+            <td>{{ d.waybill_no or '-' }}</td>
+            <td>{{ d.customer.name }}</td>
+            <td>{{ d.customer.company.name if d.customer.company else '-' }}</td>
+            <td>{{ d.delivery_date }}</td>
+            <td>
+                {% if d.status == 'created' %}待发
+                {% elif d.status == 'shipped' %}已发
+                {% elif d.status == 'expired' %}失效
+                {% else %}{{ d.status }}
+                {% endif %}
+            </td>
+            <td>
+                <a href="{{ url_for('main.delivery_detail', delivery_id=d.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                <a href="{{ url_for('main.delivery_print', delivery_id=d.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">打印</a>
+                {% if d.status == 'created' %}
+                <form method="post" action="{{ url_for('main.delivery_mark_shipped', delivery_id=d.id) }}" class="d-inline" onsubmit="return confirm('确认标记为已发？');">
+                    <button type="submit" class="btn btn-sm btn-outline-success">标记已发</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">暂无送货单</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.delivery_list', page=pagination.prev_num, customer_id=customer_id, status=status, keyword=keyword) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.delivery_list', page=pagination.next_num, customer_id=customer_id, status=status, keyword=keyword) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

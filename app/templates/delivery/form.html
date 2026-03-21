@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}新建送货单 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">新建送货单</h2>
+{% if not express_companies %}
+<div class="alert alert-warning">请管理员先在「快递」中添加快递公司并录入单号池。</div>
+{% endif %}
+<form method="post" id="deliveryForm">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">客户 <span class="text-danger">*</span></label>
+            <div class="position-relative">
+                <input
+                    type="text"
+                    class="form-control"
+                    id="customerSearch"
+                    autocomplete="off"
+                    placeholder="输入客户名称或主体短码以模糊搜索..."
+                >
+                <div id="customerDropdown" class="list-group d-none"></div>
+            </div>
+            <input type="hidden" name="customer_id" id="customerIdHidden" value="">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">送货日期</label>
+            <input type="date" class="form-control" name="delivery_date" value="{{ today or '' }}">
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">快递公司 <span class="text-danger">*</span></label>
+            <select name="express_company_id" id="expressCompanyId" class="form-select" required {{ 'disabled' if not express_companies else '' }}>
+                <option value="">请选择</option>
+                {% for ec in express_companies %}
+                <option value="{{ ec.id }}">{{ ec.name }} ({{ ec.code }})</option>
+                {% endfor %}
+            </select>
+            {% if not express_companies %}
+            <input type="hidden" name="express_company_id" value="">
+            {% endif %}
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">快递单号（系统自动带出，保存时正式分配）</label>
+            <input type="text" class="form-control" id="waybillPreview" readonly placeholder="请选择快递公司">
+            <div class="form-text text-muted" id="waybillHint"></div>
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">司机</label>
+            <input type="text" class="form-control" name="driver">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">车号</label>
+            <input type="text" class="form-control" name="plate_no">
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <input type="text" class="form-control" name="remark">
+    </div>
+
+    <h5 class="mt-4">待送明细（选择客户后加载）</h5>
+    <p><button type="button" class="btn btn-outline-primary btn-sm" id="loadPending">加载该客户待送订单行</button></p>
+    <div class="table-responsive app-table-scroll">
+    <table class="table table-bordered" id="pendingTable">
+        <thead>
+            <tr>
+                <th>勾选</th>
+                <th>订单号</th>
+                <th>品名</th>
+                <th>规格</th>
+                <th>客户料号</th>
+                <th>未送数量</th>
+                <th>单位</th>
+                <th>本次送货数量</th>
+            </tr>
+        </thead>
+        <tbody id="pendingBody">
+            <tr><td colspan="8" class="text-muted">请先选择客户并点击「加载该客户待送订单行」</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div class="mt-4">
+        <button type="submit" class="btn btn-primary" id="submitDelivery" {{ 'disabled' if not express_companies else '' }}>保存送货单</button>
+        <a href="{{ url_for('main.delivery_list') }}" class="btn btn-secondary">取消</a>
+    </div>
+</form>
+{% endblock %}
+{% block extra_css %}
+<style>
+    #customerDropdown {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        z-index: 1050;
+        max-height: 240px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function(){
+    var customerSearch = document.getElementById('customerSearch');
+    var customerIdHidden = document.getElementById('customerIdHidden');
+    var customerDropdown = document.getElementById('customerDropdown');
+    var expressSelect = document.getElementById('expressCompanyId');
+    var loadBtn = document.getElementById('loadPending');
+    var tbody = document.getElementById('pendingBody');
+    var waybillPreview = document.getElementById('waybillPreview');
+    var waybillHint = document.getElementById('waybillHint');
+    var submitBtn = document.getElementById('submitDelivery');
+    var today = new Date().toISOString().slice(0, 10);
+    var deliveryDate = document.querySelector('input[name="delivery_date"]');
+    if (deliveryDate && !deliveryDate.value) deliveryDate.value = today;
+
+    var customerFilterTimer = null;
+    var customerApiUrl = {{ url_for("main.delivery_customers_search")|tojson }};
+
+    function hideCustomerDropdown() {
+        if (!customerDropdown) return;
+        customerDropdown.classList.add('d-none');
+        customerDropdown.innerHTML = '';
+    }
+
+    function escText(s) {
+        return (s === null || s === undefined) ? '' : String(s);
+    }
+
+    function renderCustomerItems(items) {
+        if (!customerDropdown) return;
+        customerDropdown.innerHTML = '';
+
+        if (!items || items.length === 0) {
+            customerDropdown.innerHTML = '<div class="list-group-item text-muted">无匹配项</div>';
+            customerDropdown.classList.remove('d-none');
+            return;
+        }
+
+        items.forEach(function(it){
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = it.label || '';
+            btn.addEventListener('click', function(){
+                if (customerIdHidden) customerIdHidden.value = it.id;
+                if (customerSearch) customerSearch.value = it.label || '';
+                hideCustomerDropdown();
+            });
+            customerDropdown.appendChild(btn);
+        });
+        customerDropdown.classList.remove('d-none');
+    }
+
+    function fetchCustomers(q) {
+        if (!customerApiUrl) return;
+        fetch(customerApiUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50')
+            .then(function(r){ return r.json(); })
+            .then(function(data){ renderCustomerItems(data.items || []); });
+    }
+
+    if (customerSearch && customerDropdown) {
+        customerSearch.addEventListener('input', function(){
+            if (customerFilterTimer) clearTimeout(customerFilterTimer);
+            var q = customerSearch.value.trim();
+            if (!q) {
+                if (customerIdHidden) customerIdHidden.value = '';
+                hideCustomerDropdown();
+                return;
+            }
+            customerFilterTimer = setTimeout(function(){
+                fetchCustomers(q);
+            }, 250);
+        });
+
+        customerSearch.addEventListener('focus', function(){
+            var q = customerSearch.value.trim();
+            if (q) fetchCustomers(q);
+        });
+
+        customerSearch.addEventListener('blur', function(){
+            setTimeout(function(){
+                hideCustomerDropdown();
+            }, 150);
+        });
+
+        document.addEventListener('click', function(e){
+            if (!customerSearch || !customerDropdown) return;
+            var t = e.target;
+            if (t === customerSearch || customerSearch.contains(t) || customerDropdown.contains(t)) return;
+            hideCustomerDropdown();
+        });
+    }
+
+    function refreshWaybill() {
+        var eid = expressSelect ? expressSelect.value : '';
+        waybillPreview.value = '';
+        waybillHint.textContent = '';
+        if (!eid) return;
+        fetch('{{ url_for("main.delivery_next_waybill") }}?express_company_id=' + encodeURIComponent(eid))
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                if (data.waybill_no) {
+                    waybillPreview.value = data.waybill_no;
+                    waybillHint.textContent = '保存时将按顺序正式占用该单号（若并发可能为下一张）。';
+                } else {
+                    waybillHint.textContent = data.message || '暂无可用单号';
+                }
+            });
+    }
+    if (expressSelect) {
+        expressSelect.addEventListener('change', refreshWaybill);
+    }
+
+    loadBtn.onclick = function(){
+        var cid = customerIdHidden ? customerIdHidden.value : '';
+        if (!cid) { alert('请先选择客户'); return; }
+        fetch('{{ url_for("main.delivery_pending_items") }}?customer_id=' + cid)
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                tbody.innerHTML = '';
+                if (!data.items || data.items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8">该客户暂无待送订单行</td></tr>';
+                    return;
+                }
+                data.items.forEach(function(it){
+                    var tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td><input type="checkbox" class="form-check-input row-check" data-order-item-id="' + it.order_item_id + '" data-order-id="' + it.order_id + '" data-product-name="' + (it.product_name || '').replace(/"/g, '&quot;') + '" data-customer-material-no="' + (it.customer_material_no || '').replace(/"/g, '&quot;') + '" data-unit="' + (it.unit || '').replace(/"/g, '&quot;') + '" data-remaining="' + it.remaining_qty + '"></td>' +
+                        '<td>' + (it.order_no || '') + '</td>' +
+                        '<td>' + (it.product_name || '') + '</td>' +
+                        '<td>' + (it.product_spec || '') + '</td>' +
+                        '<td>' + (it.customer_material_no || '') + '</td>' +
+                        '<td>' + it.remaining_qty + '</td>' +
+                        '<td>' + (it.unit || '') + '</td>' +
+                        '<td><input type="number" step="0.0001" min="0" max="' + it.remaining_qty + '" class="form-control form-control-sm delivery-qty" value="' + it.remaining_qty + '"></td>';
+                    tbody.appendChild(tr);
+                });
+            });
+    };
+
+    document.getElementById('deliveryForm').onsubmit = function(){
+        if (customerIdHidden && !customerIdHidden.value) {
+            alert('请选择客户');
+            return false;
+        }
+        if (expressSelect && !expressSelect.disabled && !expressSelect.value) {
+            alert('请选择快递公司');
+            return false;
+        }
+        if (expressSelect && !expressSelect.disabled && !waybillPreview.value) {
+            alert('该快递公司暂无可用单号，请先录入单号池。');
+            return false;
+        }
+        var rows = tbody.querySelectorAll('tr .row-check:checked');
+        if (rows.length === 0) {
+            alert('请至少勾选一行并填写本次送货数量');
+            return false;
+        }
+        var hasQty = false;
+        rows.forEach(function(cb){
+            var tr = cb.closest('tr');
+            var q = tr.querySelector('.delivery-qty');
+            if (q && parseFloat(q.value) > 0) hasQty = true;
+        });
+        if (!hasQty) {
+            alert('请至少填写一行本次送货数量');
+            return false;
+        }
+        var form = document.getElementById('deliveryForm');
+        rows.forEach(function(cb){
+            var tr = cb.closest('tr');
+            var q = tr.querySelector('.delivery-qty');
+            if (!q || parseFloat(q.value) <= 0) return;
+            var oiId = document.createElement('input');
+            oiId.type = 'hidden';
+            oiId.name = 'order_item_id';
+            oiId.value = cb.getAttribute('data-order-item-id');
+            form.appendChild(oiId);
+            var qty = document.createElement('input');
+            qty.type = 'hidden';
+            qty.name = 'delivery_quantity';
+            qty.value = q.value;
+            form.appendChild(qty);
+        });
+        return true;
+    };
+})();
+</script>
+{% endblock %}

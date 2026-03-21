@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}客户导入 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">客户导入（Excel）</h2>
+<p class="text-muted">
+    说明：需要 Excel 第 1 行作为表头，按列名读取数据。<br>
+    必需列：<code>客户名称</code>、<code>主体</code>、<code>税点</code>、<code>客户短码</code>；<br>
+    其它列（可选）：<code>联系人</code>、<code>电话</code>、<code>地址</code>、<code>备注</code>。<br>
+    主体按系统经营主体（Company.name）匹配；主体为空则使用默认经营主体。<br>
+    已存在的客户（按 <code>客户名称 + 主体</code> 组合匹配）会被跳过，不会覆盖原有数据。
+    例如：<code>客户A, 张三, 13800000000, 上海市..., 0.13, 经营主体名称, C0001</code>
+</p>
+<form method="post" enctype="multipart/form-data" class="mb-4">
+    <div class="mb-3">
+        <label class="form-label">选择 Excel 文件（.xlsx）</label>
+        <input type="file" name="file" accept=".xlsx" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">上传并导入</button>
+    <a href="{{ url_for('main.export_customer_import_template') }}" class="btn btn-outline-primary">下载模板</a>
+    <a href="{{ url_for('main.customer_list') }}" class="btn btn-secondary">返回客户列表</a>
+</form>
+{% if result %}
+    <h5>导入结果</h5>
+    <p>成功：{{ result.success }} 条</p>
+    {% if result.errors %}
+    <div class="alert alert-warning">
+        <ul class="mb-0">
+            {% for e in result.errors %}
+            <li>{{ e }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+{% endif %}
+{% endblock %}
+

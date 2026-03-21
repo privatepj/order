@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}快递公司 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">快递公司</h2>
+<p>
+    <a href="{{ url_for('main.express_company_new') }}" class="btn btn-primary btn-sm">新增快递公司</a>
+    <a href="{{ url_for('main.express_waybill_import') }}" class="btn btn-success btn-sm">批量录入单号</a>
+</p>
+<div class="table-responsive">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>名称</th>
+            <th>短码</th>
+            <th>启用</th>
+            <th>可用单号</th>
+            <th>已用单号</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in companies %}
+        <tr>
+            <td>{{ c.name }}</td>
+            <td>{{ c.code }}</td>
+            <td>{% if c.is_active %}是{% else %}否{% endif %}</td>
+            <td>{{ stats[c.id].available }}</td>
+            <td>{{ stats[c.id].used }}</td>
+            <td><a href="{{ url_for('main.express_company_edit', cid=c.id) }}" class="btn btn-sm btn-outline-primary">编辑</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

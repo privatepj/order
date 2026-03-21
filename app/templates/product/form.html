@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑产品' if product and product.id else '新增产品' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑产品' if product and product.id else '新增产品' }}</h2>
+<form method="post">
+    {% if product and product.id %}
+    <div class="mb-3">
+        <label class="form-label">产品编号（系统自动生成，不可改）</label>
+        <input type="text" class="form-control" value="{{ product.product_code }}" readonly>
+    </div>
+    {% else %}
+    <div class="mb-3 text-muted small">保存后系统将自动生成产品编号（如 P0001）。</div>
+    {% endif %}
+    <div class="mb-3">
+        <label for="name" class="form-label">产品名称 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="name" name="name" value="{{ product.name if product else '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label for="spec" class="form-label">规格</label>
+        <input type="text" class="form-control" id="spec" name="spec" value="{{ product.spec if product else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="base_unit" class="form-label">基础单位</label>
+        <input type="text" class="form-control" id="base_unit" name="base_unit" value="{{ product.base_unit if product else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="remark" class="form-label">备注</label>
+        <textarea class="form-control" id="remark" name="remark" rows="2">{{ product.remark if product else '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.product_list') }}" class="btn btn-secondary">取消</a>
+</form>
+{% endblock %}

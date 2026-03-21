@@ -1,0 +1,228 @@
+/* 工厂订单系统 — 主题（深蓝灰后台风格） */
+:root {
+  --app-primary: #1e4976;
+  --app-primary-hover: #163a5e;
+  --app-navbar-bg: linear-gradient(135deg, #1a3a5c 0%, #1e4976 55%, #234f82 100%);
+  --app-page-bg: #eef1f5;
+  --app-card-radius: 0.75rem;
+  --app-shadow: 0 0.125rem 0.5rem rgba(30, 73, 118, 0.08);
+  /* 对齐 Bootstrap 主色 */
+  --bs-primary: #1e4976;
+  --bs-primary-rgb: 30, 73, 118;
+}
+
+body.app-body {
+  font-family: "Noto Sans SC", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--app-page-bg);
+  min-height: 100vh;
+  color: #2d3748;
+  line-height: 1.55;
+}
+
+/* 顶栏 */
+.navbar.app-navbar {
+  background: var(--app-navbar-bg);
+  box-shadow: 0 2px 12px rgba(26, 58, 92, 0.35);
+}
+
+.navbar.app-navbar .navbar-brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.navbar.app-navbar .nav-link {
+  border-radius: 0.375rem;
+  margin: 0 0.125rem;
+  padding: 0.5rem 0.75rem !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.navbar.app-navbar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.navbar.app-navbar .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.18);
+  font-weight: 500;
+}
+
+.navbar.app-navbar .navbar-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+}
+
+/* 导航下拉：桌面端悬停展开，与顶栏风格一致 */
+.app-navbar .app-dropdown-menu {
+  margin-top: 0;
+  border: none;
+  border-radius: var(--app-card-radius);
+  box-shadow: 0 0.5rem 1rem rgba(26, 58, 92, 0.25);
+  background: linear-gradient(180deg, #234f82 0%, #1a3a5c 100%);
+  padding: 0.25rem 0;
+}
+
+.app-navbar .app-dropdown-menu .dropdown-item {
+  color: rgba(255, 255, 255, 0.9);
+  padding: 0.45rem 1rem;
+  border-radius: 0.375rem;
+  margin: 0 0.25rem;
+}
+
+.app-navbar .app-dropdown-menu .dropdown-item:hover,
+.app-navbar .app-dropdown-menu .dropdown-item:focus {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.app-navbar .app-dropdown-menu .dropdown-item.active {
+  background-color: rgba(255, 255, 255, 0.18);
+  font-weight: 500;
+}
+
+.app-navbar .app-dropdown-menu .dropdown-divider {
+  border-color: rgba(255, 255, 255, 0.2);
+  margin: 0.25rem 0.5rem;
+}
+
+@media (min-width: 992px) {
+  .navbar.app-navbar .nav-dropdown-hover:hover .dropdown-menu {
+    display: block;
+  }
+}
+
+/* 主内容卡片 */
+.app-main .app-content-card {
+  border-radius: var(--app-card-radius);
+  box-shadow: var(--app-shadow);
+  background: #fff;
+}
+
+.app-main .app-content-card .card-body {
+  border-radius: var(--app-card-radius);
+}
+
+.app-main h2 {
+  font-weight: 600;
+  color: #1a365d;
+  font-size: 1.35rem;
+}
+
+.app-main h5,
+.app-main h6 {
+  font-weight: 600;
+  color: #2c5282;
+}
+
+/* 按钮微调 */
+.btn-primary {
+  border-color: var(--app-primary);
+  background-color: var(--app-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  border-color: var(--app-primary-hover);
+  background-color: var(--app-primary-hover);
+}
+
+.btn-success {
+  border-color: #2f855a;
+  background-color: #2f855a;
+}
+
+.btn-success:hover {
+  border-color: #276749;
+  background-color: #276749;
+}
+
+/* Flash 提示 */
+.app-main .alert {
+  border-radius: var(--app-card-radius);
+  border: none;
+  box-shadow: var(--app-shadow);
+}
+
+/* 登录页 */
+.login-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 56px);
+  margin: 0 -0.75rem;
+  padding: 2rem 1rem;
+  background: linear-gradient(
+      160deg,
+      rgba(30, 73, 118, 0.06) 0%,
+      transparent 45%
+    ),
+    linear-gradient(
+      220deg,
+      rgba(44, 82, 130, 0.08) 0%,
+      transparent 50%
+    ),
+    var(--app-page-bg);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 1rem !important;
+  overflow: hidden;
+  box-shadow: 0 1rem 2.5rem rgba(30, 73, 118, 0.15),
+    0 0.25rem 0.75rem rgba(0, 0, 0, 0.06) !important;
+}
+
+.login-card-header {
+  background: linear-gradient(135deg, #1a3a5c 0%, #1e4976 100%);
+  color: #fff;
+}
+
+.login-card-header .login-title {
+  font-weight: 600;
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+}
+
+.login-card-header .login-sub {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.875rem;
+}
+
+.login-card .form-label {
+  font-weight: 500;
+  color: #4a5568;
+}
+
+.login-card .btn-primary {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  font-weight: 500;
+}
+
+/* 表格区域在窄屏可横向滚动 */
+.app-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 0.5rem;
+}
+
+.app-table-scroll .table {
+  margin-bottom: 0;
+}
+
+/* 打印时隐藏导航与操作区，仅保留送货单内容 */
+@media print {
+  .app-navbar,
+  .no-print,
+  .btn {
+    display: none !important;
+  }
+  .app-main {
+    padding: 0;
+  }
+  .app-content-card {
+    box-shadow: none;
+    border: none;
+  }
+}

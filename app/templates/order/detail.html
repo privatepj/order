@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}订单详情 - {{ order.order_no }}{% endblock %}
+{% block content %}
+<h2 class="mb-4">订单详情 - {{ order.order_no }}</h2>
+<div class="card mb-4">
+    <div class="card-body">
+        <p><strong>客户：</strong>{{ order.customer.name }}{% if order.customer.company and order.customer.company.code %} - {{ order.customer.company.code }}{% endif %}</p>
+        <p><strong>客户订单编号：</strong>{{ order.customer_order_no or '-' }}</p>
+        <p><strong>销售人：</strong>{{ order.salesperson }}</p>
+        <p><strong>订单日期：</strong>{{ order.order_date or '-' }}</p>
+        <p><strong>付款类型：</strong>{{ payment_type_labels.get(order.payment_type or 'monthly', order.payment_type) }}</p>
+        <p><strong>要求交货日：</strong>{{ order.required_date or '-' }}</p>
+        <p><strong>状态：</strong>
+            {% if order.status == 'pending' %}未交货
+            {% elif order.status == 'partial' %}部分交货
+            {% elif order.status == 'delivered' %}已交完
+            {% else %}完成{% endif %}
+        </p>
+        {% if order.remark %}<p><strong>备注：</strong>{{ order.remark }}</p>{% endif %}
+    </div>
+</div>
+<h5>明细（已送 / 未送）</h5>
+<div class="table-responsive app-table-scroll">
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>品名</th>
+            <th>规格</th>
+            <th>客户料号</th>
+            <th>物料编号</th>
+            <th>订单数量</th>
+            <th>单位</th>
+            <th>已送数量</th>
+            <th>未送数量</th>
+            {% if is_admin %}
+            <th>单价</th>
+            <th>金额</th>
+            {% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ row.item.product_name }}</td>
+            <td>{{ row.item.product_spec or '-' }}</td>
+            <td>{{ row.item.customer_material_no or '-' }}</td>
+            <td>{{ row.item.material_no or '-' }}</td>
+            <td>{{ row.item.quantity }}</td>
+            <td>{{ row.item.unit or '-' }}</td>
+            <td>{{ "%.4f"|format(row.delivered_qty) }}</td>
+            <td>{{ "%.4f"|format(row.remaining_qty) }}</td>
+            {% if is_admin %}
+            <td>{{ row.item.price if row.item.price is not none else '-' }}</td>
+            <td>{{ "%.2f"|format(row.item.amount or 0) if row.item.amount is not none else '-' }}</td>
+            {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 10 if is_admin else 8 }}">无明细</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if is_admin %}<a href="{{ url_for('main.order_edit', order_id=order.id) }}" class="btn btn-primary">编辑</a>{% endif %}
+<a href="{{ url_for('main.order_list') }}" class="btn btn-secondary">返回列表</a>
+{% endblock %}

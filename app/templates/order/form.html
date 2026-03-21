@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑订单' if order and order.id else '新增订单' }} - 工厂订单系统{% endblock %}
+{% block extra_css %}
+<style>
+.cp-picker-cell { position: relative; min-width: 200px; max-width: 320px; }
+.cp-dropdown {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 1050;
+    max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #dee2e6;
+    border-radius: 0.25rem; box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+}
+.cp-dropdown .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-dropdown .list-group-item:hover { background: #f8f9fa; }
+.cp-search.locked { background-color: #e9ecef; }
+.ro-field { background-color: #f8f9fa !important; }
+</style>
+{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑订单' if order and order.id else '新增订单' }}</h2>
+<form method="post" id="orderForm">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">客户 <span class="text-danger">*</span></label>
+            <div class="position-relative">
+                <input type="text" class="form-control" id="customerSearch" autocomplete="off"
+                    placeholder="输入客户名称或主体短码以模糊搜索..." value="">
+                <div id="customerDropdown" class="list-group d-none"></div>
+            </div>
+            <input type="hidden" name="customer_id" id="customerIdHidden" value="{{ order.customer_id if order and order.customer_id else '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">我方订单编号</label>
+            <input type="text" class="form-control ro-field" readonly
+                value="{% if order and order.id %}{{ order.order_no }}{% else %}保存后自动生成{% endif %}">
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">客户订单编号</label>
+            <input type="text" class="form-control" name="customer_order_no" value="{{ order.customer_order_no if order else '' }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">销售人</label>
+            <input type="text" class="form-control" name="salesperson" value="{{ order.salesperson if order else 'GaoMeiHua' }}">
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">订单日期</label>
+            <input type="date" class="form-control" name="order_date" id="orderDateInput"
+                value="{{ order.order_date.isoformat() if order and order.order_date else (today_order_date or '') }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">要求交货日</label>
+            <input type="date" class="form-control" id="requiredDateInput" name="required_date"
+                value="{{ order.required_date.isoformat() if order and order.required_date else (today_order_date or '') }}">
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">付款类型</label>
+            <select name="payment_type" class="form-select">
+                {% set pt = (order.payment_type if order and order.payment_type else 'monthly') %}
+                {% for k, lab in payment_type_labels.items() %}
+                <option value="{{ k }}" {{ 'selected' if pt == k else '' }}>{{ lab }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <input type="text" class="form-control" name="remark" value="{{ order.remark if order else '' }}">
+    </div>
+
+    <h5 class="mt-2">订单明细</h5>
+    <p class="text-muted small mb-2">选择客户后，在「品名/规格」处输入关键字搜索并点选产品；客户料号、物料编号、单位、单价、规格由系统自动带出，仅可改数量。</p>
+    <div class="table-responsive app-table-scroll">
+    <table class="table table-bordered" id="itemsTable">
+        <thead>
+            <tr>
+                <th style="min-width: 200px;">品名 / 规格（搜索选品）</th>
+                <th style="min-width: 90px;">是否样品</th>
+                <th>客户料号</th>
+                <th>物料编号</th>
+                <th>规格</th>
+                <th>单位</th>
+                <th>单价</th>
+                <th>数量</th>
+                {% if is_admin %}<th>金额</th>{% endif %}
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if order %}
+            {% for item in order.items %}
+            {% set locked = item.id in locked_item_ids %}
+            <tr class="item-row" data-locked="{{ '1' if locked else '0' }}">
+                <input type="hidden" name="order_item_id" value="{{ item.id }}">
+                <input type="hidden" name="customer_product_id" class="cp-id-input" value="{{ item.customer_product_id or '' }}">
+                <td class="cp-picker-cell">
+                    {% if locked %}
+                    <input type="text" class="form-control form-control-sm cp-search locked" readonly
+                        value="{{ item.product_name }}{% if item.product_spec %} / {{ item.product_spec }}{% endif %}">
+                    {% else %}
+                    <input type="text" class="form-control form-control-sm cp-search" autocomplete="off" placeholder="输入关键字搜索…">
+                    <div class="cp-dropdown d-none"></div>
+                    <div class="cp-selected-label small text-muted text-truncate" style="max-width:300px" title=""></div>
+                    {% endif %}
+                </td>
+                <td>
+                    <select class="form-select form-select-sm is-sample" name="is_sample" {% if locked %}disabled{% endif %}>
+                        <option value="0" {{ 'selected' if not item.is_sample else '' }}>否</option>
+                        <option value="1" {{ 'selected' if item.is_sample else '' }}>是</option>
+                    </select>
+                    {% if locked %}<input type="hidden" name="is_sample" value="{{ 1 if item.is_sample else 0 }}">{% endif %}
+                </td>
+                <td><input type="text" class="form-control form-control-sm ro-field cm-no" readonly value="{{ item.customer_material_no or '' }}"></td>
+                <td><input type="text" class="form-control form-control-sm ro-field mat-no" readonly value="{{ item.customer_product.material_no if item.customer_product else '' }}"></td>
+                <td><input type="text" class="form-control form-control-sm ro-field spec-inp" readonly value="{{ item.product_spec or '' }}"></td>
+                <td><input type="text" class="form-control form-control-sm ro-field unit-inp" readonly value="{{ item.unit or '' }}"></td>
+                <td><input type="text" class="form-control form-control-sm ro-field price-inp" readonly value="{{ item.price if item.price is not none else '' }}"></td>
+                <td><input type="number" step="0.0001" class="form-control form-control-sm qty" name="quantity" value="{{ item.quantity }}"></td>
+                {% if is_admin %}<td class="amount-cell">{{ "%.2f"|format(item.amount or 0) }}</td>{% endif %}
+                <td>{% if not locked %}<button type="button" class="btn btn-sm btn-outline-danger remove-row">删</button>{% else %}<span class="text-muted small">已送货</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            <tr id="rowTemplate" style="display:none;">
+                <input type="hidden" name="order_item_id" value="">
+                <input type="hidden" name="customer_product_id" class="cp-id-input" value="">
+                <td class="cp-picker-cell">
+                    <input type="text" class="form-control form-control-sm cp-search" autocomplete="off" placeholder="输入关键字搜索…">
+                    <div class="cp-dropdown d-none"></div>
+                    <div class="cp-selected-label small text-muted text-truncate" style="max-width:300px"></div>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm is-sample" name="is_sample">
+                        <option value="0" selected>否</option>
+                        <option value="1">是</option>
+                    </select>
+                </td>
+                <td><input type="text" class="form-control form-control-sm ro-field cm-no" readonly value=""></td>
+                <td><input type="text" class="form-control form-control-sm ro-field mat-no" readonly value=""></td>
+                <td><input type="text" class="form-control form-control-sm ro-field spec-inp" readonly value=""></td>
+                <td><input type="text" class="form-control form-control-sm ro-field unit-inp" readonly value=""></td>
+                <td><input type="text" class="form-control form-control-sm ro-field price-inp" readonly value=""></td>
+                <td><input type="number" step="0.0001" class="form-control form-control-sm qty" name="quantity" value="0"></td>
+                {% if is_admin %}<td class="amount-cell">0.00</td>{% endif %}
+                <td><button type="button" class="btn btn-sm btn-outline-danger remove-row">删</button></td>
+            </tr>
+        </tbody>
+    </table>
+    </div>
+    <button type="button" class="btn btn-outline-primary btn-sm" id="addRow">添加一行</button>
+
+    <div class="mt-4">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.order_list') }}" class="btn btn-secondary">取消</a>
+    </div>
+</form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function(){
+    var isAdmin = {{ 'true' if is_admin else 'false' }};
+    var apiUrl = {{ url_for("main.customer_products_for_order")|tojson }};
+    var _cpOneSample = {{ url_for("main.customer_product_one_for_order", cp_id=900001)|tojson }};
+    var apiOneBase = _cpOneSample.slice(0, _cpOneSample.lastIndexOf('/') + 1);
+    var tbody = document.querySelector('#itemsTable tbody');
+    var template = document.getElementById('rowTemplate');
+    var customerSearch = document.getElementById('customerSearch');
+    var customerDropdown = document.getElementById('customerDropdown');
+    var customerIdHidden = document.getElementById('customerIdHidden');
+    var customerSearchApiUrl = '/api/orders/customers-search';
+    var customerFilterTimer = null;
+    var filterTimer = null;
+
+    function esc(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // 客户关键字选择：回填格式为「主体短码 - 客户名」，且不使用客户编码
+    var customerLabelMap = {};
+    {% for c in customers %}
+    customerLabelMap["{{ c.id }}"] = {{ (((c.company.code ~ ' - ' ~ c.name) if c.company and c.company.code else c.name)) | tojson }};
+    {% endfor %}
+
+    function hideCustomerDropdown() {
+        if (!customerDropdown) return;
+        customerDropdown.classList.add('d-none');
+        customerDropdown.innerHTML = '';
+    }
+
+    function clearCpRows() {
+        // 切换客户后，清空所有未锁定的“品名/规格”行信息
+        document.querySelectorAll('#itemsTable tbody tr.item-row:not([data-locked="1"]), #itemsTable tbody tr:not(#rowTemplate)').forEach(function(tr){
+            if (tr.id === 'rowTemplate') return;
+            if (tr.getAttribute('data-locked') === '1') return;
+            var inp = tr.querySelector('.cp-id-input');
+            if (inp) inp.value = '';
+            var s = tr.querySelector('.cp-search');
+            if (s) s.value = '';
+            var sel = tr.querySelector('.cp-selected-label');
+            if (sel) sel.textContent = '';
+            var cm = tr.querySelector('.cm-no');
+            if (cm) cm.value = '';
+            var mat = tr.querySelector('.mat-no');
+            if (mat) mat.value = '';
+            var spec = tr.querySelector('.spec-inp');
+            if (spec) spec.value = '';
+            var unit = tr.querySelector('.unit-inp');
+            if (unit) unit.value = '';
+            var price = tr.querySelector('.price-inp');
+            if (price) price.value = '';
+            var dd = tr.querySelector('.cp-dropdown');
+            if (dd) { dd.classList.add('d-none'); dd.innerHTML = ''; }
+        });
+    }
+
+    function renderCustomerItems(items) {
+        if (!customerDropdown) return;
+        customerDropdown.innerHTML = '';
+        if (!items || items.length === 0) {
+            customerDropdown.innerHTML = '<div class="list-group-item text-muted">无匹配项</div>';
+            customerDropdown.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function(it){
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = it.label || '';
+            btn.addEventListener('click', function(){
+                if (customerIdHidden) customerIdHidden.value = it.id;
+                if (customerSearch) customerSearch.value = it.label || '';
+                hideCustomerDropdown();
+                clearCpRows();
+            });
+            customerDropdown.appendChild(btn);
+        });
+        customerDropdown.classList.remove('d-none');
+    }
+
+    function fillRowFromCp(tr, cp) {
+        tr.querySelector('.cp-id-input').value = cp.id;
+        var label = cp.product_code + ' — ' + cp.product_name + (cp.product_spec ? ' / ' + cp.product_spec : '');
+        var sel = tr.querySelector('.cp-selected-label');
+        if (sel) { sel.textContent = label.length > 48 ? label.slice(0, 45) + '…' : label; sel.setAttribute('title', label); }
+        var s = tr.querySelector('.cp-search');
+        if (s && !s.classList.contains('locked')) s.value = '';
+        tr.querySelector('.cm-no').value = cp.customer_material_no || '';
+        tr.querySelector('.mat-no').value = cp.material_no || '';
+        tr.querySelector('.spec-inp').value = cp.product_spec || '';
+        tr.querySelector('.unit-inp').value = cp.unit || '';
+        var pr = cp.price != null ? String(cp.price) : '';
+        tr.dataset.cpPrice = pr;
+        var isSampleSel = tr.querySelector('.is-sample');
+        var isSample = isSampleSel && String(isSampleSel.value) === '1';
+        tr.querySelector('.price-inp').value = isSample ? '0' : pr;
+        recalcAmount(tr);
+    }
+
+    function recalcAmount(tr) {
+        if (!isAdmin) return;
+        var q = parseFloat(tr.querySelector('.qty').value) || 0;
+        var p = parseFloat(tr.querySelector('.price-inp').value) || 0;
+        var ac = tr.querySelector('.amount-cell');
+        if (ac) ac.textContent = (q * p).toFixed(2);
+    }
+
+    function hideAllDropdowns() {
+        document.querySelectorAll('.cp-dropdown').forEach(function(el){ el.classList.add('d-none'); el.innerHTML = ''; });
+    }
+
+    function showDropdown(dd, items, tr) {
+        dd.innerHTML = '';
+
+        // 下拉改为 position: fixed，并根据输入框的视口位置 clamp 到可见区域
+        // 目的：避免页面高度较低时，下拉出现在视口下方需要手动滚动才能看到。
+        var search = tr.querySelector('.cp-search');
+        if (search && dd) {
+            var rect = search.getBoundingClientRect();
+            var margin = 8;
+            var maxH = 240;
+            var desiredTop = rect.bottom;
+            var available = window.innerHeight - desiredTop - margin;
+            var ddMaxH = Math.min(maxH, available);
+            var top = desiredTop;
+
+            // 空间不足时：把下拉顶端往上“夹紧”到视口底部附近
+            // 注意：不做完全上翻，只做 clamp 到可见范围。
+            if (ddMaxH < 60) {
+                ddMaxH = Math.min(maxH, window.innerHeight - margin * 2);
+                top = window.innerHeight - ddMaxH - margin;
+            }
+
+            dd.style.position = 'fixed';
+            dd.style.left = rect.left + 'px';
+            dd.style.right = 'auto';
+            dd.style.width = rect.width + 'px';
+            dd.style.top = Math.max(margin, top) + 'px';
+            dd.style.maxHeight = (ddMaxH > 0 ? ddMaxH : maxH) + 'px';
+        }
+
+        if (!items.length) {
+            dd.innerHTML = '<div class="list-group-item text-muted">无匹配项</div>';
+            dd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function(cp){
+            var label = cp.product_code + ' — ' + cp.product_name + (cp.product_spec ? ' / ' + cp.product_spec : '');
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.setAttribute('title', label);
+            btn.textContent = label.length > 60 ? label.slice(0, 57) + '…' : label;
+            btn.addEventListener('click', function(){
+                fillRowFromCp(tr, cp);
+                dd.classList.add('d-none');
+            });
+            dd.appendChild(btn);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    function fetchCp(customerId, q, cb) {
+        if (!customerId) { cb([]); return; }
+        fetch(apiUrl + '?customer_id=' + customerId + '&q=' + encodeURIComponent(q || ''))
+            .then(function(r){ return r.json(); })
+            .then(function(d){ cb(d.items || []); });
+    }
+
+    function bindRow(tr) {
+        if (tr.getAttribute('data-locked') === '1') return;
+        var search = tr.querySelector('.cp-search');
+        var dd = tr.querySelector('.cp-dropdown');
+        if (!search || !dd) return;
+        search.addEventListener('focus', function(){
+            // 只隐藏：避免“悬停/聚焦”就把该客户所有产品列表展开
+            dd.classList.add('d-none');
+            dd.innerHTML = '';
+        });
+        search.addEventListener('input', function(){
+            clearTimeout(filterTimer);
+            var cid = customerIdHidden && customerIdHidden.value;
+            if (!cid) return;
+            var q = search.value.trim();
+            if (!q) { dd.classList.add('d-none'); dd.innerHTML = ''; return; }
+            filterTimer = setTimeout(function(){
+                var q2 = search.value.trim();
+                if (!q2) { dd.classList.add('d-none'); dd.innerHTML = ''; return; }
+                fetchCp(cid, q2, function(items){ showDropdown(dd, items, tr); });
+            }, 250);
+        });
+        search.addEventListener('blur', function(){
+            setTimeout(function(){ dd.classList.add('d-none'); }, 200);
+        });
+        var qty = tr.querySelector('.qty');
+        if (qty && isAdmin) qty.addEventListener('input', function(){ recalcAmount(tr); });
+        var ss = tr.querySelector('.is-sample');
+        if (ss) ss.addEventListener('change', function(){
+            var v = String(ss.value) === '1';
+            if (v) {
+                tr.querySelector('.price-inp').value = '0';
+            } else {
+                tr.querySelector('.price-inp').value = tr.dataset.cpPrice || '';
+            }
+            recalcAmount(tr);
+        });
+    }
+
+    function addRow() {
+        var tr = template.cloneNode(true);
+        tr.id = '';
+        tr.style.display = '';
+        tr.removeAttribute('data-locked');
+        tbody.insertBefore(tr, template);
+        bindRow(tr);
+    }
+
+    document.getElementById('addRow').onclick = addRow;
+
+    tbody.addEventListener('click', function(e) {
+        if (e.target.classList.contains('remove-row')) {
+            var tr = e.target.closest('tr');
+            if (tr && tr.id !== 'rowTemplate' && tr.getAttribute('data-locked') !== '1') tr.remove();
+        }
+    });
+
+    document.addEventListener('click', function(e){
+        if (!e.target.closest('.cp-picker-cell')) hideAllDropdowns();
+    });
+
+    // 客户关键字搜索（选择后回填「主体短码 - 客户名」，并清空明细行）
+    if (customerSearch && customerDropdown && customerIdHidden) {
+        var cid0 = String(customerIdHidden.value || '');
+        if (cid0 && customerLabelMap[cid0]) customerSearch.value = customerLabelMap[cid0];
+
+        customerSearch.addEventListener('input', function(){
+            clearTimeout(customerFilterTimer);
+            var q = customerSearch.value.trim();
+            if (!q) {
+                customerIdHidden.value = '';
+                hideCustomerDropdown();
+                clearCpRows();
+                return;
+            }
+            customerFilterTimer = setTimeout(function(){
+                fetch(customerSearchApiUrl + '?q=' + encodeURIComponent(q) + '&limit=50')
+                    .then(function(r){ return r.json(); })
+                    .then(function(d){ renderCustomerItems(d.items || []); });
+            }, 250);
+        });
+
+        customerSearch.addEventListener('focus', function(){
+            var q = customerSearch.value.trim();
+            if (!q) return;
+            fetch(customerSearchApiUrl + '?q=' + encodeURIComponent(q) + '&limit=50')
+                .then(function(r){ return r.json(); })
+                .then(function(d){ renderCustomerItems(d.items || []); });
+        });
+
+        customerSearch.addEventListener('blur', function(){
+            setTimeout(function(){ hideCustomerDropdown(); }, 150);
+        });
+
+        document.addEventListener('click', function(e){
+            if (!customerSearch || !customerDropdown) return;
+            var t = e.target;
+            if (t === customerSearch || customerSearch.contains(t) || customerDropdown.contains(t)) return;
+            hideCustomerDropdown();
+        });
+    }
+
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(tr){
+        if (tr.id === 'rowTemplate') return;
+        bindRow(tr);
+        var cpId = tr.querySelector('.cp-id-input');
+        if (cpId && cpId.value && customerIdHidden && customerIdHidden.value && tr.querySelector('.cp-search') && !tr.querySelector('.cp-search').classList.contains('locked')) {
+            fetch(apiOneBase + cpId.value + '?customer_id=' + customerIdHidden.value)
+                .then(function(r){ return r.json(); })
+                .then(function(cp){ if (cp && cp.id) fillRowFromCp(tr, cp); });
+        }
+    });
+
+    var rowCount = tbody.querySelectorAll('tr:not(#rowTemplate)').length;
+    if (rowCount === 0) addRow();
+
+    var od = document.getElementById('orderDateInput');
+    if (od && !od.value) {
+        var t = new Date().toISOString().slice(0, 10);
+        od.value = t;
+    }
+
+    // 兜底：即使模板未更新/缺少 id，也用 name 定位后填默认今天
+    var rd = document.getElementById('requiredDateInput') || document.querySelector('input[name="required_date"]');
+    if (rd && !rd.value) {
+        var t2 = new Date().toISOString().slice(0, 10);
+        rd.value = t2;
+    }
+})();
+</script>
+{% endblock %}

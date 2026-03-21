@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}客户产品 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">客户产品</h2>
+<form class="mb-3 row g-2 align-items-end" method="get">
+    <div class="col-auto">
+        <select name="customer_id" class="form-select">
+            <option value="">全部客户</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}" {{ 'selected' if customer_id == c.id else '' }}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="客户、产品编号、品名、料号、物料编号等">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">筛选</button>
+    </div>
+</form>
+<p>
+    <a href="{{ url_for('main.customer_product_new') }}" class="btn btn-success me-2">新增客户产品</a>
+    <a href="{{ url_for('main.customer_product_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+</p>
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>客户</th>
+            <th>客户经营主体</th>
+            <th>产品编号</th>
+            <th>产品名称</th>
+            <th>客户料号</th>
+            <th>物料编号</th>
+            <th>单位</th>
+            {% if is_admin %}
+            <th>单价</th>
+            <th>币种</th>
+            {% endif %}
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.customer.name if r.customer else '-' }}</td>
+            <td>{{ r.customer.company.name if r.customer and r.customer.company else '-' }}</td>
+            <td>{{ r.product.product_code if r.product else '-' }}</td>
+            <td>{{ r.product.name if r.product else '-' }}</td>
+            <td>{{ r.customer_material_no or '-' }}</td>
+            <td>{{ r.material_no or '-' }}</td>
+            <td>{{ r.unit or '-' }}</td>
+            {% if is_admin %}
+            <td>{{ r.price if r.price is not none else '-' }}</td>
+            <td>{{ r.currency or '-' }}</td>
+            {% endif %}
+            <td>
+                <a href="{{ url_for('main.customer_product_edit', cp_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                <form method="post" action="{{ url_for('main.customer_product_delete', cp_id=r.id) }}" class="d-inline" onsubmit="return confirm('确定删除该客户产品？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 10 if is_admin else 8 }}">暂无客户产品</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.customer_product_list', page=pagination.prev_num, customer_id=customer_id, keyword=keyword) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.customer_product_list', page=pagination.next_num, customer_id=customer_id, keyword=keyword) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
