@@ -152,4 +152,58 @@ WHERE `code` IN ('sales', 'warehouse', 'finance');
 
 UPDATE `role` SET `allowed_menu_keys` = CAST('[]' AS JSON) WHERE `code` = 'pending';
 
+-- ========== 11. 接口审计日志表 ==========
+CREATE TABLE IF NOT EXISTS `audit_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `event_type` varchar(16) NOT NULL,
+  `method` varchar(8) DEFAULT NULL,
+  `path` varchar(512) NOT NULL,
+  `query_string` varchar(2048) DEFAULT NULL,
+  `status_code` smallint DEFAULT NULL,
+  `duration_ms` int DEFAULT NULL,
+  `user_id` int DEFAULT NULL,
+  `auth_type` varchar(16) NOT NULL,
+  `ip` varchar(45) NOT NULL,
+  `user_agent` varchar(512) DEFAULT NULL,
+  `endpoint` varchar(128) DEFAULT NULL,
+  `extra` json DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_audit_log_created_at` (`created_at`),
+  KEY `ix_audit_log_user_created` (`user_id`, `created_at`),
+  KEY `ix_audit_log_path` (`path`(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ========== 12. 每日库存录入（单仓快照） ==========
+CREATE TABLE IF NOT EXISTS `inventory_daily_record` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `record_date` date NOT NULL COMMENT '业务日',
+  `status` varchar(16) NOT NULL DEFAULT 'confirmed' COMMENT 'draft=草稿 confirmed=已确认',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL COMMENT '录入人 user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_inv_daily_record_date` (`record_date`),
+  KEY `idx_inv_daily_created_by` (`created_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每日库存录入主表';
+
+CREATE TABLE IF NOT EXISTS `inventory_daily_line` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `header_id` int unsigned NOT NULL,
+  `product_id` int unsigned NOT NULL,
+  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `unit` varchar(16) DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_inv_daily_header_product` (`header_id`,`product_id`),
+  KEY `idx_inv_daily_line_header` (`header_id`),
+  KEY `idx_inv_daily_line_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每日库存明细';
+
+UPDATE `role` SET `allowed_menu_keys` = CAST('["order","delivery","express","inventory","customer","product","customer_product","reconciliation"]' AS JSON)
+WHERE `code` = 'warehouse';
+
 SET FOREIGN_KEY_CHECKS = 1;

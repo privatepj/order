@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}库存录入详情 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">库存录入详情</h2>
+<p class="text-muted">业务日期：{{ record.record_date.isoformat() }} · 状态：{{ '草稿' if record.status == 'draft' else '已确认' }} · 录入人：{{ creator_label }}</p>
+{% if record.remark %}
+<p>备注：{{ record.remark }}</p>
+{% endif %}
+<div class="table-responsive app-table-scroll">
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>产品编号</th>
+            <th>产品名称</th>
+            <th>规格</th>
+            <th>数量</th>
+            <th>单位</th>
+            <th>行备注</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for line in record.lines %}
+        <tr>
+            <td>{{ line.product.product_code if line.product else '-' }}</td>
+            <td>{{ line.product.name if line.product else '-' }}</td>
+            <td>{% if line.product %}{{ line.product.spec or '-' }}{% else %}-{% endif %}</td>
+            <td>{{ line.quantity }}</td>
+            <td>{{ line.unit or (line.product.base_unit if line.product else '') or '-' }}</td>
+            <td>{{ line.note or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">无明细</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+<p class="mt-3">
+    <a href="{{ url_for('main.inventory_edit', record_id=record.id) }}" class="btn btn-primary">编辑</a>
+    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回列表</a>
+</p>
+{% endblock %}

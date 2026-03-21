@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑库存录入' if record else '新增库存录入' }} - 工厂订单系统{% endblock %}
+{% block extra_css %}
+<style>
+.inv-product-cell { position: relative; min-width: 240px; max-width: 360px; }
+.inv-product-dd {
+    position: fixed; z-index: 1050; max-height: 240px; overflow-y: auto;
+    background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+}
+.inv-product-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-product-dd .list-group-item:hover { background: #f8f9fa; }
+</style>
+{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑库存录入' if record else '新增库存录入' }}</h2>
+<form method="post" id="invForm" data-products-search-url="{{ url_for('main.inventory_products_search') }}">
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label">业务日期 <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" name="record_date" required
+                value="{{ record.record_date.isoformat() if record else default_record_date }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">状态</label>
+            <select name="status" class="form-select">
+                {% set st = record.status if record else 'confirmed' %}
+                <option value="draft" {{ 'selected' if st == 'draft' else '' }}>草稿</option>
+                <option value="confirmed" {{ 'selected' if st == 'confirmed' else '' }}>已确认</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">备注</label>
+            <input type="text" class="form-control" name="remark" maxlength="500" value="{{ record.remark or '' }}">
+        </div>
+    </div>
+    <h5 class="mt-4">产品数量</h5>
+    <p class="text-muted small">在「产品」列输入关键字模糊搜索编号/名称/规格等，点选结果；可点「增加一行」。同一单据中产品不可重复。</p>
+    <div class="table-responsive app-table-scroll">
+    <table class="table table-bordered" id="linesTable">
+        <thead>
+            <tr>
+                <th style="min-width:240px;">产品</th>
+                <th style="min-width:120px;">数量</th>
+                <th style="min-width:100px;">单位（可空）</th>
+                <th>备注</th>
+                <th style="width:80px;"></th>
+            </tr>
+        </thead>
+        <tbody id="linesBody">
+            {% if lines %}
+            {% for line in lines %}
+            <tr class="line-row">
+                <td class="inv-product-cell">
+                    <input type="hidden" name="line_product_id" class="inv-product-id" value="{{ line.product_id }}">
+                    <input type="text" class="form-control inv-product-search" autocomplete="off"
+                        placeholder="输入关键字搜索产品…"
+                        value="{% if line.product %}{{ line.product.product_code }} — {{ line.product.name }}{% if line.product.spec %}（{{ line.product.spec }}）{% endif %}{% endif %}">
+                    <div class="inv-product-dd list-group d-none"></div>
+                </td>
+                <td><input type="text" class="form-control" name="line_quantity" value="{{ line.quantity }}" required inputmode="decimal"></td>
+                <td><input type="text" class="form-control" name="line_unit" value="{{ line.unit or '' }}" maxlength="16" placeholder="默认取产品单位"></td>
+                <td><input type="text" class="form-control" name="line_note" value="{{ line.note or '' }}" maxlength="255"></td>
+                <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-row">删行</button></td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr class="line-row">
+                <td class="inv-product-cell">
+                    <input type="hidden" name="line_product_id" class="inv-product-id" value="">
+                    <input type="text" class="form-control inv-product-search" autocomplete="off" placeholder="输入关键字搜索产品…" value="">
+                    <div class="inv-product-dd list-group d-none"></div>
+                </td>
+                <td><input type="text" class="form-control" name="line_quantity" value="0" inputmode="decimal"></td>
+                <td><input type="text" class="form-control" name="line_unit" maxlength="16" placeholder="默认取产品单位"></td>
+                <td><input type="text" class="form-control" name="line_note" maxlength="255"></td>
+                <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-row">删行</button></td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    </div>
+    <button type="button" class="btn btn-outline-secondary mb-3" id="btnAddRow">增加一行</button>
+    <div>
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">取消</a>
+    </div>
+</form>
+
+<template id="rowTpl">
+    <tr class="line-row">
+        <td class="inv-product-cell">
+            <input type="hidden" name="line_product_id" class="inv-product-id" value="">
+            <input type="text" class="form-control inv-product-search" autocomplete="off" placeholder="输入关键字搜索产品…" value="">
+            <div class="inv-product-dd list-group d-none"></div>
+        </td>
+        <td><input type="text" class="form-control" name="line_quantity" value="0" inputmode="decimal"></td>
+        <td><input type="text" class="form-control" name="line_unit" maxlength="16" placeholder="默认取产品单位"></td>
+        <td><input type="text" class="form-control" name="line_note" maxlength="255"></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-row">删行</button></td>
+    </tr>
+</template>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('invForm');
+    var searchUrl = form && form.getAttribute('data-products-search-url');
+    var body = document.getElementById('linesBody');
+    var tpl = document.getElementById('rowTpl');
+    var debounceTimers = new WeakMap();
+
+    function hideAllInvDd() {
+        document.querySelectorAll('.inv-product-dd').forEach(function (el) {
+            el.classList.add('d-none');
+            el.innerHTML = '';
+        });
+    }
+
+    function placeDropdown(dd, anchor) {
+        var rect = anchor.getBoundingClientRect();
+        var margin = 8;
+        var maxH = 240;
+        var desiredTop = rect.bottom;
+        var available = window.innerHeight - desiredTop - margin;
+        var ddMaxH = Math.min(maxH, Math.max(available, 80));
+        var top = desiredTop;
+        if (ddMaxH < 80) {
+            ddMaxH = Math.min(maxH, window.innerHeight - margin * 2);
+            top = window.innerHeight - ddMaxH - margin;
+        }
+        dd.style.position = 'fixed';
+        dd.style.left = rect.left + 'px';
+        dd.style.width = rect.width + 'px';
+        dd.style.top = Math.max(margin, top) + 'px';
+        dd.style.maxHeight = ddMaxH + 'px';
+    }
+
+    function renderDd(dd, items, anchor) {
+        dd.innerHTML = '';
+        placeDropdown(dd, anchor);
+        if (!items || items.length === 0) {
+            var empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted';
+            empty.textContent = '无匹配项';
+            dd.appendChild(empty);
+            dd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function (it) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = it.label || '';
+            btn.setAttribute('title', it.label || '');
+            btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            btn.addEventListener('click', function () {
+                var cell = dd.closest('.inv-product-cell');
+                if (!cell) return;
+                cell.querySelector('.inv-product-id').value = String(it.id);
+                cell.querySelector('.inv-product-search').value = it.label || '';
+                hideAllInvDd();
+            });
+            dd.appendChild(btn);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    function fetchProducts(q, cell, dd) {
+        if (!searchUrl) return;
+        var url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                renderDd(dd, data.items || [], cell.querySelector('.inv-product-search'));
+            })
+            .catch(function () {
+                renderDd(dd, [], cell.querySelector('.inv-product-search'));
+            });
+    }
+
+    function bindCell(cell) {
+        var search = cell.querySelector('.inv-product-search');
+        var hid = cell.querySelector('.inv-product-id');
+        var dd = cell.querySelector('.inv-product-dd');
+        if (!search || !dd) return;
+
+        search.addEventListener('input', function () {
+            if (hid) hid.value = '';
+            var t = debounceTimers.get(search);
+            if (t) clearTimeout(t);
+            t = setTimeout(function () { fetchProducts(search.value.trim(), cell, dd); }, 250);
+            debounceTimers.set(search, t);
+        });
+
+        search.addEventListener('focus', function () {
+            fetchProducts(search.value.trim(), cell, dd);
+        });
+    }
+
+    function bindAllCells() {
+        document.querySelectorAll('#linesBody .inv-product-cell').forEach(bindCell);
+    }
+
+    document.getElementById('btnAddRow').addEventListener('click', function () {
+        body.appendChild(tpl.content.cloneNode(true));
+        var rows = body.querySelectorAll('.line-row');
+        bindCell(rows[rows.length - 1].querySelector('.inv-product-cell'));
+    });
+
+    body.addEventListener('click', function (e) {
+        if (e.target.classList.contains('btn-remove-row')) {
+            var rows = body.querySelectorAll('.line-row');
+            if (rows.length <= 1) return;
+            e.target.closest('tr').remove();
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.inv-product-cell')) hideAllInvDd();
+    });
+
+    form.addEventListener('submit', function (e) {
+        var ok = false;
+        body.querySelectorAll('.line-row').forEach(function (tr) {
+            var pid = tr.querySelector('.inv-product-id');
+            var qty = tr.querySelector('[name="line_quantity"]');
+            if (pid && pid.value && qty && String(qty.value).trim() !== '') ok = true;
+        });
+        if (!ok) {
+            e.preventDefault();
+            alert('请至少为一行选择产品并填写数量。');
+        }
+    });
+
+    bindAllCells();
+})();
+</script>
+{% endblock %}

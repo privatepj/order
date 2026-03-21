@@ -39,7 +39,7 @@ SOURCE /path/to/scripts/sql/00_full_schema.sql;
 mysql -u 用户名 -p sydixon_order < scripts/sql/01_migrations_for_old_db.sql
 ```
 
-若某条语句报错「Duplicate column name」等（表示该列已存在），可忽略并继续执行后续语句，或使用带“存在则跳过”的 Python 迁移脚本（见项目根目录 `scripts/run_migrate_*.py`）。
+若某条语句报错「Duplicate column name」等（表示该列已存在），可忽略该条并继续执行后续语句。
 
 ---
 
@@ -47,17 +47,16 @@ mysql -u 用户名 -p sydixon_order < scripts/sql/01_migrations_for_old_db.sql
 
 | 文件 | 用途 |
 |------|------|
-| `00_full_schema.sql` | 全量建表 + 初始数据，**新库部署只执行此文件** |
-| `01_migrations_for_old_db.sql` | 增量迁移，仅用于从旧库升级 |
+| `00_full_schema.sql` | 全量建表 + 初始数据，**新库部署只执行此文件**（无数据库级外键） |
+| `00_reset_drop_all_tables.sql` | 仅删除全部业务表；删后需再执行 `00_full_schema.sql`（开发重建用，先备份） |
+| `01_migrations_for_old_db.sql` | 增量迁移，仅用于从旧库升级（含每日库存表 `inventory_daily_*`） |
 | `README.md` | 本说明 |
 
 ---
 
-## 与项目根目录的对应关系
+## 与历史脚本的关系
 
-- 根目录 `scripts/init_db.sql` 已与 `00_full_schema.sql` 保持一致的完整结构（含 `requested_role_id`、`short_code`、`is_sample` 等），部署时二选一即可：
-  - 使用 **`scripts/sql/00_full_schema.sql`**：推荐，所有 SQL 集中在 `scripts/sql/` 下便于部署。
-  - 或使用 **`scripts/init_db.sql`**：效果相同。
-- 原分散在 `scripts/` 下的 `migrate_*.sql`、`alter_*.sql`、`add_*.sql` 已合并进 `01_migrations_for_old_db.sql`，旧库升级只需执行该文件（或按原顺序执行各迁移脚本）。
+- **新库**只维护 **`00_full_schema.sql`**，不再保留根目录下的重复全量脚本。
+- 历史上分散在 `scripts/` 下的增量 `migrate_*.sql` / `alter_*.sql` / `add_*.sql` 已全部并入 **`01_migrations_for_old_db.sql`**（含 **`audit_log`** 表）；旧库升级执行该文件即可。
 
 部署完成后，请参照项目根目录 **《项目整体部署.md》** 配置 `.env`、启动应用（如 gunicorn）等。

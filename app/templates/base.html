@@ -32,7 +32,7 @@
                         <a class="nav-link{% if ep.startswith('main.order_') %} active{% endif %}" href="{{ url_for('main.order_list') }}"{% if ep.startswith('main.order_') %} aria-current="page"{% endif %}>订单</a>
                     </li>
                     {% endif %}
-                    {% if user_can_menu('delivery') or user_can_menu('express') %}
+                    {% if user_can_menu('delivery') or user_can_menu('express') or user_can_menu('inventory') %}
                     <li class="nav-item dropdown nav-dropdown-hover">
                         <a class="nav-link dropdown-toggle" href="#" id="navDropdownWarehouse" role="button" data-bs-toggle="dropdown" aria-expanded="false">仓管</a>
                         <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownWarehouse">
@@ -41,6 +41,9 @@
                             {% endif %}
                             {% if user_can_menu('express') %}
                             <li><a class="dropdown-item{% if 'express_company' in ep or 'express_waybill' in ep %} active{% endif %}" href="{{ url_for('main.express_company_list') }}">快递</a></li>
+                            {% endif %}
+                            {% if user_can_menu('inventory') %}
+                            <li><a class="dropdown-item{% if ep.startswith('main.inventory') %} active{% endif %}" href="{{ url_for('main.inventory_list') }}">库存录入</a></li>
                             {% endif %}
                         </ul>
                     </li>

@@ -47,3 +47,4 @@ Thumbs.db
 # 日志
 *.log
 logs/
+.cursor/mcp.json

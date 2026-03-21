@@ -6,6 +6,7 @@ from app.models.delivery import Delivery, DeliveryItem
 from app.models.express import ExpressCompany, ExpressWaybill
 from app.models.product import Product, CustomerProduct
 from app.models.audit_log import AuditLog
+from app.models.inventory import InventoryDailyRecord, InventoryDailyLine
 
 __all__ = [
     "User",
@@ -21,4 +22,6 @@ __all__ = [
     "ExpressCompany",
     "ExpressWaybill",
     "AuditLog",
+    "InventoryDailyRecord",
+    "InventoryDailyLine",
 ]

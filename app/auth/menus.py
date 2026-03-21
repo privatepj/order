@@ -18,6 +18,7 @@ MENU_ITEMS = (
     ("report_export", "报表导出"),
     ("company", "公司主体"),
     ("express", "快递"),
+    ("inventory", "库存录入"),
     ("user_mgmt", "用户管理"),
 )
 
@@ -36,6 +37,7 @@ LANDING_MENU_ORDER = (
     "report_export",
     "company",
     "express",
+    "inventory",
     "user_mgmt",
 )
 
@@ -49,6 +51,7 @@ _MENU_ENDPOINT = {
     "report_export": "main.report_export_delivery_notes",
     "company": "main.company_list",
     "express": "main.express_company_list",
+    "inventory": "main.inventory_list",
     "user_mgmt": "main.user_list",
 }
 
