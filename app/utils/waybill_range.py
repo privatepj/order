@@ -16,10 +16,13 @@ def _split_trailing_digits(s: str) -> Tuple[str, str]:
     return prefix, digits
 
 
-def expand_waybill_range(start: str, end: str) -> List[str]:
+def expand_waybill_range(start: str, end: str, step: int = 1) -> List[str]:
     """
-    起止须为同一前缀、数字段等宽；按数字递增生成闭区间 [start, end]。
+    起止须为同一前缀、数字段等宽；从起始数字起每次加 step，生成不超过结束数字的单号列表（含起止范围内可达项）。
+    step 默认为 1，即原先连续递增行为。
     """
+    if not isinstance(step, int) or step < 1:
+        raise ValueError("单号间隔须为正整数")
     p1, d1 = _split_trailing_digits(start)
     p2, d2 = _split_trailing_digits(end)
     if p1 != p2:
@@ -31,9 +34,16 @@ def expand_waybill_range(start: str, end: str) -> List[str]:
         raise ValueError("结束单号不能小于起始单号")
     width = len(d1)
     max_v = 10**width - 1
-    if n2 > max_v:
+    if n1 > max_v or n2 > max_v:
         raise ValueError("结束单号超出数字位允许范围")
-    count = n2 - n1 + 1
+    nums: List[int] = []
+    cur = n1
+    while cur <= n2:
+        if cur > max_v:
+            raise ValueError("递增后单号超出数字位允许范围")
+        nums.append(cur)
+        cur += step
+    count = len(nums)
     if count > 50000:
         raise ValueError("单次最多录入 50000 个单号")
-    return [f"{p1}{n1 + i:0{width}d}" for i in range(count)]
+    return [f"{p1}{n:0{width}d}" for n in nums]

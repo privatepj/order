@@ -99,6 +99,22 @@ def register_express_routes(bp):
             ec_id = request.form.get("express_company_id", type=int)
             start = (request.form.get("waybill_start") or "").strip()
             end = (request.form.get("waybill_end") or "").strip()
+            step_raw = (request.form.get("waybill_step") or "").strip()
+            if not step_raw:
+                step = 1
+            else:
+                try:
+                    step = int(step_raw)
+                except ValueError:
+                    flash("单号间隔须为正整数。", "danger")
+                    return render_template(
+                        "express/waybill_import.html", companies=companies
+                    )
+                if step < 1:
+                    flash("单号间隔须为正整数。", "danger")
+                    return render_template(
+                        "express/waybill_import.html", companies=companies
+                    )
             if not ec_id:
                 flash("请选择快递公司。", "danger")
                 return render_template(
@@ -111,7 +127,7 @@ def register_express_routes(bp):
                     "express/waybill_import.html", companies=companies
                 )
             try:
-                numbers = expand_waybill_range(start, end)
+                numbers = expand_waybill_range(start, end, step)
             except ValueError as e:
                 flash(str(e), "danger")
                 return render_template(

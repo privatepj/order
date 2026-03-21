@@ -2,7 +2,7 @@
 {% block title %}批量录入快递单号 - 工厂订单系统{% endblock %}
 {% block content %}
 <h2 class="mb-4">批量录入快递单号</h2>
-<p class="text-muted">起止单号须<strong>同一前缀</strong>且<strong>数字部分等宽</strong>，系统将按数字递增全部写入（已存在则跳过）。</p>
+<p class="text-muted">起止单号须<strong>同一前缀</strong>且<strong>数字部分等宽</strong>；从起始数字起按<strong>单号间隔</strong>递增，直到不超过结束单号（已存在则跳过）。间隔为 1 时与连续递增一致。</p>
 <form method="post">
     <div class="mb-3">
         <label class="form-label">快递公司 <span class="text-danger">*</span></label>
@@ -20,6 +20,11 @@
     <div class="mb-3">
         <label class="form-label">结束单号</label>
         <input type="text" class="form-control" name="waybill_end" required maxlength="64" placeholder="如 SF1234567890150">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">单号间隔</label>
+        <input type="number" class="form-control" name="waybill_step" value="1" min="1" step="1" required title="正整数，例如 2 表示 SF100、SF102、…">
+        <div class="form-text text-muted">尾数每次增加的步长；例如起始 SF100、结束 SF108、间隔 2 → SF100、SF102、…、SF108。</div>
     </div>
     <button type="submit" class="btn btn-primary">录入</button>
     <a href="{{ url_for('main.express_company_list') }}" class="btn btn-secondary">返回</a>
