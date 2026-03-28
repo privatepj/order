@@ -3,9 +3,22 @@
 {% block content %}
 <h2 class="mb-4">新建送货单</h2>
 {% if not express_companies %}
-<div class="alert alert-warning">请管理员先在「快递」中添加快递公司并录入单号池。</div>
+<div class="alert alert-info">未维护快递公司时，请使用「自配送」。选择「快递」时需添加快递公司；留空单号自动分配依赖单号池，也可直接手写单号（含未入池）。</div>
 {% endif %}
 <form method="post" id="deliveryForm">
+    <div class="mb-3">
+        <label class="form-label">配送方式</label>
+        <div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="self_delivery" id="dmExpress" value="0" {{ 'checked' if express_companies else '' }} {{ 'disabled' if not express_companies else '' }}>
+                <label class="form-check-label" for="dmExpress">快递</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="self_delivery" id="dmSelf" value="1" {{ 'checked' if not express_companies else '' }}>
+                <label class="form-check-label" for="dmSelf">自配送</label>
+            </div>
+        </div>
+    </div>
     <div class="row mb-3">
         <div class="col-md-6">
             <label class="form-label">客户 <span class="text-danger">*</span></label>
@@ -26,33 +39,20 @@
             <input type="date" class="form-control" name="delivery_date" value="{{ today or '' }}">
         </div>
     </div>
-    <div class="row mb-3">
+    <div class="row mb-3" id="expressFieldsRow">
         <div class="col-md-6">
             <label class="form-label">快递公司 <span class="text-danger">*</span></label>
-            <select name="express_company_id" id="expressCompanyId" class="form-select" required {{ 'disabled' if not express_companies else '' }}>
+            <select name="express_company_id" id="expressCompanyId" class="form-select" {{ 'disabled' if not express_companies else '' }}>
                 <option value="">请选择</option>
                 {% for ec in express_companies %}
                 <option value="{{ ec.id }}">{{ ec.name }} ({{ ec.code }})</option>
                 {% endfor %}
             </select>
-            {% if not express_companies %}
-            <input type="hidden" name="express_company_id" value="">
-            {% endif %}
         </div>
         <div class="col-md-6">
-            <label class="form-label">快递单号（系统自动带出，保存时正式分配）</label>
-            <input type="text" class="form-control" id="waybillPreview" readonly placeholder="请选择快递公司">
+            <label class="form-label">快递单号（选择公司后自动带出；可改填池中可用单号，或直接填写未入池的单号）</label>
+            <input type="text" class="form-control" name="waybill_no" id="waybillPreview" placeholder="请选择快递公司" autocomplete="off">
             <div class="form-text text-muted" id="waybillHint"></div>
-        </div>
-    </div>
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <label class="form-label">司机</label>
-            <input type="text" class="form-control" name="driver">
-        </div>
-        <div class="col-md-6">
-            <label class="form-label">车号</label>
-            <input type="text" class="form-control" name="plate_no">
         </div>
     </div>
     <div class="mb-3">
@@ -61,7 +61,9 @@
     </div>
 
     <h5 class="mt-4">待送明细（选择客户后加载）</h5>
+    {% if user_can_cap('delivery.api.pending_items') %}
     <p><button type="button" class="btn btn-outline-primary btn-sm" id="loadPending">加载该客户待送订单行</button></p>
+    {% endif %}
     <div class="table-responsive app-table-scroll">
     <table class="table table-bordered" id="pendingTable">
         <thead>
@@ -83,7 +85,11 @@
     </div>
 
     <div class="mt-4">
-        <button type="submit" class="btn btn-primary" id="submitDelivery" {{ 'disabled' if not express_companies else '' }}>保存送货单</button>
+        {% if user_can_cap('delivery.action.create') %}
+        <button type="submit" class="btn btn-primary" id="submitDelivery">保存送货单</button>
+        {% else %}
+        <p class="text-muted">当前角色无新建送货单权限。</p>
+        {% endif %}
         <a href="{{ url_for('main.delivery_list') }}" class="btn btn-secondary">取消</a>
     </div>
 </form>
@@ -108,6 +114,9 @@
     var customerIdHidden = document.getElementById('customerIdHidden');
     var customerDropdown = document.getElementById('customerDropdown');
     var expressSelect = document.getElementById('expressCompanyId');
+    var expressFieldsRow = document.getElementById('expressFieldsRow');
+    var dmExpress = document.getElementById('dmExpress');
+    var dmSelf = document.getElementById('dmSelf');
     var loadBtn = document.getElementById('loadPending');
     var tbody = document.getElementById('pendingBody');
     var waybillPreview = document.getElementById('waybillPreview');
@@ -116,6 +125,28 @@
     var today = new Date().toISOString().slice(0, 10);
     var deliveryDate = document.querySelector('input[name="delivery_date"]');
     if (deliveryDate && !deliveryDate.value) deliveryDate.value = today;
+
+    function isSelfDelivery() {
+        return dmSelf && dmSelf.checked;
+    }
+
+    function syncFulfillmentUI() {
+        var self = isSelfDelivery();
+        if (expressFieldsRow) expressFieldsRow.style.display = self ? 'none' : '';
+        if (expressSelect) {
+            var noCompanies = expressSelect.querySelectorAll('option').length <= 1;
+            expressSelect.disabled = self || noCompanies;
+        }
+        if (self) {
+            if (waybillPreview) waybillPreview.value = '';
+            if (waybillHint) waybillHint.textContent = '';
+        } else if (expressSelect && expressSelect.value) {
+            refreshWaybill();
+        }
+    }
+
+    if (dmExpress) dmExpress.addEventListener('change', syncFulfillmentUI);
+    if (dmSelf) dmSelf.addEventListener('change', syncFulfillmentUI);
 
     var customerFilterTimer = null;
     var customerApiUrl = {{ url_for("main.delivery_customers_search")|tojson }};
@@ -196,18 +227,19 @@
     }
 
     function refreshWaybill() {
+        if (isSelfDelivery()) return;
         var eid = expressSelect ? expressSelect.value : '';
-        waybillPreview.value = '';
-        waybillHint.textContent = '';
+        if (waybillPreview) waybillPreview.value = '';
+        if (waybillHint) waybillHint.textContent = '';
         if (!eid) return;
         fetch('{{ url_for("main.delivery_next_waybill") }}?express_company_id=' + encodeURIComponent(eid))
             .then(function(r){ return r.json(); })
             .then(function(data){
                 if (data.waybill_no) {
-                    waybillPreview.value = data.waybill_no;
-                    waybillHint.textContent = '保存时将按顺序正式占用该单号（若并发可能为下一张）。';
+                    if (waybillPreview) waybillPreview.value = data.waybill_no;
+                    if (waybillHint) waybillHint.textContent = '保存时：若所填单号在该公司单号池且可用则占用；否则按手写保存（不入池）。留空则按顺序自动分配。';
                 } else {
-                    waybillHint.textContent = data.message || '暂无可用单号';
+                    if (waybillHint) waybillHint.textContent = data.message || '暂无可用单号';
                 }
             });
     }
@@ -215,7 +247,9 @@
         expressSelect.addEventListener('change', refreshWaybill);
     }
 
-    loadBtn.onclick = function(){
+    syncFulfillmentUI();
+
+    if (loadBtn) loadBtn.onclick = function(){
         var cid = customerIdHidden ? customerIdHidden.value : '';
         if (!cid) { alert('请先选择客户'); return; }
         fetch('{{ url_for("main.delivery_pending_items") }}?customer_id=' + cid)
@@ -247,13 +281,11 @@
             alert('请选择客户');
             return false;
         }
-        if (expressSelect && !expressSelect.disabled && !expressSelect.value) {
-            alert('请选择快递公司');
-            return false;
-        }
-        if (expressSelect && !expressSelect.disabled && !waybillPreview.value) {
-            alert('该快递公司暂无可用单号，请先录入单号池。');
-            return false;
+        if (!isSelfDelivery()) {
+            if (expressSelect && !expressSelect.value) {
+                alert('请选择快递公司');
+                return false;
+            }
         }
         var rows = tbody.querySelectorAll('tr .row-check:checked');
         if (rows.length === 0) {

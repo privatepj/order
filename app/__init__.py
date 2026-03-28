@@ -16,7 +16,8 @@ def create_app(config_class=Config):
     login_manager.login_view = "auth.login"
     login_manager.login_message = "请先登录。"
 
-    from app.models import User
+    from app.models import User  # noqa: F401 — 注册 ORM 映射
+    from app.models import rbac  # noqa: F401 — sys_nav_item 等表
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -37,8 +38,24 @@ def create_app(config_class=Config):
 
     @app.context_processor
     def inject_menu_permissions():
-        from app.auth.menus import current_user_can_menu
+        from flask_login import current_user
 
-        return dict(user_can_menu=current_user_can_menu)
+        from app.auth.capabilities import current_user_can_cap
+        from app.auth.menus import current_user_can_menu, nav_tree_for_user
+
+        nav = []
+        if current_user.is_authenticated and getattr(current_user, "role_code", None) not in (
+            None,
+            "pending",
+        ):
+            try:
+                nav = nav_tree_for_user()
+            except Exception:
+                nav = []
+        return dict(
+            user_can_menu=current_user_can_menu,
+            user_can_cap=current_user_can_cap,
+            nav_tree=nav,
+        )
 
     return app

@@ -2,7 +2,7 @@ from flask import render_template, request, redirect, url_for, flash
 from flask_login import login_required
 
 from app import db
-from app.auth.decorators import menu_required
+from app.auth.decorators import capability_required, menu_required
 from app.models import Company, Customer
 
 
@@ -17,6 +17,7 @@ def register_company_routes(bp):
     @bp.route("/companies/new", methods=["GET", "POST"])
     @login_required
     @menu_required("company")
+    @capability_required("company.action.create")
     def company_new():
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
@@ -58,6 +59,7 @@ def register_company_routes(bp):
     @bp.route("/companies/<int:company_id>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("company")
+    @capability_required("company.action.edit")
     def company_edit(company_id):
         c = Company.query.get_or_404(company_id)
         if request.method == "POST":
@@ -94,6 +96,7 @@ def register_company_routes(bp):
     @bp.route("/companies/<int:company_id>/delete", methods=["POST"])
     @login_required
     @menu_required("company")
+    @capability_required("company.action.delete")
     def company_delete(company_id):
         c = Company.query.get_or_404(company_id)
         used = (

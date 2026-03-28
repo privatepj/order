@@ -22,7 +22,11 @@
         <input type="date" name="end_date" class="form-control" required>
     </div>
     <div class="col-md-4 d-flex align-items-end">
+        {% if user_can_cap('reconciliation.action.download') %}
         <button type="submit" class="btn btn-primary">生成并下载对账单</button>
+        {% else %}
+        <p class="text-muted mb-0">当前角色无下载对账文件权限。</p>
+        {% endif %}
     </div>
 </form>
 {% endblock %}

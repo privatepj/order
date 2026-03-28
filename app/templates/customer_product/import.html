@@ -13,7 +13,9 @@
         <input type="file" name="file" accept=".xlsx" class="form-control" required>
     </div>
     <button type="submit" class="btn btn-primary">上传并导入</button>
+    {% if user_can_cap('customer_product.action.export_template') %}
     <a href="{{ url_for('main.export_customer_product_import_template') }}" class="btn btn-outline-primary">下载模板</a>
+    {% endif %}
     <a href="{{ url_for('main.customer_product_list') }}" class="btn btn-secondary">返回客户产品列表</a>
 </form>
 {% if result %}

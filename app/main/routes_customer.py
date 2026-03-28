@@ -3,7 +3,8 @@ from decimal import Decimal, InvalidOperation
 from flask import render_template, request, redirect, url_for, flash, send_file
 from flask_login import login_required
 
-from app.auth.decorators import menu_required
+from app.auth.capabilities import customer_list_read_filters
+from app.auth.decorators import capability_required, menu_required
 
 from app import db
 from app.models import Customer, Company
@@ -19,7 +20,7 @@ def register_customer_routes(bp):
     @menu_required("customer")
     def customer_list():
         page = request.args.get("page", 1, type=int)
-        keyword = (request.args.get("keyword") or "").strip()
+        keyword = customer_list_read_filters()
         q = Customer.query
         if keyword:
             q = q.outerjoin(Company, Customer.company_id == Company.id)
@@ -54,6 +55,7 @@ def register_customer_routes(bp):
     @bp.route("/customers/new", methods=["GET", "POST"])
     @login_required
     @menu_required("customer")
+    @capability_required("customer.action.create")
     def customer_new():
         companies = Company.query.order_by(Company.id).all()
         if request.method == "POST":
@@ -68,6 +70,7 @@ def register_customer_routes(bp):
     @bp.route("/customers/<int:customer_id>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("customer")
+    @capability_required("customer.action.edit")
     def customer_edit(customer_id):
         customer = Customer.query.get_or_404(customer_id)
         companies = Company.query.order_by(Company.id).all()
@@ -83,6 +86,7 @@ def register_customer_routes(bp):
     @bp.route("/customers/<int:customer_id>/delete", methods=["POST"])
     @login_required
     @menu_required("customer")
+    @capability_required("customer.action.delete")
     def customer_delete(customer_id):
         customer = Customer.query.get_or_404(customer_id)
         db.session.delete(customer)
@@ -93,6 +97,7 @@ def register_customer_routes(bp):
     @bp.route("/customers/import", methods=["GET", "POST"])
     @login_required
     @menu_required("customer")
+    @capability_required("customer.action.import")
     def customer_import():
         if request.method == "POST":
             file = request.files.get("file")

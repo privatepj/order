@@ -45,7 +45,11 @@
     </div>
 
     <div class="col-12 d-flex align-items-end">
+        {% if user_can_cap('report_records.export.run') %}
         <button type="submit" class="btn btn-primary">下载 Excel</button>
+        {% else %}
+        <p class="text-muted mb-0">当前角色无「执行导出送货记录」权限。</p>
+        {% endif %}
     </div>
 </form>
 {% endblock %}

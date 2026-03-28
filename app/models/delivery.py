@@ -7,7 +7,7 @@ class Delivery(db.Model):
     delivery_no = db.Column(db.String(64), nullable=False, unique=True)
     delivery_date = db.Column(db.Date, nullable=False)
     customer_id = db.Column(db.Integer, nullable=False)  # 关联 customer.id，不在库建外键
-    express_company_id = db.Column(db.Integer, nullable=False)  # 关联 express_company.id，不在库建外键
+    express_company_id = db.Column(db.Integer, nullable=True)  # NULL=自配送；否则关联 express_company.id
     express_waybill_id = db.Column(db.Integer, nullable=True)  # 关联 express_waybill.id，不在库建外键
     waybill_no = db.Column(db.String(64), nullable=True)
     status = db.Column(db.String(32), nullable=False, default="created")

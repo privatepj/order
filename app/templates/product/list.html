@@ -3,12 +3,18 @@
 {% block content %}
 <h2 class="mb-4">产品列表</h2>
 <form class="mb-3 d-flex gap-2" method="get">
+    {% if user_can_cap('product.filter.keyword') %}
     <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编号、名称、规格、单位、备注等">
+    {% endif %}
     <button type="submit" class="btn btn-primary">搜索</button>
 </form>
 <p>
+    {% if user_can_cap('product.action.create') %}
     <a href="{{ url_for('main.product_new') }}" class="btn btn-success me-2">新增产品</a>
+    {% endif %}
+    {% if user_can_cap('product.action.import') %}
     <a href="{{ url_for('main.product_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+    {% endif %}
 </p>
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped">
@@ -30,10 +36,14 @@
             <td>{{ p.spec or '-' }}</td>
             <td>{{ p.base_unit or '-' }}</td>
             <td>
+                {% if user_can_cap('product.action.edit') %}
                 <a href="{{ url_for('main.product_edit', product_id=p.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('product.action.delete') %}
                 <form method="post" action="{{ url_for('main.product_delete', product_id=p.id) }}" class="d-inline" onsubmit="return confirm('确定删除该产品？');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% else %}

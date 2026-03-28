@@ -3,6 +3,7 @@
 {% block content %}
 <h2 class="mb-4">客户产品</h2>
 <form class="mb-3 row g-2 align-items-end" method="get">
+    {% if user_can_cap('customer_product.filter.customer') %}
     <div class="col-auto">
         <select name="customer_id" class="form-select">
             <option value="">全部客户</option>
@@ -11,16 +12,23 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
+    {% if user_can_cap('customer_product.filter.keyword') %}
     <div class="col-md-4">
         <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="客户、产品编号、品名、料号、物料编号等">
     </div>
+    {% endif %}
     <div class="col-auto">
         <button type="submit" class="btn btn-primary">筛选</button>
     </div>
 </form>
 <p>
+    {% if user_can_cap('customer_product.action.create') %}
     <a href="{{ url_for('main.customer_product_new') }}" class="btn btn-success me-2">新增客户产品</a>
+    {% endif %}
+    {% if user_can_cap('customer_product.action.import') %}
     <a href="{{ url_for('main.customer_product_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+    {% endif %}
 </p>
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped">
@@ -55,10 +63,14 @@
             <td>{{ r.currency or '-' }}</td>
             {% endif %}
             <td>
+                {% if user_can_cap('customer_product.action.edit') %}
                 <a href="{{ url_for('main.customer_product_edit', cp_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('customer_product.action.delete') %}
                 <form method="post" action="{{ url_for('main.customer_product_delete', cp_id=r.id) }}" class="d-inline" onsubmit="return confirm('确定删除该客户产品？');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% else %}

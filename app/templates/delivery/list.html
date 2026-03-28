@@ -3,6 +3,7 @@
 {% block content %}
 <h2 class="mb-4">送货列表</h2>
 <form class="mb-3 row g-2 align-items-end" method="get">
+    {% if user_can_cap('delivery.filter.customer') %}
     <div class="col-auto">
         <select name="customer_id" class="form-select">
             <option value="">全部客户</option>
@@ -11,6 +12,8 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
+    {% if user_can_cap('delivery.filter.status') %}
     <div class="col-auto">
         <select name="status" class="form-select">
             <option value="">全部状态</option>
@@ -19,15 +22,20 @@
             <option value="expired" {{ 'selected' if status == 'expired' else '' }}>失效</option>
         </select>
     </div>
+    {% endif %}
+    {% if user_can_cap('delivery.filter.keyword') %}
     <div class="col-md-4">
         <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="送货单号、客户、司机、车牌、备注等">
     </div>
+    {% endif %}
     <div class="col-auto">
         <button type="submit" class="btn btn-primary">筛选</button>
     </div>
 </form>
 <p>
+    {% if user_can_cap('delivery.action.create') %}
     <a href="{{ url_for('main.delivery_new') }}" class="btn btn-success">新建送货单</a>
+    {% endif %}
 </p>
 
 <div class="table-responsive app-table-scroll">
@@ -37,8 +45,6 @@
             <th>送货单号</th>
             <th>快递</th>
             <th>快递单号</th>
-            <th>客户</th>
-            <th>客户经营主体</th>
             <th>送货日期</th>
             <th>状态</th>
             <th>操作</th>
@@ -47,11 +53,24 @@
     <tbody>
         {% for d in pagination.items %}
         <tr>
-            <td>{{ d.delivery_no }}</td>
-            <td>{{ d.express_company.name if d.express_company else '-' }}</td>
+            <td>
+                {% if d.status == 'created' and user_can_cap('delivery.action.edit_delivery_no') %}
+                <form method="post" action="{{ url_for('main.delivery_update_delivery_no', delivery_id=d.id) }}" class="d-flex flex-wrap gap-1 align-items-center">
+                    {% if customer_id is not none %}
+                    <input type="hidden" name="ret_customer_id" value="{{ customer_id }}">
+                    {% endif %}
+                    <input type="hidden" name="ret_status" value="{{ status or '' }}">
+                    <input type="hidden" name="ret_keyword" value="{{ keyword or '' }}">
+                    <input type="hidden" name="ret_page" value="{{ pagination.page }}">
+                    <input type="text" name="delivery_no" value="{{ d.delivery_no }}" class="form-control form-control-sm" style="min-width:9rem;max-width:14rem" autocomplete="off">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">保存</button>
+                </form>
+                {% else %}
+                {{ d.delivery_no }}
+                {% endif %}
+            </td>
+            <td>{% if d.express_company_id %}{{ d.express_company.name if d.express_company else '-' }}{% else %}自配送{% endif %}</td>
             <td>{{ d.waybill_no or '-' }}</td>
-            <td>{{ d.customer.name }}</td>
-            <td>{{ d.customer.company.name if d.customer.company else '-' }}</td>
             <td>{{ d.delivery_date }}</td>
             <td>
                 {% if d.status == 'created' %}待发
@@ -61,9 +80,13 @@
                 {% endif %}
             </td>
             <td>
+                {% if user_can_cap('delivery.action.detail') %}
                 <a href="{{ url_for('main.delivery_detail', delivery_id=d.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                {% endif %}
+                {% if user_can_cap('delivery.action.print') %}
                 <a href="{{ url_for('main.delivery_print', delivery_id=d.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">打印</a>
-                {% if d.status == 'created' %}
+                {% endif %}
+                {% if d.status == 'created' and user_can_cap('delivery.action.mark_shipped') %}
                 <form method="post" action="{{ url_for('main.delivery_mark_shipped', delivery_id=d.id) }}" class="d-inline" onsubmit="return confirm('确认标记为已发？');">
                     <button type="submit" class="btn btn-sm btn-outline-success">标记已发</button>
                 </form>
@@ -71,7 +94,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="8">暂无送货单</td></tr>
+        <tr><td colspan="6">暂无送货单</td></tr>
         {% endfor %}
     </tbody>
 </table>

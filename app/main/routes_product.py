@@ -1,7 +1,8 @@
 from flask import render_template, request, redirect, url_for, flash, send_file
 from flask_login import login_required
 
-from app.auth.decorators import menu_required
+from app.auth.capabilities import product_list_read_filters
+from app.auth.decorators import capability_required, menu_required
 
 from app import db
 from app.models import Product
@@ -16,7 +17,7 @@ def register_product_routes(bp):
     @menu_required("product")
     def product_list():
         page = request.args.get("page", 1, type=int)
-        keyword = (request.args.get("keyword") or "").strip()
+        keyword = product_list_read_filters()
         q = Product.query
         cond = keyword_like_or(
             keyword,
@@ -39,6 +40,7 @@ def register_product_routes(bp):
     @bp.route("/products/new", methods=["GET", "POST"])
     @login_required
     @menu_required("product")
+    @capability_required("product.action.create")
     def product_new():
         if request.method == "POST":
             return _product_save(None)
@@ -47,6 +49,7 @@ def register_product_routes(bp):
     @bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("product")
+    @capability_required("product.action.edit")
     def product_edit(product_id):
         product = Product.query.get_or_404(product_id)
         if request.method == "POST":
@@ -56,6 +59,7 @@ def register_product_routes(bp):
     @bp.route("/products/<int:product_id>/delete", methods=["POST"])
     @login_required
     @menu_required("product")
+    @capability_required("product.action.delete")
     def product_delete(product_id):
         product = Product.query.get_or_404(product_id)
         db.session.delete(product)
@@ -66,6 +70,7 @@ def register_product_routes(bp):
     @bp.route("/products/export-import-template", methods=["GET"])
     @login_required
     @menu_required("product")
+    @capability_required("product.action.import")
     def export_product_import_template():
         """产品导入模板（xlsx）：表头行+1行空白。"""
         from openpyxl import Workbook
@@ -91,6 +96,7 @@ def register_product_routes(bp):
     @bp.route("/products/import", methods=["GET", "POST"])
     @login_required
     @menu_required("product")
+    @capability_required("product.action.import")
     def product_import():
         if request.method == "POST":
             file = request.files.get("file")

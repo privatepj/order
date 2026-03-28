@@ -1,11 +1,32 @@
-from flask import render_template, request, redirect, url_for, flash
+from io import BytesIO
+
+from flask import render_template, request, redirect, url_for, flash, send_file
 from flask_login import login_required
 from sqlalchemy import func
 
 from app import db
-from app.auth.decorators import menu_required
+from app.auth.decorators import capability_required, menu_required
 from app.models import ExpressCompany, ExpressWaybill
+from app.utils.waybill_pool import apply_waybill_to_pool
 from app.utils.waybill_range import expand_waybill_range
+
+_INVALID_SAMPLES_MAX = 20
+
+
+def _excel_cell_to_waybill_str(cell) -> str:
+    if cell is None:
+        return ""
+    if isinstance(cell, bool):
+        return ""
+    if isinstance(cell, str):
+        return cell.strip()
+    if isinstance(cell, int):
+        return str(cell)
+    if isinstance(cell, float):
+        if cell == int(cell):
+            return str(int(cell))
+        return str(cell).strip()
+    return str(cell).strip()
 
 
 def register_express_routes(bp):
@@ -42,6 +63,7 @@ def register_express_routes(bp):
     @bp.route("/express-companies/new", methods=["GET", "POST"])
     @login_required
     @menu_required("express")
+    @capability_required("express.action.company_create")
     def express_company_new():
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
@@ -62,6 +84,7 @@ def register_express_routes(bp):
     @bp.route("/express-companies/<int:cid>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("express")
+    @capability_required("express.action.company_edit")
     def express_company_edit(cid):
         c = ExpressCompany.query.get_or_404(cid)
         if request.method == "POST":
@@ -81,9 +104,31 @@ def register_express_routes(bp):
             return redirect(url_for("main.express_company_list"))
         return render_template("express/company_form.html", company=c)
 
+    @bp.route("/express-waybills/import-template", methods=["GET"])
+    @login_required
+    @menu_required("express")
+    @capability_required("express.action.waybill_import")
+    def express_waybill_import_template():
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "单号导入"
+        ws.cell(1, 1, "快递单号")
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name="快递单号导入模板.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
     @bp.route("/express-waybills/import", methods=["GET", "POST"])
     @login_required
     @menu_required("express")
+    @capability_required("express.action.waybill_import")
     def express_waybill_import():
         companies = (
             ExpressCompany.query.filter(ExpressCompany.is_active.is_(True))
@@ -96,9 +141,108 @@ def register_express_routes(bp):
             return redirect(url_for("main.express_company_new"))
 
         if request.method == "POST":
+            import_mode = (request.form.get("import_mode") or "range").strip()
+            mode_hint = import_mode if import_mode in ("range", "excel") else "range"
             ec_id = request.form.get("express_company_id", type=int)
-            start = (request.form.get("waybill_start") or "").strip()
-            end = (request.form.get("waybill_end") or "").strip()
+            if not ec_id:
+                flash("请选择快递公司。", "danger")
+                return render_template(
+                    "express/waybill_import.html",
+                    companies=companies,
+                    import_mode_hint=mode_hint,
+                    result=None,
+                )
+            ec = ExpressCompany.query.get(ec_id)
+            if not ec or ec.code == "LEGACY":
+                flash("无效的快递公司。", "danger")
+                return render_template(
+                    "express/waybill_import.html",
+                    companies=companies,
+                    import_mode_hint=mode_hint,
+                    result=None,
+                )
+
+            if import_mode == "excel":
+                file = request.files.get("file")
+                if not file or not (file.filename or "").strip():
+                    flash("请先选择要上传的 Excel 文件。", "danger")
+                    return render_template(
+                        "express/waybill_import.html",
+                        companies=companies,
+                        import_mode_hint=mode_hint,
+                        result=None,
+                    )
+                try:
+                    from openpyxl import load_workbook
+                except ImportError:
+                    flash("服务器缺少 openpyxl 依赖，无法导入。", "danger")
+                    return render_template(
+                        "express/waybill_import.html",
+                        companies=companies,
+                        import_mode_hint=mode_hint,
+                        result=None,
+                    )
+                try:
+                    wb = load_workbook(file, data_only=True)
+                    ws = wb.active
+                except Exception:
+                    flash("Excel 文件无法读取，请确认格式为 .xlsx。", "danger")
+                    return render_template(
+                        "express/waybill_import.html",
+                        companies=companies,
+                        import_mode_hint=mode_hint,
+                        result=None,
+                    )
+                inserted = 0
+                skipped = 0
+                errors: list[str] = []
+                for idx, row in enumerate(
+                    ws.iter_rows(min_row=2, values_only=True), start=2
+                ):
+                    cell = row[0] if row else None
+                    raw = _excel_cell_to_waybill_str(cell)
+                    if not raw:
+                        continue
+                    res, msg = apply_waybill_to_pool(ec_id, ec.code, raw)
+                    if res == "inserted":
+                        inserted += 1
+                    elif res == "skipped":
+                        skipped += 1
+                    else:
+                        errors.append(f"第 {idx} 行（{raw}）：{msg}")
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    flash("保存失败，请重试。", "danger")
+                    return render_template(
+                        "express/waybill_import.html",
+                        companies=companies,
+                        import_mode_hint=mode_hint,
+                        result=None,
+                    )
+                if inserted or skipped:
+                    flash(
+                        f"Excel 导入：新增 {inserted} 条，跳过（已存在）{skipped} 条。",
+                        "success",
+                    )
+                elif not errors:
+                    flash("未导入任何单号：请确认第一列从第 2 行起有数据。", "warning")
+                if errors:
+                    flash(f"有 {len(errors)} 条未写入，请查看下方列表。", "warning")
+                return render_template(
+                    "express/waybill_import.html",
+                    companies=companies,
+                    import_mode_hint="excel",
+                    result={
+                        "inserted": inserted,
+                        "skipped": skipped,
+                        "errors": errors,
+                        "invalid_prefix": 0,
+                        "invalid_samples": [],
+                    },
+                )
+
             step_raw = (request.form.get("waybill_step") or "").strip()
             if not step_raw:
                 step = 1
@@ -108,55 +252,83 @@ def register_express_routes(bp):
                 except ValueError:
                     flash("单号间隔须为正整数。", "danger")
                     return render_template(
-                        "express/waybill_import.html", companies=companies
+                        "express/waybill_import.html",
+                        companies=companies,
+                        import_mode_hint=mode_hint,
+                        result=None,
                     )
                 if step < 1:
                     flash("单号间隔须为正整数。", "danger")
                     return render_template(
-                        "express/waybill_import.html", companies=companies
+                        "express/waybill_import.html",
+                        companies=companies,
+                        import_mode_hint=mode_hint,
+                        result=None,
                     )
-            if not ec_id:
-                flash("请选择快递公司。", "danger")
-                return render_template(
-                    "express/waybill_import.html", companies=companies
-                )
-            ec = ExpressCompany.query.get(ec_id)
-            if not ec or ec.code == "LEGACY":
-                flash("无效的快递公司。", "danger")
-                return render_template(
-                    "express/waybill_import.html", companies=companies
-                )
+            start = (request.form.get("waybill_start") or "").strip()
+            end = (request.form.get("waybill_end") or "").strip()
             try:
                 numbers = expand_waybill_range(start, end, step)
             except ValueError as e:
                 flash(str(e), "danger")
                 return render_template(
-                    "express/waybill_import.html", companies=companies
+                    "express/waybill_import.html",
+                    companies=companies,
+                    import_mode_hint=mode_hint,
+                    result=None,
                 )
             inserted = 0
             skipped = 0
+            invalid_prefix = 0
+            invalid_samples: list[str] = []
             for no in numbers:
-                exists = (
-                    db.session.query(ExpressWaybill.id)
-                    .filter_by(express_company_id=ec_id, waybill_no=no)
-                    .first()
-                )
-                if exists:
+                res, _msg = apply_waybill_to_pool(ec_id, ec.code, no)
+                if res == "inserted":
+                    inserted += 1
+                elif res == "skipped":
                     skipped += 1
-                    continue
-                db.session.add(
-                    ExpressWaybill(
-                        express_company_id=ec_id,
-                        waybill_no=no,
-                        status="available",
-                    )
+                else:
+                    invalid_prefix += 1
+                    if len(invalid_samples) < _INVALID_SAMPLES_MAX:
+                        invalid_samples.append(no)
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                flash("保存失败，请重试。", "danger")
+                return render_template(
+                    "express/waybill_import.html",
+                    companies=companies,
+                    import_mode_hint=mode_hint,
+                    result=None,
                 )
-                inserted += 1
-            db.session.commit()
+            if invalid_prefix:
+                flash(
+                    f"录入结束：新增 {inserted} 条，跳过（已存在）{skipped} 条，"
+                    f"短码不符跳过 {invalid_prefix} 条。",
+                    "warning",
+                )
+                return render_template(
+                    "express/waybill_import.html",
+                    companies=companies,
+                    import_mode_hint="range",
+                    result={
+                        "inserted": inserted,
+                        "skipped": skipped,
+                        "errors": [],
+                        "invalid_prefix": invalid_prefix,
+                        "invalid_samples": invalid_samples,
+                    },
+                )
             flash(
                 f"录入完成：新增 {inserted} 条，跳过（已存在）{skipped} 条。",
                 "success",
             )
             return redirect(url_for("main.express_waybill_import"))
 
-        return render_template("express/waybill_import.html", companies=companies)
+        return render_template(
+            "express/waybill_import.html",
+            companies=companies,
+            import_mode_hint=None,
+            result=None,
+        )

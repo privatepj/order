@@ -27,70 +27,29 @@
                         <a class="nav-link{% if ep == 'main.wait_role' %} active{% endif %}" href="{{ url_for('main.wait_role') }}"{% if ep == 'main.wait_role' %} aria-current="page"{% endif %}>等待分配角色</a>
                     </li>
                     {% else %}
-                    {% if user_can_menu('order') %}
+                    {% for node in nav_tree %}
+                    {% if node.endpoint and not node.children %}
                     <li class="nav-item">
-                        <a class="nav-link{% if ep.startswith('main.order_') %} active{% endif %}" href="{{ url_for('main.order_list') }}"{% if ep.startswith('main.order_') %} aria-current="page"{% endif %}>订单</a>
+                        <a class="nav-link{% if ep == node.endpoint %} active{% endif %}" href="{{ url_for(node.endpoint) }}"{% if ep == node.endpoint %} aria-current="page"{% endif %}>{{ node.title }}</a>
                     </li>
-                    {% endif %}
-                    {% if user_can_menu('delivery') or user_can_menu('express') or user_can_menu('inventory') %}
+                    {% elif node.children %}
+                    {% set dd_active = namespace(found=false) %}
+                    {% for ch in node.children %}
+                        {% if ch.endpoint == ep %}{% set dd_active.found = true %}{% endif %}
+                    {% endfor %}
                     <li class="nav-item dropdown nav-dropdown-hover">
-                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownWarehouse" role="button" data-bs-toggle="dropdown" aria-expanded="false">仓管</a>
-                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownWarehouse">
-                            {% if user_can_menu('delivery') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.delivery_') %} active{% endif %}" href="{{ url_for('main.delivery_list') }}">送货</a></li>
-                            {% endif %}
-                            {% if user_can_menu('express') %}
-                            <li><a class="dropdown-item{% if 'express_company' in ep or 'express_waybill' in ep %} active{% endif %}" href="{{ url_for('main.express_company_list') }}">快递</a></li>
-                            {% endif %}
-                            {% if user_can_menu('inventory') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.inventory') %} active{% endif %}" href="{{ url_for('main.inventory_list') }}">库存录入</a></li>
-                            {% endif %}
-                        </ul>
-                    </li>
-                    {% endif %}
-                    {% if user_can_menu('customer') or user_can_menu('product') or user_can_menu('customer_product') or user_can_menu('company') or user_can_menu('user_mgmt') %}
-                    <li class="nav-item dropdown nav-dropdown-hover">
-                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownBase" role="button" data-bs-toggle="dropdown" aria-expanded="false">基础数据</a>
-                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownBase">
-                            {% if user_can_menu('customer') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.customer_') and 'customer_product' not in ep %} active{% endif %}" href="{{ url_for('main.customer_list') }}">客户</a></li>
-                            {% endif %}
-                            {% if user_can_menu('product') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.product_') %} active{% endif %}" href="{{ url_for('main.product_list') }}">产品</a></li>
-                            {% endif %}
-                            {% if user_can_menu('customer_product') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.customer_product') %} active{% endif %}" href="{{ url_for('main.customer_product_list') }}">客户产品</a></li>
-                            {% endif %}
-                            {% if user_can_menu('company') or user_can_menu('express') or user_can_menu('user_mgmt') %}
+                        <a class="nav-link dropdown-toggle{% if dd_active.found %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">{{ node.title }}</a>
+                        <ul class="dropdown-menu app-dropdown-menu">
+                            {% for ch in node.children %}
+                            {% if node.code == 'nav_base' and ch.code == 'company' and not loop.first %}
                             <li><hr class="dropdown-divider"></li>
                             {% endif %}
-                            {% if user_can_menu('company') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.company_') %} active{% endif %}" href="{{ url_for('main.company_list') }}">公司主体</a></li>
-                            {% endif %}
-                            {% if user_can_menu('user_mgmt') %}
-                            <li><a class="dropdown-item{% if ep.startswith('main.user_') %} active{% endif %}" href="{{ url_for('main.user_list') }}">用户管理</a></li>
-                            <li><a class="dropdown-item{% if ep.startswith('main.role_') %} active{% endif %}" href="{{ url_for('main.role_list') }}">角色管理</a></li>
-                            {% endif %}
+                            <li><a class="dropdown-item{% if ep == ch.endpoint %} active{% endif %}" href="{{ url_for(ch.endpoint) }}">{{ ch.title }}</a></li>
+                            {% endfor %}
                         </ul>
                     </li>
                     {% endif %}
-                    {% if user_can_menu('reconciliation') %}
-                    <li class="nav-item dropdown nav-dropdown-hover">
-                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownFinance" role="button" data-bs-toggle="dropdown" aria-expanded="false">财务</a>
-                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownFinance">
-                            <li><a class="dropdown-item{% if 'reconciliation' in ep %} active{% endif %}" href="{{ url_for('main.reconciliation_export') }}">对账导出</a></li>
-                        </ul>
-                    </li>
-                    {% endif %}
-                    {% if user_can_menu('report_export') %}
-                    <li class="nav-item dropdown nav-dropdown-hover">
-                        <a class="nav-link dropdown-toggle" href="#" id="navDropdownReportExport" role="button" data-bs-toggle="dropdown" aria-expanded="false">报表导出</a>
-                        <ul class="dropdown-menu app-dropdown-menu" aria-labelledby="navDropdownReportExport">
-                            <li><a class="dropdown-item{% if ep == 'main.report_export_delivery_notes' %} active{% endif %}" href="{{ url_for('main.report_export_delivery_notes') }}">导出送货单 Excel</a></li>
-                            <li><a class="dropdown-item{% if ep == 'main.report_export_delivery_records' %} active{% endif %}" href="{{ url_for('main.report_export_delivery_records') }}">导出送货记录 Excel</a></li>
-                        </ul>
-                    </li>
-                    {% endif %}
+                    {% endfor %}
                     {% endif %}
                     {% endif %}
                 </ul>

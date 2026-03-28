@@ -3,7 +3,7 @@ from flask_login import login_required
 
 from app import db
 from app.models import User, Role
-from app.auth.decorators import menu_required
+from app.auth.decorators import capability_required, menu_required
 
 
 def register_user_routes(bp):
@@ -17,6 +17,7 @@ def register_user_routes(bp):
     @bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("user_mgmt")
+    @capability_required("user_mgmt.action.edit")
     def user_edit(user_id):
         user = User.query.get_or_404(user_id)
         roles = Role.query.order_by(Role.code).all()

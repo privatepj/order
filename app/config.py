@@ -20,3 +20,8 @@ class Config:
 
     # OpenClaw / AI 专用 API 鉴权（可选；不配置则 /api/openclaw 返回 503）
     OPENCLAW_API_KEY = os.environ.get("OPENCLAW_API_KEY") or os.environ.get("AI_API_KEY")
+
+    # 送货单标记已发时自动出库写入的默认仓储区（必填方可自动出库）
+    INVENTORY_DEFAULT_STORAGE_AREA = (
+        os.environ.get("INVENTORY_DEFAULT_STORAGE_AREA") or ""
+    ).strip()

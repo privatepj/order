@@ -1,11 +1,13 @@
 from datetime import date
 from decimal import Decimal
 
-from flask import render_template, request, redirect, url_for, flash, jsonify, send_file
-from flask_login import login_required
+from flask import render_template, request, redirect, url_for, flash, jsonify, send_file, abort
+from flask_login import current_user, login_required
 
-from app.auth.decorators import menu_required
+from app.auth.capabilities import current_user_can_cap, delivery_list_read_filters
+from app.auth.decorators import capability_required, menu_required
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app import db
@@ -33,6 +35,7 @@ from app.utils.delivery_records_excel import build_delivery_records_workbook
 from app.utils.payment_type import PAYMENT_TYPE_LABELS, VALID_PAYMENT_TYPES
 from app.services.delivery_svc import create_delivery_from_data
 from app.services.order_svc import recompute_orders_status_for_delivery
+from app.services import inventory_svc
 
 
 def _express_companies_for_delivery():
@@ -111,19 +114,30 @@ def _delivery_form_ctx(pending_items=None):
     }
 
 
+def _delivery_list_redirect_from_form():
+    kwargs = {}
+    cid = request.form.get("ret_customer_id", type=int)
+    if cid:
+        kwargs["customer_id"] = cid
+    st = (request.form.get("ret_status") or "").strip()
+    if st:
+        kwargs["status"] = st
+    kw = (request.form.get("ret_keyword") or "").strip()
+    if kw:
+        kwargs["keyword"] = kw
+    pg = request.form.get("ret_page", type=int)
+    if pg and pg > 1:
+        kwargs["page"] = pg
+    return redirect(url_for("main.delivery_list", **kwargs))
+
+
 def register_delivery_routes(bp):
     @bp.route("/deliveries")
     @login_required
     @menu_required("delivery")
     def delivery_list():
-        page = request.args.get("page", 1, type=int)
-        customer_id = request.args.get("customer_id", type=int)
-        status = (request.args.get("status") or "").strip()
-        keyword = (request.args.get("keyword") or "").strip()
-        q = Delivery.query.options(
-            joinedload(Delivery.customer).joinedload(Customer.company),
-            joinedload(Delivery.express_company),
-        )
+        page, customer_id, status, keyword = delivery_list_read_filters()
+        q = Delivery.query.options(joinedload(Delivery.express_company))
         if customer_id:
             q = q.filter(Delivery.customer_id == customer_id)
         if status:
@@ -150,12 +164,10 @@ def register_delivery_routes(bp):
         q = q.order_by(Delivery.id.desc())
         pagination = q.paginate(page=page, per_page=20)
         customers = Customer.query.order_by(Customer.customer_code).all()
-        companies = Company.query.order_by(Company.name).all()
         return render_template(
             "delivery/list.html",
             pagination=pagination,
             customers=customers,
-            companies=companies,
             customer_id=customer_id,
             status=status,
             keyword=keyword,
@@ -163,9 +175,43 @@ def register_delivery_routes(bp):
             export_today=date.today().isoformat(),
         )
 
+    @bp.route("/deliveries/<int:delivery_id>/update-delivery-no", methods=["POST"])
+    @login_required
+    @menu_required("delivery")
+    @capability_required("delivery.action.edit_delivery_no")
+    def delivery_update_delivery_no(delivery_id):
+        delivery = Delivery.query.get_or_404(delivery_id)
+        new_no = (request.form.get("delivery_no") or "").strip()
+        if delivery.status != "created":
+            flash("仅待发状态可修改送货单号。", "warning")
+            return _delivery_list_redirect_from_form()
+        if not new_no:
+            flash("送货单号不能为空。", "danger")
+            return _delivery_list_redirect_from_form()
+        if new_no == (delivery.delivery_no or "").strip():
+            flash("送货单号未变更。", "info")
+            return _delivery_list_redirect_from_form()
+        if (
+            Delivery.query.filter(
+                Delivery.delivery_no == new_no, Delivery.id != delivery.id
+            ).first()
+        ):
+            flash("该送货单号已被使用，请换其他单号。", "danger")
+            return _delivery_list_redirect_from_form()
+        delivery.delivery_no = new_no
+        db.session.add(delivery)
+        try:
+            db.session.commit()
+            flash("送货单号已更新。", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("送货单号冲突，请重试。", "danger")
+        return _delivery_list_redirect_from_form()
+
     @bp.route("/report-export/delivery-notes", methods=["GET"])
     @login_required
-    @menu_required("report_export")
+    @menu_required("report_notes")
+    @capability_required("report_notes.page.view")
     def report_export_delivery_notes():
         customers = Customer.query.order_by(Customer.customer_code).all()
         companies = Company.query.order_by(Company.name).all()
@@ -179,7 +225,8 @@ def register_delivery_routes(bp):
 
     @bp.route("/report-export/delivery-records", methods=["GET"])
     @login_required
-    @menu_required("report_export")
+    @menu_required("report_records")
+    @capability_required("report_records.page.view")
     def report_export_delivery_records():
         customers = Customer.query.order_by(Customer.customer_code).all()
         companies = Company.query.order_by(Company.name).all()
@@ -193,7 +240,8 @@ def register_delivery_routes(bp):
 
     @bp.route("/deliveries/export-delivery-notes")
     @login_required
-    @menu_required("report_export")
+    @menu_required("report_notes")
+    @capability_required("report_notes.export.run")
     def delivery_export_notes():
         date_from_s = (request.args.get("delivery_date_from") or "").strip()
         date_to_s = (request.args.get("delivery_date_to") or "").strip()
@@ -254,7 +302,8 @@ def register_delivery_routes(bp):
 
     @bp.route("/deliveries/export-delivery-records")
     @login_required
-    @menu_required("report_export")
+    @menu_required("report_records")
+    @capability_required("report_records.export.run")
     def delivery_export_records():
         date_from_s = (request.args.get("delivery_date_from") or "").strip()
         date_to_s = (request.args.get("delivery_date_to") or "").strip()
@@ -298,6 +347,7 @@ def register_delivery_routes(bp):
     @bp.route("/deliveries/new", methods=["GET", "POST"])
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.create")
     def delivery_new():
         if request.method == "POST":
             return _delivery_save()
@@ -307,6 +357,8 @@ def register_delivery_routes(bp):
     @login_required
     @menu_required("delivery")
     def delivery_customers_search():
+        if not current_user_can_cap("delivery.api.customers_search"):
+            abort(403)
         qstr = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", 50, type=int)
         limit = max(1, min(limit, 100))
@@ -337,6 +389,7 @@ def register_delivery_routes(bp):
     @bp.route("/deliveries/<int:delivery_id>")
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.detail")
     def delivery_detail(delivery_id):
         delivery = Delivery.query.options(
             joinedload(Delivery.express_company)
@@ -346,6 +399,7 @@ def register_delivery_routes(bp):
     @bp.route("/deliveries/print")
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.print")
     def delivery_print():
         delivery_id = request.args.get("delivery_id", type=int)
         if not delivery_id:
@@ -430,6 +484,7 @@ def register_delivery_routes(bp):
     @bp.route("/deliveries/<int:delivery_id>/delete", methods=["POST"])
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.delete")
     def delivery_delete(delivery_id):
         delivery = Delivery.query.get_or_404(delivery_id)
         flash("删除操作已禁用。", "warning")
@@ -438,6 +493,7 @@ def register_delivery_routes(bp):
     @bp.route("/deliveries/<int:delivery_id>/clear-waybill", methods=["POST"])
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.clear_waybill")
     def delivery_clear_waybill(delivery_id):
         delivery = Delivery.query.get_or_404(delivery_id)
         flash("清空快递单号操作已禁用；如需释放快递单号，请将该单标记为“失效”。", "warning")
@@ -446,36 +502,58 @@ def register_delivery_routes(bp):
     @bp.route("/deliveries/<int:delivery_id>/mark-shipped", methods=["POST"])
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.mark_shipped")
     def delivery_mark_shipped(delivery_id):
         delivery = Delivery.query.get_or_404(delivery_id)
         if delivery.status != "created":
             flash("该送货单不是待发状态。", "warning")
             return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
-        delivery.status = "shipped"
-        db.session.add(delivery)
-        recompute_orders_status_for_delivery(delivery.id)
-        db.session.commit()
-        flash("已标记为已发。", "success")
+        lines, inv_err = inventory_svc.delivery_lines_with_products(delivery_id)
+        if inv_err:
+            flash(inv_err, "danger")
+            return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+        area = inventory_svc.default_storage_area_for_delivery()
+        if not area:
+            flash(
+                "无法自动出库：请在环境变量 INVENTORY_DEFAULT_STORAGE_AREA 中配置默认仓储区。",
+                "danger",
+            )
+            return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+        try:
+            delivery.status = "shipped"
+            db.session.add(delivery)
+            inventory_svc.create_delivery_outbound_movements(
+                delivery, current_user.id, area, lines
+            )
+            recompute_orders_status_for_delivery(delivery.id)
+            db.session.commit()
+            flash("已标记为已发，并已生成出库流水。", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("出库记录写入失败（可能已存在），请刷新后重试。", "danger")
         return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
 
     @bp.route("/deliveries/<int:delivery_id>/mark-created", methods=["POST"])
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.mark_created")
     def delivery_mark_created(delivery_id):
         delivery = Delivery.query.get_or_404(delivery_id)
         if delivery.status != "shipped":
             flash("仅已发状态允许回退。", "warning")
             return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+        inventory_svc.delete_delivery_sourced_movements(delivery.id)
         delivery.status = "created"
         db.session.add(delivery)
         recompute_orders_status_for_delivery(delivery.id)
         db.session.commit()
-        flash("已回退为待发。", "success")
+        flash("已回退为待发，并已删除对应自动出库流水。", "success")
         return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
 
     @bp.route("/deliveries/<int:delivery_id>/mark-expired", methods=["POST"])
     @login_required
     @menu_required("delivery")
+    @capability_required("delivery.action.mark_expired")
     def delivery_mark_expired(delivery_id):
         delivery = Delivery.query.get_or_404(delivery_id)
 
@@ -484,6 +562,9 @@ def register_delivery_routes(bp):
             return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
 
         was_created = delivery.status == "created"
+        was_shipped = delivery.status == "shipped"
+        if was_shipped:
+            inventory_svc.delete_delivery_sourced_movements(delivery.id)
         delivery.status = "expired"
 
         # 仅在从“待发(created)”进入“失效(expired)”时释放占用的快递单号池。
@@ -507,6 +588,8 @@ def register_delivery_routes(bp):
     @login_required
     @menu_required("delivery")
     def delivery_pending_items():
+        if not current_user_can_cap("delivery.api.pending_items"):
+            abort(403)
         customer_id = request.args.get("customer_id", type=int)
         if not customer_id:
             return jsonify({"items": []})
@@ -532,6 +615,8 @@ def register_delivery_routes(bp):
     @login_required
     @menu_required("delivery")
     def delivery_next_waybill():
+        if not current_user_can_cap("delivery.api.next_waybill"):
+            abort(403)
         ec_id = request.args.get("express_company_id", type=int)
         if not ec_id:
             return jsonify({"waybill_no": None, "message": "请选择快递公司"})
@@ -543,12 +628,13 @@ def register_delivery_routes(bp):
 
     def _delivery_save():
         customer_id = request.form.get("customer_id", type=int)
+        self_delivery = request.form.get("self_delivery", "0").strip() == "1"
         express_company_id = request.form.get("express_company_id", type=int)
         if not customer_id:
             flash("请选择客户。", "danger")
             return render_template("delivery/form.html", **_delivery_form_ctx())
-        if not express_company_id:
-            flash("请选择快递公司。", "danger")
+        if not self_delivery and not express_company_id:
+            flash("请选择快递公司，或改为「自配送」。", "danger")
             ctx = _delivery_form_ctx()
             ctx["pending_items"] = _pending_order_items(customer_id)
             return render_template("delivery/form.html", **ctx)
@@ -569,10 +655,12 @@ def register_delivery_routes(bp):
                 lines.append({"order_item_id": oi_id, "quantity": qty})
         data = {
             "customer_id": customer_id,
-            "express_company_id": express_company_id if express_company_id else None,
+            "self_delivery": self_delivery,
+            "express_company_id": None if self_delivery else express_company_id,
+            "waybill_no": (request.form.get("waybill_no") or "").strip(),
             "delivery_date": request.form.get("delivery_date"),
-            "driver": (request.form.get("driver") or "").strip() or None,
-            "plate_no": (request.form.get("plate_no") or "").strip() or None,
+            "driver": None,
+            "plate_no": None,
             "remark": (request.form.get("remark") or "").strip() or None,
             "lines": lines,
         }

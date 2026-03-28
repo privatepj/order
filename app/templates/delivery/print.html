@@ -50,7 +50,7 @@
             <div class="text-right">单号：{{ delivery.delivery_no or '' }}</div>
         </div>
         <div class="info-row">
-            <div>快递单号：{{ delivery.waybill_no or '送货' }}</div>
+            <div>快递单号：{% if delivery.express_company_id %}{{ delivery.waybill_no or '-' }}{% else %}自配送{% endif %}</div>
             <div class="text-right">日期：{{ delivery.delivery_date.strftime('%Y%m%d') if delivery.delivery_date else '' }}</div>
         </div>
 

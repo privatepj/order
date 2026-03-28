@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}库存查询 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">库存查询</h2>
+<p class="text-muted small mb-3">
+    结存 = 期初 + 累计入库 − 累计出库。请先维护
+    {% if user_can_cap('inventory_ops.opening.list') %}
+    <a href="{{ url_for('main.inventory_opening_list') }}">期初结存</a>。
+    {% else %}
+    期初结存。
+    {% endif %}
+</p>
+<form method="get" class="row g-2 align-items-end mb-4">
+    {% if user_can_cap('inventory_query.filter.category') %}
+    <div class="col-md-2">
+        <label class="form-label">类别</label>
+        <select name="category" class="form-select">
+            <option value="" {{ 'selected' if not category else '' }}>全部</option>
+            <option value="finished" {{ 'selected' if category == 'finished' else '' }}>成品</option>
+            <option value="semi" {{ 'selected' if category == 'semi' else '' }}>半成品</option>
+        </select>
+    </div>
+    {% endif %}
+    {% if user_can_cap('inventory_query.filter.spec') %}
+    <div class="col-md-2">
+        <label class="form-label">规格</label>
+        <input type="text" name="spec" class="form-control" value="{{ spec_kw }}" placeholder="模糊">
+    </div>
+    {% endif %}
+    {% if user_can_cap('inventory_query.filter.name_spec') %}
+    <div class="col-md-3">
+        <label class="form-label">品名/规格/编号</label>
+        <input type="text" name="name_spec" class="form-control" value="{{ name_spec_kw }}" placeholder="模糊">
+    </div>
+    {% endif %}
+    {% if user_can_cap('inventory_query.filter.storage_area') %}
+    <div class="col-md-2">
+        <label class="form-label">仓储区</label>
+        <input type="text" name="storage_area" class="form-control" value="{{ storage_area }}" placeholder="模糊">
+    </div>
+    {% endif %}
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-primary">查询</button>
+        <a href="{{ url_for('main.inventory_stock_query') }}" class="btn btn-outline-secondary">重置</a>
+    </div>
+</form>
+<div class="table-responsive app-table-scroll">
+<table class="table table-bordered table-sm">
+    <thead>
+        <tr>
+            <th>类别</th>
+            <th>仓储区</th>
+            <th>产品编号</th>
+            <th>品名</th>
+            <th>规格</th>
+            <th class="text-end">期初</th>
+            <th class="text-end">入库</th>
+            <th class="text-end">出库</th>
+            <th class="text-end">结存</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{% if r.category == 'finished' %}成品{% elif r.category == 'semi' %}半成品{% else %}{{ r.category }}{% endif %}</td>
+            <td>{{ r.storage_area or '-' }}</td>
+            <td>{{ r.product_code or '-' }}</td>
+            <td>{{ r.product_name or '-' }}</td>
+            <td>{{ r.product_spec or '-' }}</td>
+            <td class="text-end">{{ r.opening_qty }}</td>
+            <td class="text-end">{{ r.qty_in }}</td>
+            <td class="text-end">{{ r.qty_out }}</td>
+            <td class="text-end fw-semibold">{{ r.closing_qty }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">无数据（无期初且无流水时不会出现在此表）</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if total_pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if page > 1 %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_stock_query', page=page-1, category=category, spec=spec_kw, name_spec=name_spec_kw, storage_area=storage_area) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ page }} / {{ total_pages }} 页（共 {{ total }} 条）</span></li>
+        {% if page < total_pages %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_stock_query', page=page+1, category=category, spec=spec_kw, name_spec=name_spec_kw, storage_area=storage_area) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

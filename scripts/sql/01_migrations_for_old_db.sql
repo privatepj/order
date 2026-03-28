@@ -206,4 +206,100 @@ CREATE TABLE IF NOT EXISTS `inventory_daily_line` (
 UPDATE `role` SET `allowed_menu_keys` = CAST('["order","delivery","express","inventory","customer","product","customer_product","reconciliation"]' AS JSON)
 WHERE `code` = 'warehouse';
 
+-- ========== 13. 库存期初与进出明细 ==========
+CREATE TABLE IF NOT EXISTS `inventory_opening_balance` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(16) NOT NULL COMMENT 'finished=成品 semi=半成品',
+  `product_id` int unsigned NOT NULL DEFAULT 0,
+  `material_id` int unsigned NOT NULL DEFAULT 0,
+  `storage_area` varchar(32) NOT NULL DEFAULT '' COMMENT '仓储区',
+  `opening_qty` decimal(18,4) NOT NULL DEFAULT 0,
+  `unit` varchar(16) DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_inv_opening_bucket` (`category`,`product_id`,`material_id`,`storage_area`),
+  KEY `idx_inv_opening_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存期初结存';
+
+CREATE TABLE IF NOT EXISTS `inventory_movement` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(16) NOT NULL,
+  `direction` varchar(8) NOT NULL COMMENT 'in=入库 out=出库',
+  `product_id` int unsigned NOT NULL DEFAULT 0,
+  `material_id` int unsigned NOT NULL DEFAULT 0,
+  `storage_area` varchar(32) NOT NULL DEFAULT '',
+  `quantity` decimal(18,4) NOT NULL,
+  `unit` varchar(16) DEFAULT NULL,
+  `biz_date` date NOT NULL,
+  `source_type` varchar(16) NOT NULL DEFAULT 'manual',
+  `source_delivery_id` int unsigned DEFAULT NULL,
+  `source_delivery_item_id` int unsigned DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_inv_mov_delivery_item` (`source_delivery_item_id`),
+  KEY `idx_inv_mov_delivery` (`source_delivery_id`),
+  KEY `idx_inv_mov_product_area` (`product_id`,`storage_area`),
+  KEY `idx_inv_mov_biz_date` (`biz_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存进出明细';
+
+-- ========== 角色细项能力（按钮、筛选项）==========
+ALTER TABLE `role`
+  ADD COLUMN `allowed_capability_keys` json DEFAULT NULL COMMENT '细项能力 key；NULL/[] 表示在已选菜单内默认全开' AFTER `allowed_menu_keys`;
+
+-- ========== 导航与 RBAC（菜单/能力库表化）==========
+-- 亦可单独执行：run_15_nav_rbac_schema.sql、run_16_seed_nav_capability.sql、run_17_migrate_role_json_to_nav_cap.sql
+
+CREATE TABLE IF NOT EXISTS `sys_nav_item` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `parent_id` int unsigned DEFAULT NULL,
+  `code` varchar(64) NOT NULL,
+  `title` varchar(128) NOT NULL,
+  `endpoint` varchar(128) DEFAULT NULL,
+  `sort_order` int NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `admin_only` tinyint(1) NOT NULL DEFAULT 0,
+  `is_assignable` tinyint(1) NOT NULL DEFAULT 1,
+  `landing_priority` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_nav_code` (`code`),
+  KEY `idx_nav_parent` (`parent_id`),
+  CONSTRAINT `fk_nav_parent` FOREIGN KEY (`parent_id`) REFERENCES `sys_nav_item` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='导航菜单项';
+
+CREATE TABLE IF NOT EXISTS `sys_capability` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `code` varchar(128) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `nav_item_code` varchar(64) NOT NULL,
+  `group_label` varchar(128) NOT NULL DEFAULT '',
+  `sort_order` int NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_cap_code` (`code`),
+  KEY `idx_cap_nav` (`nav_item_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='细项能力';
+
+CREATE TABLE IF NOT EXISTS `role_allowed_nav` (
+  `role_id` int unsigned NOT NULL,
+  `nav_code` varchar(64) NOT NULL,
+  PRIMARY KEY (`role_id`, `nav_code`),
+  KEY `idx_ran_role` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色可访问菜单';
+
+CREATE TABLE IF NOT EXISTS `role_allowed_capability` (
+  `role_id` int unsigned NOT NULL,
+  `cap_code` varchar(128) NOT NULL,
+  PRIMARY KEY (`role_id`, `cap_code`),
+  KEY `idx_rac_role` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色显式细项能力';
+
+-- ========== 送货单：自配送时 express_company 可空 ==========
+-- 亦可单独执行：run_19_delivery_express_nullable.sql
+ALTER TABLE `delivery`
+  MODIFY COLUMN `express_company_id` int unsigned DEFAULT NULL COMMENT '快递公司；NULL 表示自配送';
+
 SET FOREIGN_KEY_CHECKS = 1;

@@ -3,8 +3,12 @@
 {% block content %}
 <h2 class="mb-4">快递公司</h2>
 <p>
+    {% if user_can_cap('express.action.company_create') %}
     <a href="{{ url_for('main.express_company_new') }}" class="btn btn-primary btn-sm">新增快递公司</a>
+    {% endif %}
+    {% if user_can_cap('express.action.waybill_import') %}
     <a href="{{ url_for('main.express_waybill_import') }}" class="btn btn-success btn-sm">批量录入单号</a>
+    {% endif %}
 </p>
 <div class="table-responsive">
 <table class="table table-striped">
@@ -26,7 +30,11 @@
             <td>{% if c.is_active %}是{% else %}否{% endif %}</td>
             <td>{{ stats[c.id].available }}</td>
             <td>{{ stats[c.id].used }}</td>
-            <td><a href="{{ url_for('main.express_company_edit', cid=c.id) }}" class="btn btn-sm btn-outline-primary">编辑</a></td>
+            <td>
+                {% if user_can_cap('express.action.company_edit') %}
+                <a href="{{ url_for('main.express_company_edit', cid=c.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+            </td>
         </tr>
         {% else %}
         <tr><td colspan="6">暂无数据</td></tr>

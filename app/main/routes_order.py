@@ -1,10 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
-from flask import render_template, request, redirect, url_for, flash, jsonify
+from flask import render_template, request, redirect, url_for, flash, jsonify, abort
 from flask_login import login_required
 
-from app.auth.decorators import menu_required
+from app.auth.capabilities import current_user_can_cap, order_list_read_filters
+from app.auth.decorators import capability_required, menu_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -56,11 +57,7 @@ def register_order_routes(bp):
     @login_required
     @menu_required("order")
     def order_list():
-        page = request.args.get("page", 1, type=int)
-        customer_id = request.args.get("customer_id", type=int)
-        status = request.args.get("status", "").strip()
-        payment_type = request.args.get("payment_type", "").strip()
-        keyword = (request.args.get("keyword") or "").strip()
+        page, customer_id, status, payment_type, keyword = order_list_read_filters()
         q = SalesOrder.query.options(
             joinedload(SalesOrder.customer).joinedload(Customer.company)
         )
@@ -95,12 +92,12 @@ def register_order_routes(bp):
             payment_type=payment_type,
             payment_type_labels=PAYMENT_TYPE_LABELS,
             keyword=keyword,
-            is_admin=is_admin(),
         )
 
     @bp.route("/orders/new", methods=["GET", "POST"])
     @login_required
     @menu_required("order")
+    @capability_required("order.action.create")
     def order_new():
         if request.method == "POST":
             return _order_save(None)
@@ -168,10 +165,8 @@ def register_order_routes(bp):
     @bp.route("/orders/<int:order_id>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("order")
+    @capability_required("order.action.edit")
     def order_edit(order_id):
-        if not is_admin():
-            flash("仅管理员可编辑订单。", "danger")
-            return redirect(url_for("main.order_list"))
         order = (
             SalesOrder.query.options(
                 joinedload(SalesOrder.items).joinedload(OrderItem.customer_product)
@@ -195,10 +190,8 @@ def register_order_routes(bp):
     @bp.route("/orders/<int:order_id>/delete", methods=["POST"])
     @login_required
     @menu_required("order")
+    @capability_required("order.action.delete")
     def order_delete(order_id):
-        if not is_admin():
-            flash("仅管理员可删除订单。", "danger")
-            return redirect(url_for("main.order_list"))
         order = SalesOrder.query.get_or_404(order_id)
         # 订单一旦存在送货明细（delivery_item），删除会触发 SQLAlchemy 把关联的 order_item_id 置空，
         # 但 delivery_item.order_item_id 在库是 NOT NULL，因此会产生 IntegrityError。
@@ -292,6 +285,11 @@ def register_order_routes(bp):
     @login_required
     @menu_required("order", "customer_product")
     def customer_products_for_order():
+        if not (
+            current_user_can_cap("order.action.create")
+            or current_user_can_cap("order.action.edit")
+        ):
+            abort(403)
         customer_id = request.args.get("customer_id", type=int)
         qstr = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", 50, type=int)
@@ -334,6 +332,11 @@ def register_order_routes(bp):
     @login_required
     @menu_required("order")
     def orders_customers_search():
+        if not (
+            current_user_can_cap("order.action.create")
+            or current_user_can_cap("order.action.edit")
+        ):
+            abort(403)
         qstr = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", 50, type=int)
         limit = max(1, min(limit, 100))
@@ -357,6 +360,11 @@ def register_order_routes(bp):
     @login_required
     @menu_required("order", "customer_product")
     def customer_product_one_for_order(cp_id):
+        if not (
+            current_user_can_cap("order.action.create")
+            or current_user_can_cap("order.action.edit")
+        ):
+            abort(403)
         customer_id = request.args.get("customer_id", type=int)
         if not customer_id:
             return jsonify({})

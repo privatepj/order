@@ -3,7 +3,15 @@
 {% block content %}
 <h2 class="mb-4">角色管理</h2>
 <p class="text-muted mb-3">为角色配置可访问菜单后，将该角色分配给用户即可生效。</p>
-<p><a class="btn btn-primary" href="{{ url_for('main.role_new') }}">新建角色</a></p>
+<p>
+    {% if user_can_cap('role_mgmt.action.create') %}
+    <a class="btn btn-primary" href="{{ url_for('main.role_new') }}">新建角色</a>
+    {% endif %}
+    {% if user_can_cap('role_mgmt.action.edit') %}
+    <a class="btn btn-outline-secondary ms-2" href="{{ url_for('main.sys_nav_list') }}">菜单维护</a>
+    <a class="btn btn-outline-secondary ms-1" href="{{ url_for('main.sys_cap_list') }}">能力维护</a>
+    {% endif %}
+</p>
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped">
     <thead>
@@ -25,7 +33,7 @@
                 {% if r.code == 'admin' %}
                 <span class="text-muted">全部（管理员）</span>
                 {% else %}
-                {% set keys = r.parsed_menu_key_set()|list|sort %}
+                {% set keys = r.resolved_nav_codes()|list|sort %}
                 {% if keys %}
                 <small>{% for k in keys %}{{ menu_labels.get(k, k) }}{% if not loop.last %}、{% endif %}{% endfor %}</small>
                 {% else %}
@@ -35,10 +43,14 @@
             </td>
             <td>
                 {% if r.code not in ('admin', 'pending') %}
+                {% if user_can_cap('role_mgmt.action.edit') %}
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.role_edit', role_id=r.id) }}">编辑</a>
+                {% endif %}
+                {% if user_can_cap('role_mgmt.action.delete') %}
                 <form class="d-inline" method="post" action="{{ url_for('main.role_delete', role_id=r.id) }}" onsubmit="return confirm('确定删除该角色？');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                 </form>
+                {% endif %}
                 {% else %}
                 <span class="text-muted">内置</span>
                 {% endif %}

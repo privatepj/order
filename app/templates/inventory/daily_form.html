@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ '编辑库存录入' if record else '新增库存录入' }} - 工厂订单系统{% endblock %}
+{% block title %}{{ '编辑每日库存录入' if record else '新增每日库存录入' }} - 工厂订单系统{% endblock %}
 {% block extra_css %}
 <style>
 .inv-product-cell { position: relative; min-width: 240px; max-width: 360px; }
@@ -14,7 +14,7 @@
 </style>
 {% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '编辑库存录入' if record else '新增库存录入' }}</h2>
+<h2 class="mb-4">{{ '编辑每日库存录入' if record else '新增每日库存录入' }}</h2>
 <form method="post" id="invForm" data-products-search-url="{{ url_for('main.inventory_products_search') }}">
     <div class="row mb-3">
         <div class="col-md-4">
@@ -84,7 +84,7 @@
     <button type="button" class="btn btn-outline-secondary mb-3" id="btnAddRow">增加一行</button>
     <div>
         <button type="submit" class="btn btn-primary">保存</button>
-        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">取消</a>
+        <a href="{{ url_for('main.inventory_daily_list') }}" class="btn btn-outline-secondary">取消</a>
     </div>
 </form>
 

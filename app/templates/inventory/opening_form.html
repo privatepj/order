@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑期初' if row else '新增期初' }} - 工厂订单系统{% endblock %}
+{% block extra_css %}
+<style>
+.inv-product-cell { position: relative; min-width: 280px; max-width: 420px; }
+.inv-product-dd {
+    position: fixed; z-index: 1050; max-height: 240px; overflow-y: auto;
+    background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+}
+.inv-product-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem; }
+.inv-product-dd .list-group-item:hover { background: #f8f9fa; }
+</style>
+{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑期初' if row else '新增期初' }}</h2>
+<form method="post" id="openForm" data-products-search-url="{{ url_for('main.inventory_products_search') }}">
+    {% if row %}
+    <div class="mb-3">
+        <label class="form-label">产品</label>
+        <input type="text" class="form-control" readonly
+            value="{% if row.product %}{{ row.product.product_code }} — {{ row.product.name }}{% endif %}">
+        <input type="hidden" name="product_id" value="{{ row.product_id }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">仓储区</label>
+        <input type="text" class="form-control" readonly value="{{ row.storage_area }}">
+    </div>
+    {% else %}
+    <div class="mb-3">
+        <label class="form-label">类别</label>
+        <select name="category" class="form-select">
+            <option value="finished" selected>成品</option>
+            <option value="semi" disabled>半成品（暂未开通）</option>
+        </select>
+    </div>
+    <div class="mb-3 inv-product-cell">
+        <label class="form-label">产品 <span class="text-danger">*</span></label>
+        <input type="hidden" name="product_id" id="productId" value="">
+        <input type="text" class="form-control inv-product-search" id="productSearch" autocomplete="off" placeholder="搜索选择产品…">
+        <div class="inv-product-dd list-group d-none" id="productDd"></div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">仓储区 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" name="storage_area" required maxlength="32" placeholder="如 B18">
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label class="form-label">期初数量 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" name="opening_qty" required inputmode="decimal"
+            value="{{ row.opening_qty if row else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">单位</label>
+        <input type="text" class="form-control" name="unit" maxlength="16" value="{{ row.unit if row else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <input type="text" class="form-control" name="remark" maxlength="255" value="{{ row.remark if row else '' }}">
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.inventory_opening_list') }}" class="btn btn-outline-secondary">返回</a>
+</form>
+{% endblock %}
+{% block extra_js %}
+{% if not row %}
+<script>
+(function () {
+    var searchUrl = document.getElementById('openForm').getAttribute('data-products-search-url');
+    var productSearch = document.getElementById('productSearch');
+    var productId = document.getElementById('productId');
+    var productDd = document.getElementById('productDd');
+    var debounceT;
+    function hideDd() { productDd.classList.add('d-none'); productDd.innerHTML = ''; }
+    function placeDropdown(dd, anchor) {
+        var rect = anchor.getBoundingClientRect();
+        dd.style.cssText = 'position:fixed;left:' + rect.left + 'px;width:' + rect.width + 'px;top:' + rect.bottom + 'px;max-height:240px;overflow:auto;z-index:1050';
+    }
+    function renderDd(items) {
+        productDd.innerHTML = '';
+        placeDropdown(productDd, productSearch);
+        if (!items || !items.length) {
+            productDd.innerHTML = '<div class="list-group-item text-muted">无匹配项</div>';
+            productDd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function (it) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'list-group-item list-group-item-action';
+            b.textContent = it.label;
+            b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            b.addEventListener('click', function () {
+                productId.value = String(it.id);
+                productSearch.value = it.label;
+                hideDd();
+            });
+            productDd.appendChild(b);
+        });
+        productDd.classList.remove('d-none');
+    }
+    function fetchProducts(q) {
+        fetch(searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { renderDd(d.items || []); });
+    }
+    productSearch.addEventListener('input', function () {
+        productId.value = '';
+        if (debounceT) clearTimeout(debounceT);
+        debounceT = setTimeout(function () { fetchProducts(productSearch.value.trim()); }, 250);
+    });
+    productSearch.addEventListener('focus', function () { fetchProducts(productSearch.value.trim()); });
+    document.addEventListener('click', function (e) { if (!e.target.closest('.inv-product-cell')) hideDd(); });
+    document.getElementById('openForm').addEventListener('submit', function (e) {
+        if (!productId.value) { e.preventDefault(); alert('请选择产品。'); }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

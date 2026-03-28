@@ -122,7 +122,7 @@ def create_order():
 @bp.route("/deliveries", methods=["POST"])
 @require_api_key
 def create_delivery():
-    """创建送货单。Body: customer_id, lines: [{ order_item_id, quantity }]；可选 express_company_id（缺省顺丰）, delivery_date（缺省今天）, driver, plate_no, remark；可选 order_id 指定从某单送。"""
+    """创建送货单。Body: customer_id, lines: [{ order_item_id, quantity }]；可选 self_delivery（true 自配送不占单号池）；非自配送时可选 express_company_id（缺省顺丰）, waybill_no（非空则优先占用该公司池中可用同号，否则手写保存不入池，最长 64；不传则自动占号）, delivery_date（缺省今天）, driver, plate_no, remark；可选 order_id 指定从某单送。"""
     data = request.get_json(force=True, silent=True) or {}
     delivery, err = create_delivery_from_data(data)
     if err:

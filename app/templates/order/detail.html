@@ -60,6 +60,6 @@
     </tbody>
 </table>
 </div>
-{% if is_admin %}<a href="{{ url_for('main.order_edit', order_id=order.id) }}" class="btn btn-primary">编辑</a>{% endif %}
+{% if user_can_cap('order.action.edit') %}<a href="{{ url_for('main.order_edit', order_id=order.id) }}" class="btn btn-primary">编辑</a>{% endif %}
 <a href="{{ url_for('main.order_list') }}" class="btn btn-secondary">返回列表</a>
 {% endblock %}

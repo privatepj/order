@@ -69,6 +69,30 @@ def _allocate_waybill(express_company_id: int, delivery_id: int) -> Optional[Exp
     return w
 
 
+def _allocate_waybill_by_no(
+    express_company_id: int, delivery_id: int, waybill_no: str
+) -> Optional[ExpressWaybill]:
+    no = (waybill_no or "").strip()
+    if not no:
+        return None
+    w = (
+        db.session.query(ExpressWaybill)
+        .filter(
+            ExpressWaybill.express_company_id == express_company_id,
+            ExpressWaybill.waybill_no == no,
+            ExpressWaybill.status == "available",
+        )
+        .with_for_update()
+        .first()
+    )
+    if not w:
+        return None
+    w.status = "used"
+    w.delivery_id = delivery_id
+    w.used_at = datetime.now()
+    return w
+
+
 def get_pending_order_items(customer_id: int, order_id: Optional[int] = None):
     """该客户下待发货订单行（可选按 order_id 过滤）。返回与 routes 中 _pending_order_items 一致结构。"""
     q = (
@@ -137,28 +161,48 @@ def get_default_express_company() -> Optional[ExpressCompany]:
     return ec
 
 
+def _is_self_delivery(data: dict[str, Any]) -> bool:
+    v = data.get("self_delivery")
+    if v is True:
+        return True
+    if isinstance(v, (int, float)) and int(v) == 1:
+        return True
+    if isinstance(v, str) and v.strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return False
+
+
 def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery], Optional[str]]:
     """
     根据字典数据创建送货单。
     data: customer_id, lines: [{ order_item_id, quantity }],
-          express_company_id?, delivery_date?, driver?, plate_no?, remark?
-    缺省 express_company_id 时使用默认顺丰；缺省 delivery_date 时使用今天。
+          self_delivery?（True 表示自配送，不占单号池，express_company_id 置空）,
+          express_company_id?, waybill_no?（非自配送：非空时先尝试占用池中可用同号，否则手写落库不入池）,
+          delivery_date?, driver?, plate_no?, remark?
+    非自配送且未传 express_company_id 时使用默认顺丰并占号；缺省 delivery_date 为今天。
+    非自配送时 waybill_no 为空则按 id 顺序自动占号；非空则池内可用则占号，否则仅保存单号（express_waybill_id 为空）。
     返回 (delivery, None) 成功；(None, error_message) 失败。
     """
     customer_id = data.get("customer_id")
     if not customer_id:
         return None, "请选择客户。"
 
-    express_company_id = data.get("express_company_id")
-    if not express_company_id:
-        default_ec = get_default_express_company()
-        if not default_ec:
-            return None, "未配置默认快递（顺丰），请指定 express_company_id。"
-        express_company_id = default_ec.id
+    self_delivery = _is_self_delivery(data)
+    express_company_id: Optional[int] = None
 
-    ec = ExpressCompany.query.get(express_company_id)
-    if not ec or ec.code == "LEGACY" or not ec.is_active:
-        return None, "请选择有效的快递公司。"
+    if self_delivery:
+        express_company_id = None
+    else:
+        express_company_id = data.get("express_company_id")
+        if not express_company_id:
+            default_ec = get_default_express_company()
+            if not default_ec:
+                return None, "未配置默认快递（顺丰），请指定 express_company_id。"
+            express_company_id = default_ec.id
+
+        ec = ExpressCompany.query.get(express_company_id)
+        if not ec or ec.code == "LEGACY" or not ec.is_active:
+            return None, "请选择有效的快递公司。"
 
     delivery_date_str = data.get("delivery_date")
     delivery_date = date.today()
@@ -212,13 +256,26 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
     db.session.add(delivery)
     db.session.flush()
 
-    w = _allocate_waybill(express_company_id, delivery.id)
-    if not w:
-        db.session.rollback()
-        return None, "该快递公司暂无可用单号，请先录入单号池。"
-
-    delivery.express_waybill_id = w.id
-    delivery.waybill_no = w.waybill_no
+    if not self_delivery and express_company_id is not None:
+        prefer = (data.get("waybill_no") or "").strip()
+        if prefer:
+            if len(prefer) > 64:
+                db.session.rollback()
+                return None, "快递单号不能超过 64 个字符。"
+            w = _allocate_waybill_by_no(express_company_id, delivery.id, prefer)
+            if w:
+                delivery.express_waybill_id = w.id
+                delivery.waybill_no = w.waybill_no
+            else:
+                delivery.express_waybill_id = None
+                delivery.waybill_no = prefer
+        else:
+            w = _allocate_waybill(express_company_id, delivery.id)
+            if not w:
+                db.session.rollback()
+                return None, "该快递公司暂无可用单号，请先录入单号池。"
+            delivery.express_waybill_id = w.id
+            delivery.waybill_no = w.waybill_no
 
     for i, oi_id in enumerate(order_item_ids):
         qty = quantities[i] if i < len(quantities) else Decimal(0)

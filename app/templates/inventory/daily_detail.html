@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}库存录入详情 - 工厂订单系统{% endblock %}
+{% block title %}每日库存录入详情 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">库存录入详情</h2>
+<h2 class="mb-4">每日库存录入详情</h2>
 <p class="text-muted">业务日期：{{ record.record_date.isoformat() }} · 状态：{{ '草稿' if record.status == 'draft' else '已确认' }} · 录入人：{{ creator_label }}</p>
 {% if record.remark %}
 <p>备注：{{ record.remark }}</p>
@@ -35,7 +35,9 @@
 </table>
 </div>
 <p class="mt-3">
-    <a href="{{ url_for('main.inventory_edit', record_id=record.id) }}" class="btn btn-primary">编辑</a>
-    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回列表</a>
+    {% if user_can_cap('inventory_ops.daily.edit') %}
+    <a href="{{ url_for('main.inventory_daily_edit', record_id=record.id) }}" class="btn btn-primary">编辑</a>
+    {% endif %}
+    <a href="{{ url_for('main.inventory_daily_list') }}" class="btn btn-outline-secondary">返回列表</a>
 </p>
 {% endblock %}

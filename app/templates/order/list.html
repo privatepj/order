@@ -3,6 +3,7 @@
 {% block content %}
 <h2 class="mb-4">订单列表</h2>
 <form class="mb-3 row g-2 align-items-end" method="get">
+    {% if user_can_cap('order.filter.customer') %}
     <div class="col-auto">
         <select name="customer_id" class="form-select">
             <option value="">全部客户</option>
@@ -13,6 +14,8 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
+    {% if user_can_cap('order.filter.status') %}
     <div class="col-auto">
         <select name="status" class="form-select">
             <option value="">全部状态</option>
@@ -22,6 +25,8 @@
             <option value="closed" {{ 'selected' if status == 'closed' else '' }}>完成</option>
         </select>
     </div>
+    {% endif %}
+    {% if user_can_cap('order.filter.payment_type') %}
     <div class="col-auto">
         <select name="payment_type" class="form-select">
             <option value="">全部付款类型</option>
@@ -30,14 +35,19 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
+    {% if user_can_cap('order.filter.keyword') %}
     <div class="col-md-4">
         <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="订单号、客户订单号、客户名称、备注等">
     </div>
+    {% endif %}
     <div class="col-auto">
         <button type="submit" class="btn btn-primary">筛选</button>
     </div>
 </form>
+{% if user_can_cap('order.action.create') %}
 <p><a href="{{ url_for('main.order_new') }}" class="btn btn-success">新增订单</a></p>
+{% endif %}
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped">
     <thead>
@@ -68,8 +78,10 @@
             </td>
             <td>
                 <a href="{{ url_for('main.order_detail', order_id=o.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
-                {% if is_admin %}
+                {% if user_can_cap('order.action.edit') %}
                 <a href="{{ url_for('main.order_edit', order_id=o.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('order.action.delete') %}
                 <form method="post" action="{{ url_for('main.order_delete', order_id=o.id) }}" class="d-inline" onsubmit="return confirm('确定删除该订单？');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                 </form>

@@ -7,7 +7,7 @@ from io import BytesIO
 from flask import render_template, request, redirect, url_for, send_file, flash
 from flask_login import login_required
 
-from app.auth.decorators import menu_required
+from app.auth.decorators import capability_required, menu_required
 from sqlalchemy.orm import joinedload
 
 from app.models import Customer, Company
@@ -61,6 +61,7 @@ def register_reconciliation_routes(bp):
     @bp.route("/reconciliation")
     @login_required
     @menu_required("reconciliation")
+    @capability_required("reconciliation.page.export")
     def reconciliation_export():
         customers = Customer.query.order_by(Customer.customer_code).all()
         now = date.today()
@@ -73,6 +74,7 @@ def register_reconciliation_routes(bp):
     @bp.route("/reconciliation/download")
     @login_required
     @menu_required("reconciliation")
+    @capability_required("reconciliation.action.download")
     def reconciliation_download():
         customer_id = request.args.get("customer_id", type=int)
         start_s = (request.args.get("start_date") or "").strip()

@@ -2,8 +2,24 @@
 {% block title %}批量录入快递单号 - 工厂订单系统{% endblock %}
 {% block content %}
 <h2 class="mb-4">批量录入快递单号</h2>
-<p class="text-muted">起止单号须<strong>同一前缀</strong>且<strong>数字部分等宽</strong>；从起始数字起按<strong>单号间隔</strong>递增，直到不超过结束单号（已存在则跳过）。间隔为 1 时与连续递增一致。</p>
-<form method="post">
+<p class="text-muted mb-2">所选快递公司的<strong>短码</strong>须与单号<strong>开头</strong>一致（不区分大小写）；不符的单号不会写入，其余照常录入。短码过短可能误匹配，请按实际单号前缀维护短码。</p>
+
+<form method="post" enctype="multipart/form-data" id="waybillImportForm">
+    <div class="mb-3">
+        <label class="form-label">录入方式</label>
+        <div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="import_mode" id="mode_range" value="range"
+                    {% if import_mode_hint != 'excel' %}checked{% endif %}>
+                <label class="form-check-label" for="mode_range">连续区间</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="import_mode" id="mode_excel" value="excel"
+                    {% if import_mode_hint == 'excel' %}checked{% endif %}>
+                <label class="form-check-label" for="mode_excel">Excel 导入</label>
+            </div>
+        </div>
+    </div>
     <div class="mb-3">
         <label class="form-label">快递公司 <span class="text-danger">*</span></label>
         <select name="express_company_id" class="form-select" required>
@@ -13,20 +29,93 @@
             {% endfor %}
         </select>
     </div>
-    <div class="mb-3">
-        <label class="form-label">起始单号</label>
-        <input type="text" class="form-control" name="waybill_start" required maxlength="64" placeholder="如 SF1234567890123">
+
+    <div id="block_range" class="border rounded p-3 mb-3 bg-light">
+        <p class="text-muted small mb-3">起止单号须<strong>同一前缀</strong>且<strong>数字部分等宽</strong>；从起始数字起按<strong>单号间隔</strong>递增，直到不超过结束单号（已存在则跳过）。间隔为 1 时与连续递增一致。</p>
+        <div class="mb-3">
+            <label class="form-label">起始单号</label>
+            <input type="text" class="form-control" name="waybill_start" maxlength="64" placeholder="如 SF1234567890123" data-range-field>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">结束单号</label>
+            <input type="text" class="form-control" name="waybill_end" maxlength="64" placeholder="如 SF1234567890150" data-range-field>
+        </div>
+        <div class="mb-0">
+            <label class="form-label">单号间隔</label>
+            <input type="number" class="form-control" name="waybill_step" value="1" min="1" step="1" title="正整数，例如 2 表示 SF100、SF102、…" data-range-field>
+            <div class="form-text text-muted">尾数每次增加的步长；例如起始 SF100、结束 SF108、间隔 2 → SF100、SF102、…、SF108。</div>
+        </div>
     </div>
-    <div class="mb-3">
-        <label class="form-label">结束单号</label>
-        <input type="text" class="form-control" name="waybill_end" required maxlength="64" placeholder="如 SF1234567890150">
+
+    <div id="block_excel" class="border rounded p-3 mb-3 bg-light d-none">
+        <p class="text-muted small mb-3">上传 <strong>.xlsx</strong>，<strong>第一列</strong>为快递单号，<strong>第 1 行为表头</strong>，从第 2 行起为数据；每行一条，按行校验并写入（与短码不符或超长等会跳过该行并列入下方结果）。</p>
+        <div class="mb-3">
+            <label class="form-label">选择 Excel 文件</label>
+            <input type="file" class="form-control" name="file" id="excel_file" accept=".xlsx">
+        </div>
+        <a href="{{ url_for('main.express_waybill_import_template') }}" class="btn btn-outline-primary btn-sm">下载导入模板</a>
     </div>
-    <div class="mb-3">
-        <label class="form-label">单号间隔</label>
-        <input type="number" class="form-control" name="waybill_step" value="1" min="1" step="1" required title="正整数，例如 2 表示 SF100、SF102、…">
-        <div class="form-text text-muted">尾数每次增加的步长；例如起始 SF100、结束 SF108、间隔 2 → SF100、SF102、…、SF108。</div>
-    </div>
-    <button type="submit" class="btn btn-primary">录入</button>
+
+    <button type="submit" class="btn btn-primary">提交</button>
     <a href="{{ url_for('main.express_company_list') }}" class="btn btn-secondary">返回</a>
 </form>
+
+{% if result %}
+<hr class="my-4">
+<h5 class="mb-3">本次结果</h5>
+<p class="mb-1">新增：<strong>{{ result.inserted }}</strong> 条</p>
+<p class="mb-1">跳过（已存在）：<strong>{{ result.skipped }}</strong> 条</p>
+{% if result.invalid_prefix %}
+<p class="mb-1">短码不符跳过：<strong>{{ result.invalid_prefix }}</strong> 条（以下最多展示 {{ result.invalid_samples|length }} 条示例）</p>
+{% if result.invalid_samples %}
+<ul class="small text-muted">
+    {% for s in result.invalid_samples %}
+    <li><code>{{ s }}</code></li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+{% if result.errors %}
+<div class="alert alert-warning mt-3">
+    <div class="fw-semibold mb-2">未写入行（请对照 Excel 修改后重试）</div>
+    <ul class="mb-0 small">
+        {% for e in result.errors %}
+        <li>{{ e }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+(function () {
+    var form = document.getElementById('waybillImportForm');
+    if (!form) return;
+    var rangeRadio = document.getElementById('mode_range');
+    var excelRadio = document.getElementById('mode_excel');
+    var blockRange = document.getElementById('block_range');
+    var blockExcel = document.getElementById('block_excel');
+    var excelFile = document.getElementById('excel_file');
+    var rangeFields = form.querySelectorAll('[data-range-field]');
+
+    function isRangeMode() {
+        return rangeRadio && rangeRadio.checked;
+    }
+
+    function syncMode() {
+        var range = isRangeMode();
+        blockRange.classList.toggle('d-none', !range);
+        blockExcel.classList.toggle('d-none', range);
+        rangeFields.forEach(function (el) {
+            el.required = range;
+        });
+        if (excelFile) excelFile.required = !range;
+    }
+
+    [rangeRadio, excelRadio].forEach(function (r) {
+        if (r) r.addEventListener('change', syncMode);
+    });
+    syncMode();
+})();
+</script>
 {% endblock %}

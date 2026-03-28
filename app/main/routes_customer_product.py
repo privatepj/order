@@ -1,9 +1,10 @@
 from decimal import Decimal, InvalidOperation
 
-from flask import render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import render_template, request, redirect, url_for, flash, jsonify, send_file, abort
 from flask_login import login_required
 
-from app.auth.decorators import menu_required
+from app.auth.capabilities import current_user_can_cap, customer_product_list_read_filters
+from app.auth.decorators import capability_required, menu_required
 from sqlalchemy.orm import joinedload
 
 from app import db
@@ -18,9 +19,7 @@ def register_customer_product_routes(bp):
     @login_required
     @menu_required("customer_product")
     def customer_product_list():
-        page = request.args.get("page", 1, type=int)
-        customer_id = request.args.get("customer_id", type=int)
-        keyword = (request.args.get("keyword") or "").strip()
+        page, customer_id, keyword = customer_product_list_read_filters()
         q = CustomerProduct.query.options(
             joinedload(CustomerProduct.customer).joinedload(Customer.company),
             joinedload(CustomerProduct.product),
@@ -62,6 +61,7 @@ def register_customer_product_routes(bp):
     @bp.route("/customer-products/new", methods=["GET", "POST"])
     @login_required
     @menu_required("customer_product")
+    @capability_required("customer_product.action.create")
     def customer_product_new():
         if request.method == "POST":
             return _customer_product_save(None)
@@ -78,6 +78,7 @@ def register_customer_product_routes(bp):
     @bp.route("/customer-products/<int:cp_id>/edit", methods=["GET", "POST"])
     @login_required
     @menu_required("customer_product")
+    @capability_required("customer_product.action.edit")
     def customer_product_edit(cp_id):
         cp = (
             CustomerProduct.query.options(
@@ -113,6 +114,7 @@ def register_customer_product_routes(bp):
     @bp.route("/customer-products/<int:cp_id>/delete", methods=["POST"])
     @login_required
     @menu_required("customer_product")
+    @capability_required("customer_product.action.delete")
     def customer_product_delete(cp_id):
         cp = CustomerProduct.query.get_or_404(cp_id)
         db.session.delete(cp)
@@ -123,6 +125,7 @@ def register_customer_product_routes(bp):
     @bp.route("/customer-products/export-import-template", methods=["GET"])
     @login_required
     @menu_required("customer_product")
+    @capability_required("customer_product.action.export_template")
     def export_customer_product_import_template():
         """客户产品导入模板（xlsx）：表头行+1行空白。"""
         from openpyxl import Workbook
@@ -158,6 +161,11 @@ def register_customer_product_routes(bp):
     @login_required
     @menu_required("customer_product")
     def customers_search_cp():
+        if not (
+            current_user_can_cap("customer_product.action.create")
+            or current_user_can_cap("customer_product.action.edit")
+        ):
+            abort(403)
         qstr = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", 50, type=int)
         limit = max(1, min(limit, 100))
@@ -192,6 +200,11 @@ def register_customer_product_routes(bp):
     @login_required
     @menu_required("customer_product")
     def products_search_cp():
+        if not (
+            current_user_can_cap("customer_product.action.create")
+            or current_user_can_cap("customer_product.action.edit")
+        ):
+            abort(403)
         qstr = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", 50, type=int)
         limit = max(1, min(limit, 100))
@@ -218,6 +231,7 @@ def register_customer_product_routes(bp):
     @bp.route("/customer-products/import", methods=["GET", "POST"])
     @login_required
     @menu_required("customer_product")
+    @capability_required("customer_product.action.import")
     def customer_product_import():
         if request.method == "POST":
             file = request.files.get("file")

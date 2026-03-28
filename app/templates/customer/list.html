@@ -3,12 +3,18 @@
 {% block content %}
 <h2 class="mb-4">客户列表</h2>
 <form class="mb-3 d-flex gap-2 flex-wrap" method="get">
+    {% if user_can_cap('customer.filter.keyword') %}
     <input type="text" class="form-control" style="max-width:320px" name="keyword" value="{{ keyword }}" placeholder="编码、名称、地址、联系人等模糊搜索">
+    {% endif %}
     <button type="submit" class="btn btn-primary">搜索</button>
 </form>
 <p>
+    {% if user_can_cap('customer.action.create') %}
     <a href="{{ url_for('main.customer_new') }}" class="btn btn-success me-2">新增客户</a>
+    {% endif %}
+    {% if user_can_cap('customer.action.import') %}
     <a href="{{ url_for('main.customer_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+    {% endif %}
 </p>
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped">
@@ -39,10 +45,14 @@
             <td>{{ r.tax_point if r.tax_point is not none else '-' }}</td>
             {% endif %}
             <td>
+                {% if user_can_cap('customer.action.edit') %}
                 <a href="{{ url_for('main.customer_edit', customer_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('customer.action.delete') %}
                 <form method="post" action="{{ url_for('main.customer_delete', customer_id=r.id) }}" class="d-inline" onsubmit="return confirm('确定删除该客户？');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% else %}
