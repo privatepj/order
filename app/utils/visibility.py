@@ -54,12 +54,13 @@ def customer_product_view(cp):
         return None
     admin = is_admin()
     price = cp.price
+    mat = (cp.product.product_code or "") if cp.product else ""
     return SimpleNamespace(
         id=cp.id,
         customer_id=cp.customer_id,
         product_id=cp.product_id,
         customer_material_no=cp.customer_material_no,
-        material_no=cp.material_no,
+        material_no=mat,
         unit=cp.unit,
         price=float(price) if admin and price is not None else None,
         currency=cp.currency if admin else None,
@@ -75,9 +76,9 @@ def order_item_view(item):
         return None
     admin = is_admin()
     pr, amt = item.price, item.amount
-    mat = None
-    if item.customer_product:
-        mat = item.customer_product.material_no
+    mat = ""
+    if item.customer_product and item.customer_product.product:
+        mat = item.customer_product.product.product_code or ""
     return SimpleNamespace(
         id=item.id,
         order_id=item.order_id,

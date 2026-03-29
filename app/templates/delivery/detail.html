@@ -60,12 +60,12 @@
         </tr>
     </thead>
     <tbody>
-        {% for di in delivery.items %}
+        {% for di in delivery_items %}
         <tr>
             <td>{{ di.order_item.order.order_no if di.order_item else '-' }}</td>
             <td>{{ di.product_name or '-' }}</td>
             <td>{{ di.order_item.product_spec if di.order_item else '-' }}</td>
-            <td>{{ di.customer_material_no or '-' }}</td>
+            <td>{{ line_customer_material[di.id] }}</td>
             <td>{{ di.quantity }}</td>
             <td>{{ di.unit or '-' }}</td>
         </tr>

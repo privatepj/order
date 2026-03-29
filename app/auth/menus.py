@@ -170,20 +170,24 @@ def user_menu_key_set(user):
     return role.resolved_nav_codes()
 
 
-def current_user_can_menu(menu_key: str) -> bool:
+def user_can_menu(user, menu_key: str) -> bool:
     if menu_key not in _assignable_codes():
         return False
-    if not current_user.is_authenticated:
+    if not user or not getattr(user, "is_authenticated", False):
         return False
-    code = getattr(current_user, "role_code", None)
+    code = getattr(user, "role_code", None)
     if code == "admin":
         return True
     if code == "pending":
         return False
-    allowed = user_menu_key_set(current_user)
+    allowed = user_menu_key_set(user)
     if allowed is None:
         return True
     return menu_key in allowed
+
+
+def current_user_can_menu(menu_key: str) -> bool:
+    return user_can_menu(current_user, menu_key)
 
 
 def user_has_any_menu() -> bool:

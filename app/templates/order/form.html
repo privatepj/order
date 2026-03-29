@@ -73,7 +73,7 @@
     </div>
 
     <h5 class="mt-2">订单明细</h5>
-    <p class="text-muted small mb-2">选择客户后，在「品名/规格」处输入关键字搜索并点选产品；客户料号、物料编号、单位、单价、规格由系统自动带出，仅可改数量。</p>
+    <p class="text-muted small mb-2">选择客户后，在「品名/规格」处输入关键字搜索并点选产品；客户料号、物料编号（同产品编号）、单位、单价、规格由系统自动带出，仅可改数量。</p>
     <div class="table-responsive app-table-scroll">
     <table class="table table-bordered" id="itemsTable">
         <thead>
@@ -115,7 +115,7 @@
                     {% if locked %}<input type="hidden" name="is_sample" value="{{ 1 if item.is_sample else 0 }}">{% endif %}
                 </td>
                 <td><input type="text" class="form-control form-control-sm ro-field cm-no" readonly value="{{ item.customer_material_no or '' }}"></td>
-                <td><input type="text" class="form-control form-control-sm ro-field mat-no" readonly value="{{ item.customer_product.material_no if item.customer_product else '' }}"></td>
+                <td><input type="text" class="form-control form-control-sm ro-field mat-no" readonly value="{{ item.customer_product.product.product_code if item.customer_product and item.customer_product.product else '' }}"></td>
                 <td><input type="text" class="form-control form-control-sm ro-field spec-inp" readonly value="{{ item.product_spec or '' }}"></td>
                 <td><input type="text" class="form-control form-control-sm ro-field unit-inp" readonly value="{{ item.unit or '' }}"></td>
                 <td><input type="text" class="form-control form-control-sm ro-field price-inp" readonly value="{{ item.price if item.price is not none else '' }}"></td>
@@ -252,7 +252,7 @@
         var s = tr.querySelector('.cp-search');
         if (s && !s.classList.contains('locked')) s.value = '';
         tr.querySelector('.cm-no').value = cp.customer_material_no || '';
-        tr.querySelector('.mat-no').value = cp.material_no || '';
+        tr.querySelector('.mat-no').value = cp.product_code || '';
         tr.querySelector('.spec-inp').value = cp.product_spec || '';
         tr.querySelector('.unit-inp').value = cp.unit || '';
         var pr = cp.price != null ? String(cp.price) : '';

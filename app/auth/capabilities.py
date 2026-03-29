@@ -8,7 +8,7 @@ from flask import request
 from flask_login import current_user
 
 from app.auth.capability_data import CAPABILITY_FALLBACK
-from app.auth.menus import current_user_can_menu
+from app.auth.menus import current_user_can_menu, user_can_menu
 from app.auth.rbac_cache import get_all_cap_codes, get_capability_tuples, get_nav_snapshot
 
 _ORDER_EDIT_DELETE_CAPS = frozenset({"order.action.edit", "order.action.delete"})
@@ -98,29 +98,31 @@ def user_capability_key_set(user) -> Optional[frozenset]:
     return role.resolved_capability_key_set()
 
 
-def current_user_can_cap(key: str) -> bool:
+def user_can_cap(user, key: str) -> bool:
     _, _, all_keys = _cap_maps()
     if key not in all_keys:
         return False
-    if not current_user.is_authenticated:
+    if not user or not getattr(user, "is_authenticated", False):
         return False
-    code = getattr(current_user, "role_code", None)
+    code = getattr(user, "role_code", None)
     if code == "admin":
         return True
     if code == "pending":
         return False
     _, cap_to_nav, _ = _cap_maps()
     menu = cap_to_nav.get(key)
-    if menu and not current_user_can_menu(menu):
+    if menu and not user_can_menu(user, menu):
         return False
-    allowed = user_capability_key_set(current_user)
+    allowed = user_capability_key_set(user)
     if allowed is None:
         if key in _ORDER_EDIT_DELETE_CAPS:
-            from app.utils.visibility import is_admin
-
-            return is_admin()
+            return getattr(user, "role_code", None) == "admin"
         return True
     return key in allowed
+
+
+def current_user_can_cap(key: str) -> bool:
+    return user_can_cap(current_user, key)
 
 
 def order_list_read_filters():

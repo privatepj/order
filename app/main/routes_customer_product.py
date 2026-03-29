@@ -39,7 +39,6 @@ def register_customer_product_routes(bp):
                 Product.name,
                 Product.spec,
                 CustomerProduct.customer_material_no,
-                CustomerProduct.material_no,
             )
             if cond is not None:
                 q = q.filter(cond)
@@ -134,7 +133,7 @@ def register_customer_product_routes(bp):
             "客户名称",
             "产品编号",
             "客户料号",
-            "物料编号",
+            "物料编号（自动，勿填）",
             "单位",
             "单价",
             "币种",
@@ -254,7 +253,7 @@ def register_customer_product_routes(bp):
             errors = []
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 cols = (row + (None,) * 8)[:8]
-                cust_name, prod_code, cust_mat_no, mat_no, unit, price, currency, remark = cols
+                cust_name, prod_code, cust_mat_no, _mat_no_ignored, unit, price, currency, remark = cols
                 cust_name = (cust_name or "").strip() if isinstance(cust_name, str) else (cust_name or "")
                 prod_code = (prod_code or "").strip() if isinstance(prod_code, str) else (prod_code or "")
                 if not cust_name or not prod_code:
@@ -278,7 +277,7 @@ def register_customer_product_routes(bp):
                 cp.customer_material_no = (
                     (cust_mat_no or "").strip() if isinstance(cust_mat_no, str) else cust_mat_no
                 )
-                cp.material_no = (mat_no or "").strip() if isinstance(mat_no, str) else mat_no
+                cp.material_no = product.product_code
                 cp.unit = (unit or "").strip() if isinstance(unit, str) else unit
                 if admin:
                     price_raw = (price or "").strip() if isinstance(price, str) else price
@@ -317,7 +316,8 @@ def register_customer_product_routes(bp):
         cp.customer_id = customer_id
         cp.product_id = product_id
         cp.customer_material_no = (request.form.get("customer_material_no") or "").strip() or None
-        cp.material_no = (request.form.get("material_no") or "").strip() or None
+        prod_row = db.session.get(Product, product_id)
+        cp.material_no = (prod_row.product_code or "") if prod_row else None
         cp.unit = (request.form.get("unit") or "").strip() or None
         if is_admin():
             price_raw = (request.form.get("price") or "").strip()

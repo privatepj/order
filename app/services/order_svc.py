@@ -19,7 +19,7 @@ from app.models import (
     Product,
 )
 from app.utils.billing_period import period_bounds_containing
-from app.utils.payment_type import normalize_payment_type
+from app.utils.payment_type import normalize_payment_type, payment_type_label
 
 
 def _next_order_no_for_customer(customer_id: int) -> str:
@@ -316,3 +316,84 @@ def create_order_from_data(
         db.session.rollback()
         return None, "保存失败，请重试（订单号可能冲突）。"
     return order, None
+
+
+def preview_order_create(data: dict[str, Any]) -> Tuple[Optional[str], dict[str, Any]]:
+    """
+    不写库：校验新建订单请求并返回供用户确认的摘要。
+    返回 (error_message, summary)；无错误时 error_message 为 None。
+    """
+    summary: dict[str, Any] = {}
+    customer_id = data.get("customer_id")
+    if not customer_id:
+        return "请选择客户。", summary
+
+    cust = db.session.get(Customer, customer_id)
+    if not cust:
+        return "客户不存在。", summary
+
+    summary["customer_id"] = int(customer_id)
+    summary["customer_label"] = (cust.short_code or cust.customer_code or cust.name or str(cust.id))
+    summary["order_no_note"] = "保存时由系统按经营主体与日期规则自动生成，请勿自拟。"
+
+    customer_order_no = (data.get("customer_order_no") or "").strip() or None
+    salesperson = (data.get("salesperson") or "GaoMeiHua").strip()
+    order_date_str = data.get("order_date")
+    required_date_str = data.get("required_date")
+    remark = (data.get("remark") or "").strip() or None
+    payment_type = normalize_payment_type(data.get("payment_type"))
+
+    summary["customer_order_no"] = customer_order_no
+    summary["salesperson"] = salesperson or "GaoMeiHua"
+    summary["order_date"] = order_date_str
+    summary["required_date"] = required_date_str
+    summary["remark"] = remark
+    summary["payment_type"] = payment_type
+    summary["payment_type_label"] = payment_type_label(payment_type)
+
+    items = data.get("items") or []
+    if not isinstance(items, list):
+        return "订单行格式错误。", summary
+
+    rows = []
+    for r in items:
+        if not isinstance(r, dict):
+            continue
+        try:
+            cp_id = int(r["customer_product_id"]) if r.get("customer_product_id") is not None else None
+        except (TypeError, ValueError, KeyError):
+            cp_id = None
+        try:
+            qty = Decimal(str(r.get("quantity") or 0))
+        except Exception:
+            qty = Decimal(0)
+        is_sample = bool(r.get("is_sample"))
+        if cp_id and qty > 0:
+            rows.append((cp_id, qty, is_sample))
+
+    if not rows:
+        return "请至少选择一行客户产品并填写数量。", summary
+
+    line_summaries = []
+    for cp_id, qty, is_sample in rows:
+        cp, p = _load_cp_for_order(int(customer_id), cp_id)
+        if not cp or not p:
+            return "存在无效的客户产品行，请重新选择。", summary
+        pr = cp.price
+        if is_sample:
+            pr = Decimal("0")
+        amt = (qty * pr) if pr is not None else None
+        line_summaries.append({
+            "customer_product_id": cp_id,
+            "product_code": p.product_code or "",
+            "product_name": p.name or "",
+            "product_spec": (p.spec or "")[:128],
+            "quantity": float(qty),
+            "is_sample": is_sample,
+            "unit": cp.unit or p.base_unit or "",
+            "unit_price": float(pr) if pr is not None else None,
+            "line_amount": float(amt) if amt is not None else None,
+        })
+
+    summary["items"] = line_summaries
+    return None, summary

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from app import db
 from app.models import (
@@ -15,6 +15,7 @@ from app.models import (
     Delivery,
     DeliveryItem,
     InventoryMovement,
+    InventoryMovementBatch,
     InventoryOpeningBalance,
     OrderItem,
     Product,
@@ -24,6 +25,10 @@ INV_FINISHED = "finished"
 INV_SEMI = "semi"
 SOURCE_MANUAL = "manual"
 SOURCE_DELIVERY = "delivery"
+
+BATCH_SOURCE_FORM = "form"
+BATCH_SOURCE_EXCEL = "excel"
+BATCH_SOURCE_DELIVERY = "delivery"
 
 
 def default_storage_area_for_delivery() -> str:
@@ -55,13 +60,55 @@ def delivery_lines_with_products(delivery_id: int) -> Tuple[List[DeliveryLinePro
     return out, None
 
 
+def create_movement_batch(
+    *,
+    category: str,
+    biz_date,
+    direction: str,
+    source: str,
+    line_count: int,
+    created_by: int,
+    original_filename: Optional[str] = None,
+    source_delivery_id: Optional[int] = None,
+    remark: Optional[str] = None,
+) -> InventoryMovementBatch:
+    fn = None
+    if original_filename and str(original_filename).strip():
+        fn = str(original_filename).strip()[:255]
+    b = InventoryMovementBatch(
+        category=category,
+        biz_date=biz_date,
+        direction=direction,
+        source=source,
+        line_count=line_count,
+        original_filename=fn,
+        source_delivery_id=source_delivery_id,
+        remark=(remark.strip()[:255] if remark else None),
+        created_by=created_by,
+    )
+    db.session.add(b)
+    db.session.flush()
+    return b
+
+
 def create_delivery_outbound_movements(
     delivery: Delivery,
     created_by: int,
     storage_area: str,
     lines: List[DeliveryLineProduct],
 ) -> None:
-    """写入送货出库明细；依赖 uk_inv_mov_delivery_item 幂等。"""
+    """写入送货出库明细；先建批次再写明细；依赖 uk_inv_mov_delivery_item 幂等。"""
+    if not lines:
+        return
+    batch = create_movement_batch(
+        category=INV_FINISHED,
+        biz_date=delivery.delivery_date,
+        direction="out",
+        source=BATCH_SOURCE_DELIVERY,
+        line_count=len(lines),
+        created_by=created_by,
+        source_delivery_id=delivery.id,
+    )
     for lp in lines:
         di = lp.delivery_item
         p = Product.query.get(lp.product_id)
@@ -80,18 +127,240 @@ def create_delivery_outbound_movements(
             source_delivery_item_id=di.id,
             remark=None,
             created_by=created_by,
+            movement_batch_id=batch.id,
         )
         db.session.add(m)
 
 
 def delete_delivery_sourced_movements(delivery_id: int) -> int:
-    """删除某送货单自动生成的出库记录。"""
-    q = InventoryMovement.query.filter_by(
+    """删除某送货单自动生成的出库记录及对应批次。"""
+    n = InventoryMovement.query.filter_by(
         source_type=SOURCE_DELIVERY, source_delivery_id=delivery_id
-    )
-    n = q.count()
-    q.delete(synchronize_session=False)
+    ).delete(synchronize_session=False)
+    batch = InventoryMovementBatch.query.filter_by(
+        source=BATCH_SOURCE_DELIVERY, source_delivery_id=delivery_id
+    ).first()
+    if batch:
+        db.session.delete(batch)
     return n
+
+
+def void_movement_batch(batch_id: int) -> None:
+    """撤销手工或 Excel 批次（删除明细与批次头）。送货批次禁止调用。"""
+    batch = InventoryMovementBatch.query.get(batch_id)
+    if not batch:
+        raise ValueError("批次不存在。")
+    if batch.source == BATCH_SOURCE_DELIVERY:
+        raise ValueError("送货出库批次请在送货单中回退待发或标记失效，勿在库存页撤销。")
+    InventoryMovement.query.filter_by(movement_batch_id=batch_id).delete(synchronize_session=False)
+    db.session.delete(batch)
+
+
+def normalize_spec_for_match(spec: Optional[str]) -> str:
+    """与 Excel 导入一致：NULL/空白规格与空字符串等同。"""
+    if spec is None:
+        return ""
+    return spec.strip() if isinstance(spec, str) else str(spec).strip()
+
+
+def movement_import_label(name_st: str, spec_raw: Optional[str]) -> str:
+    """导入失败信息前缀：品名「…」规格「…」（不写 Excel 行号）。"""
+    nd = (name_st or "").strip() or "（空）"
+    sp = normalize_spec_for_match(spec_raw)
+    spec_disp = sp if sp else "（空）"
+    return f"品名「{nd}」规格「{spec_disp}」"
+
+
+def movement_import_failed_row(
+    *,
+    name: str,
+    spec: str,
+    area: str,
+    quantity: str,
+    unit: Optional[str],
+    remark: Optional[str],
+    reason: str,
+) -> Dict[str, Any]:
+    return {
+        "name": name or "",
+        "spec": spec or "",
+        "area": area or "",
+        "quantity": quantity,
+        "unit": unit or "",
+        "remark": remark or "",
+        "reason": reason,
+    }
+
+
+def find_product_id_by_name_spec(name: str, spec: str) -> Tuple[Optional[int], Optional[str]]:
+    """
+    按品名 + 规格精确匹配产品。
+    返回 (product_id, None) 或 (None, 简短错误说明)。
+    """
+    n = (name or "").strip()
+    spec_n = normalize_spec_for_match(spec)
+    if not n:
+        return None, "品名为空"
+    matches = (
+        Product.query.filter(
+            Product.name == n,
+            func.coalesce(Product.spec, "") == spec_n,
+        )
+        .order_by(Product.id)
+        .all()
+    )
+    if not matches:
+        return None, "未找到匹配的产品（品名+规格）"
+    if len(matches) > 1:
+        return None, "匹配到多条产品，请核对主数据"
+    return int(matches[0].id), None
+
+
+def import_finished_movements_from_parsed_lines(
+    parsed_lines: List[
+        Tuple[int, str, str, str, Decimal, Optional[str], Optional[str]]
+    ],
+    *,
+    direction: str,
+    biz_date,
+    created_by: int,
+    original_filename: Optional[str] = None,
+) -> Tuple[int, List[str], List[Dict[str, Any]]]:
+    """
+    成品手工流水批量导入。parsed_lines 每项：
+    (excel_row, name, spec_raw, storage_area, quantity, unit, remark)。
+    excel_row 仅保留作扩展用，错误文案不写行号。
+    仅当至少一行成功时 commit；否则 rollback。
+    返回 (成功条数, 错误信息列表, 失败行明细供导出)。
+    """
+    errors: List[str] = []
+    failed_rows: List[Dict[str, Any]] = []
+    to_write: List[
+        Tuple[int, str, Decimal, Optional[str], Optional[str], str, str]
+    ] = []
+
+    def _qty_str(q: Decimal) -> str:
+        s = format(q, "f").rstrip("0").rstrip(".")
+        return s if s else "0"
+
+    for _excel_row, name, spec_raw, storage_area, qty, unit, remark in parsed_lines:
+        spec_cell = (spec_raw or "").strip() if isinstance(spec_raw, str) else str(spec_raw or "").strip()
+        name_st = (name or "").strip()
+        area = (storage_area or "").strip()
+        u_raw = unit
+        r_raw = remark
+
+        def _append_fail(reason: str) -> None:
+            u_disp = (
+                u_raw.strip()
+                if isinstance(u_raw, str)
+                else (str(u_raw).strip() if u_raw is not None else "")
+            )
+            r_disp = (
+                r_raw.strip()
+                if isinstance(r_raw, str)
+                else (str(r_raw).strip() if r_raw is not None else "")
+            )
+            errors.append(f"{movement_import_label(name_st, spec_raw)}：{reason}")
+            failed_rows.append(
+                movement_import_failed_row(
+                    name=name_st,
+                    spec=spec_cell,
+                    area=area,
+                    quantity=_qty_str(qty) if qty is not None else "",
+                    unit=u_disp or None,
+                    remark=r_disp or None,
+                    reason=reason,
+                )
+            )
+
+        if not name_st:
+            has_other = bool(
+                normalize_spec_for_match(spec_raw)
+                or area
+                or qty > 0
+                or (unit and str(unit).strip())
+                or (remark and str(remark).strip())
+            )
+            if has_other:
+                _append_fail("品名为空")
+            continue
+
+        pid, err = find_product_id_by_name_spec(name_st, spec_raw)
+        if err:
+            _append_fail(err)
+            continue
+
+        if not area:
+            _append_fail("仓储区不能为空")
+            continue
+
+        if qty <= 0:
+            _append_fail("数量须大于 0")
+            continue
+
+        u = None
+        if unit is not None:
+            u = unit.strip()[:16] if isinstance(unit, str) else str(unit).strip()[:16]
+            u = u or None
+        rmk = None
+        if remark is not None:
+            rmk = remark.strip()[:255] if isinstance(remark, str) else str(remark).strip()[:255]
+            rmk = rmk or None
+
+        to_write.append((pid, area, qty, u, rmk, name_st, spec_cell))
+
+    if not to_write:
+        db.session.rollback()
+        return 0, errors, failed_rows
+
+    try:
+        batch = create_movement_batch(
+            category=INV_FINISHED,
+            biz_date=biz_date,
+            direction=direction,
+            source=BATCH_SOURCE_EXCEL,
+            line_count=len(to_write),
+            created_by=created_by,
+            original_filename=original_filename,
+        )
+        for product_id, area, qty, unit, remark, name_st, spec_cell in to_write:
+            p = Product.query.get(product_id)
+            if not p:
+                db.session.rollback()
+                reason = "内部错误：产品不存在"
+                errors.append(f"{movement_import_label(name_st, spec_cell)}：{reason}")
+                failed_rows.append(
+                    movement_import_failed_row(
+                        name=name_st,
+                        spec=spec_cell,
+                        area=area,
+                        quantity=_qty_str(qty),
+                        unit=unit or "",
+                        remark=remark or "",
+                        reason=reason,
+                    )
+                )
+                return 0, errors, failed_rows
+            create_manual_movement(
+                category=INV_FINISHED,
+                direction=direction,
+                product_id=product_id,
+                material_id=0,
+                storage_area=area,
+                quantity=qty,
+                unit=unit or (p.base_unit or None),
+                biz_date=biz_date,
+                remark=remark,
+                created_by=created_by,
+                movement_batch_id=batch.id,
+            )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    return len(to_write), errors, failed_rows
 
 
 def create_manual_movement(
@@ -106,6 +375,7 @@ def create_manual_movement(
     biz_date,
     remark: Optional[str],
     created_by: int,
+    movement_batch_id: Optional[int] = None,
 ) -> InventoryMovement:
     m = InventoryMovement(
         category=category,
@@ -121,6 +391,7 @@ def create_manual_movement(
         source_delivery_item_id=None,
         remark=(remark.strip()[:255] if remark else None),
         created_by=created_by,
+        movement_batch_id=movement_batch_id,
     )
     db.session.add(m)
     return m

@@ -1,7 +1,10 @@
+import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from io import BytesIO
+
+from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -13,6 +16,7 @@ from app.models import (
     InventoryDailyLine,
     InventoryDailyRecord,
     InventoryMovement,
+    InventoryMovementBatch,
     InventoryOpeningBalance,
     Product,
     User,
@@ -104,6 +108,123 @@ def _parse_movement_line_rows():
     return rows
 
 
+def _cell_str_movement_import(val):
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val.strip()
+    return str(val).strip()
+
+
+def _movement_import_qty_display(qty: Decimal) -> str:
+    s = format(qty, "f").rstrip("0").rstrip(".")
+    return s if s else "0"
+
+
+def _parse_movement_import_excel(ws):
+    """解析库存录入 Excel：列顺序 品名、规格、仓储区、数量、单位、备注；第 2 行起为数据。"""
+    parsed = []
+    errors = []
+    failed_rows = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        vals = (tuple(row) + (None,) * 6)[:6]
+        name, spec, area, qraw, unit, remark = vals
+        name_s = _cell_str_movement_import(name)
+        spec_s = _cell_str_movement_import(spec)
+        area_s = _cell_str_movement_import(area)
+        unit_s = _cell_str_movement_import(unit)
+        remark_s = _cell_str_movement_import(remark)
+        q_empty = qraw is None or (isinstance(qraw, str) and not str(qraw).strip())
+        if not any([name_s, spec_s, area_s, unit_s, remark_s]) and q_empty:
+            continue
+        if q_empty:
+            reason = "数量不能为空"
+            errors.append(f"{inventory_svc.movement_import_label(name_s, spec_s)}：{reason}")
+            failed_rows.append(
+                inventory_svc.movement_import_failed_row(
+                    name=name_s,
+                    spec=spec_s,
+                    area=area_s,
+                    quantity="",
+                    unit=unit_s or None,
+                    remark=remark_s or None,
+                    reason=reason,
+                )
+            )
+            continue
+        try:
+            qty = Decimal(str(qraw))
+        except InvalidOperation:
+            reason = "数量格式不正确"
+            q_disp = "" if qraw is None else str(qraw).strip()
+            errors.append(f"{inventory_svc.movement_import_label(name_s, spec_s)}：{reason}")
+            failed_rows.append(
+                inventory_svc.movement_import_failed_row(
+                    name=name_s,
+                    spec=spec_s,
+                    area=area_s,
+                    quantity=q_disp,
+                    unit=unit_s or None,
+                    remark=remark_s or None,
+                    reason=reason,
+                )
+            )
+            continue
+        parsed.append((0, name_s, spec_s, area_s, qty, unit_s or None, remark_s or None))
+    return parsed, errors, failed_rows
+
+
+def _dedupe_movement_import_parsed(parsed):
+    """
+    同一文件内六列（品名、规格、仓储区、数量、单位、备注）规范化后完全相同的行，
+    仅保留首次出现，其余记为重复失败。
+    """
+    seen = set()
+    out = []
+    errors = []
+    failed_rows = []
+
+    def _unit_key(u):
+        if u is None:
+            return ""
+        return u.strip()[:16] if isinstance(u, str) else str(u).strip()[:16]
+
+    def _remark_key(r):
+        if r is None:
+            return ""
+        return r.strip()[:255] if isinstance(r, str) else str(r).strip()[:255]
+
+    for row in parsed:
+        _, name_s, spec_s, area_s, qty, unit, remark = row
+        spec_n = inventory_svc.normalize_spec_for_match(spec_s)
+        key = (
+            name_s.strip(),
+            spec_n,
+            area_s.strip(),
+            str(qty),
+            _unit_key(unit),
+            _remark_key(remark),
+        )
+        if key in seen:
+            reason = "与文件中前面的行完全重复（品名、规格、仓储区、数量、单位、备注均相同）"
+            errors.append(f"{inventory_svc.movement_import_label(name_s, spec_s)}：{reason}")
+            failed_rows.append(
+                inventory_svc.movement_import_failed_row(
+                    name=name_s,
+                    spec=spec_s,
+                    area=area_s,
+                    quantity=_movement_import_qty_display(qty),
+                    unit=_unit_key(unit) or None,
+                    remark=_remark_key(remark) or None,
+                    reason=reason,
+                )
+            )
+            continue
+        seen.add(key)
+        out.append(row)
+    return out, errors, failed_rows
+
+
 def register_inventory_routes(bp):
     # ----- API：产品搜索（库存录入用） -----
     @bp.route("/api/inventory/products-search", methods=["GET"])
@@ -180,12 +301,88 @@ def register_inventory_routes(bp):
         )
 
     # ----- 库存录入（批量手工出入库） -----
+    @bp.route("/inventory/movement/import-template", methods=["GET"])
+    @login_required
+    @menu_required("inventory_ops")
+    @capability_required("inventory_ops.movement.create")
+    def inventory_movement_import_template():
+        from openpyxl import Workbook
+
+        headers = ["品名", "规格", "仓储区", "数量", "单位", "备注"]
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "库存录入导入"
+        for col, h in enumerate(headers, start=1):
+            ws.cell(1, col, h)
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name="库存录入导入模板.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @bp.route("/inventory/movement/export-failed", methods=["POST"])
+    @login_required
+    @menu_required("inventory_ops")
+    @capability_required("inventory_ops.movement.create")
+    def inventory_movement_export_failed():
+        raw = (request.form.get("failed_rows_json") or "").strip()
+        if not raw:
+            flash("没有可导出的失败明细。", "warning")
+            return redirect(url_for("main.inventory_movement_new"))
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            flash("导出失败：数据格式无效。", "danger")
+            return redirect(url_for("main.inventory_movement_new"))
+        if not isinstance(data, list):
+            flash("导出失败：数据格式无效。", "danger")
+            return redirect(url_for("main.inventory_movement_new"))
+        max_rows = 500
+        if len(data) > max_rows:
+            flash(f"导出失败：失败行超过 {max_rows} 条上限。", "danger")
+            return redirect(url_for("main.inventory_movement_new"))
+        from openpyxl import Workbook
+
+        headers = ["品名", "规格", "仓储区", "数量", "单位", "备注", "失败原因"]
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "导入失败"
+        for col, h in enumerate(headers, start=1):
+            ws.cell(1, col, h)
+        r = 2
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            ws.cell(r, 1, item.get("name") or "")
+            ws.cell(r, 2, item.get("spec") or "")
+            ws.cell(r, 3, item.get("area") or "")
+            ws.cell(r, 4, item.get("quantity") or "")
+            ws.cell(r, 5, item.get("unit") or "")
+            ws.cell(r, 6, item.get("remark") or "")
+            ws.cell(r, 7, item.get("reason") or "")
+            r += 1
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name="库存导入失败明细.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
     @bp.route("/inventory/movement/new", methods=["GET", "POST"])
     @login_required
     @menu_required("inventory_ops")
     @capability_required("inventory_ops.movement.create")
     def inventory_movement_new():
+        import_result = None
         if request.method == "POST":
+            do_excel = request.form.get("do_excel_import") == "1"
             try:
                 cat = (request.form.get("category") or "").strip()
                 if cat == inventory_svc.INV_SEMI:
@@ -199,10 +396,73 @@ def register_inventory_routes(bp):
                 biz_date = date.fromisoformat(rd) if rd else None
                 if not biz_date:
                     raise ValueError("请选择业务日期。")
+
+                if do_excel:
+                    file = request.files.get("excel_file")
+                    if not file or not (file.filename or "").strip():
+                        raise ValueError("请先选择要上传的 Excel 文件（.xlsx）。")
+                    try:
+                        from openpyxl import load_workbook
+                    except ImportError:
+                        raise ValueError("服务器缺少 openpyxl 依赖，无法导入。")
+                    try:
+                        wb = load_workbook(file, data_only=True)
+                        ws = wb.active
+                    except Exception:
+                        raise ValueError("Excel 文件无法读取，请确认格式为 .xlsx。")
+                    parsed, parse_errors, parse_failed_rows = _parse_movement_import_excel(ws)
+                    deduped, dup_errors, dup_failed_rows = _dedupe_movement_import_parsed(parsed)
+                    all_errors = list(parse_errors) + list(dup_errors)
+                    all_failed_rows = list(parse_failed_rows) + list(dup_failed_rows)
+                    success_count = 0
+                    if deduped:
+                        xname = (file.filename or "").strip()
+                        success_count, svc_errors, svc_failed_rows = (
+                            inventory_svc.import_finished_movements_from_parsed_lines(
+                                deduped,
+                                direction=direction,
+                                biz_date=biz_date,
+                                created_by=current_user.id,
+                                original_filename=xname or None,
+                            )
+                        )
+                        all_errors.extend(svc_errors)
+                        all_failed_rows.extend(svc_failed_rows)
+                    elif not parse_errors and not dup_errors:
+                        flash("Excel 中无有效数据行。", "warning")
+                    import_result = {
+                        "success": success_count,
+                        "errors": all_errors,
+                        "failed_rows": all_failed_rows,
+                    }
+                    if success_count:
+                        flash(f"已从 Excel 保存批次（{success_count} 条明细）。", "success")
+                    if all_errors:
+                        flash(
+                            "部分行未导入或校验失败，请查看下列明细，可导出失败行修正后重试。",
+                            "warning",
+                        )
+                    today = date.today().isoformat()
+                    return render_template(
+                        "inventory/movement_form.html",
+                        default_biz_date=rd or today,
+                        form_category=request.form.get("category"),
+                        form_direction=request.form.get("direction"),
+                        import_result=import_result,
+                    )
+
                 line_rows = _parse_movement_line_rows()
                 if not line_rows:
                     raise ValueError("请至少录入一行有效的产品、仓储区与数量。")
                 _validate_products([r[0] for r in line_rows])
+                batch = inventory_svc.create_movement_batch(
+                    category=inventory_svc.INV_FINISHED,
+                    biz_date=biz_date,
+                    direction=direction,
+                    source=inventory_svc.BATCH_SOURCE_FORM,
+                    line_count=len(line_rows),
+                    created_by=current_user.id,
+                )
                 for product_id, area, qty, unit, remark in line_rows:
                     p = Product.query.get(product_id)
                     if not p:
@@ -218,9 +478,10 @@ def register_inventory_routes(bp):
                         biz_date=biz_date,
                         remark=remark,
                         created_by=current_user.id,
+                        movement_batch_id=batch.id,
                     )
                 db.session.commit()
-                flash(f"已保存 {len(line_rows)} 条库存流水。", "success")
+                flash(f"已保存批次（{len(line_rows)} 条明细）。", "success")
                 return redirect(url_for("main.inventory_list"))
             except ValueError as e:
                 db.session.rollback()
@@ -232,25 +493,28 @@ def register_inventory_routes(bp):
                 db.session.rollback()
                 flash("保存失败：数据冲突。", "danger")
         today = date.today().isoformat()
+        bd = (request.form.get("biz_date") or today) if request.method == "POST" else today
         return render_template(
             "inventory/movement_form.html",
-            default_biz_date=today,
+            default_biz_date=bd,
+            form_category=request.form.get("category") if request.method == "POST" else None,
+            form_direction=request.form.get("direction") if request.method == "POST" else None,
+            import_result=import_result,
         )
 
-    # ----- 进出明细列表（主「库存」入口） -----
+    # ----- 库存批次列表（主「库存」入口） -----
     @bp.route("/inventory")
     @login_required
     @menu_required("inventory_ops")
     def inventory_list():
         page = request.args.get("page", 1, type=int)
-        q = InventoryMovement.query.options(
-            selectinload(InventoryMovement.product)
+        q = InventoryMovementBatch.query.options(
+            selectinload(InventoryMovementBatch.delivery),
         ).order_by(
-            InventoryMovement.biz_date.desc(),
-            InventoryMovement.id.desc(),
+            InventoryMovementBatch.id.desc(),
         )
         pagination = q.paginate(page=page, per_page=30)
-        uid_set = {m.created_by for m in pagination.items}
+        uid_set = {b.created_by for b in pagination.items}
         users = (
             {
                 u.id: (u.name or u.username)
@@ -265,6 +529,44 @@ def register_inventory_routes(bp):
             creators=users,
         )
 
+    @bp.route("/inventory/batch/<int:batch_id>")
+    @login_required
+    @menu_required("inventory_ops")
+    def inventory_batch_detail(batch_id):
+        if not current_user_can_cap("inventory_ops.movement.list"):
+            abort(403)
+        batch = InventoryMovementBatch.query.options(
+            selectinload(InventoryMovementBatch.delivery),
+        ).get_or_404(batch_id)
+        movements = (
+            InventoryMovement.query.options(selectinload(InventoryMovement.product))
+            .filter_by(movement_batch_id=batch_id)
+            .order_by(InventoryMovement.id.asc())
+            .all()
+        )
+        creator = User.query.get(batch.created_by)
+        creator_name = (creator.name or creator.username) if creator else batch.created_by
+        return render_template(
+            "inventory/batch_detail.html",
+            batch=batch,
+            movements=movements,
+            creator_name=creator_name,
+        )
+
+    @bp.route("/inventory/batch/<int:batch_id>/void", methods=["POST"])
+    @login_required
+    @menu_required("inventory_ops")
+    @capability_required("inventory_ops.movement_batch.void")
+    def inventory_batch_void(batch_id):
+        try:
+            inventory_svc.void_movement_batch(batch_id)
+            db.session.commit()
+            flash("已撤销该批次及其全部明细。", "success")
+        except ValueError as e:
+            db.session.rollback()
+            flash(str(e), "warning")
+        return redirect(url_for("main.inventory_list"))
+
     @bp.route("/inventory/movement/<int:movement_id>/delete", methods=["POST"])
     @login_required
     @menu_required("inventory_ops")
@@ -273,6 +575,9 @@ def register_inventory_routes(bp):
         m = InventoryMovement.query.get_or_404(movement_id)
         if m.source_type != inventory_svc.SOURCE_MANUAL:
             flash("仅可删除手工录入的流水。", "warning")
+            return redirect(url_for("main.inventory_list"))
+        if m.movement_batch_id is not None:
+            flash("已归入批次的明细请使用「撤销整批」，勿单条删除。", "warning")
             return redirect(url_for("main.inventory_list"))
         db.session.delete(m)
         db.session.commit()

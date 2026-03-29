@@ -39,9 +39,10 @@
         <input type="text" name="storage_area" class="form-control" value="{{ storage_area }}" placeholder="模糊">
     </div>
     {% endif %}
-    <div class="col-md-2">
+    <div class="col-md-auto d-flex flex-wrap gap-2 align-items-center">
         <button type="submit" class="btn btn-primary">查询</button>
         <a href="{{ url_for('main.inventory_stock_query') }}" class="btn btn-outline-secondary">重置</a>
+        <button type="button" class="btn btn-outline-secondary" id="btnQtyCompact" aria-pressed="false">数量简写（K）</button>
     </div>
 </form>
 <div class="table-responsive app-table-scroll">
@@ -67,10 +68,10 @@
             <td>{{ r.product_code or '-' }}</td>
             <td>{{ r.product_name or '-' }}</td>
             <td>{{ r.product_spec or '-' }}</td>
-            <td class="text-end">{{ r.opening_qty }}</td>
-            <td class="text-end">{{ r.qty_in }}</td>
-            <td class="text-end">{{ r.qty_out }}</td>
-            <td class="text-end fw-semibold">{{ r.closing_qty }}</td>
+            <td class="text-end inv-stock-qty" data-raw="{{ r.opening_qty }}">{{ r.opening_qty }}</td>
+            <td class="text-end inv-stock-qty" data-raw="{{ r.qty_in }}">{{ r.qty_in }}</td>
+            <td class="text-end inv-stock-qty" data-raw="{{ r.qty_out }}">{{ r.qty_out }}</td>
+            <td class="text-end fw-semibold inv-stock-qty" data-raw="{{ r.closing_qty }}">{{ r.closing_qty }}</td>
         </tr>
         {% else %}
         <tr><td colspan="9">无数据（无期初且无流水时不会出现在此表）</td></tr>
@@ -91,4 +92,61 @@
     </ul>
 </nav>
 {% endif %}
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var LS_KEY = 'inventoryStockQueryQtyCompact';
+
+    function trimNumStr(s) {
+        if (s.indexOf('.') === -1) return s;
+        return s.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1').replace(/\.$/, '');
+    }
+
+    function formatCompact(rawStr) {
+        var s = String(rawStr == null ? '' : rawStr).trim().replace(/,/g, '');
+        if (s === '') return String(rawStr);
+        var n = Number(s);
+        if (!Number.isFinite(n)) return String(rawStr);
+        var sign = n < 0 ? '-' : '';
+        var v = Math.abs(n);
+        if (v < 1000) {
+            return String(rawStr);
+        }
+        var scaled = v / 1e3;
+        return sign + trimNumStr(scaled.toFixed(10)) + 'K';
+    }
+
+    function applyDisplay(compact) {
+        document.querySelectorAll('.inv-stock-qty').forEach(function (el) {
+            var raw = el.getAttribute('data-raw');
+            if (raw == null) return;
+            el.textContent = compact ? formatCompact(raw) : raw;
+        });
+    }
+
+    var btn = document.getElementById('btnQtyCompact');
+    if (!btn) return;
+
+    function setCompact(on) {
+        try {
+            localStorage.setItem(LS_KEY, on ? '1' : '0');
+        } catch (e) {}
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.textContent = on ? '显示原数量' : '数量简写（K）';
+        applyDisplay(on);
+    }
+
+    var initial = false;
+    try {
+        initial = localStorage.getItem(LS_KEY) === '1';
+    } catch (e) {}
+    setCompact(initial);
+
+    btn.addEventListener('click', function () {
+        var on = btn.getAttribute('aria-pressed') !== 'true';
+        setCompact(on);
+    });
+})();
+</script>
 {% endblock %}

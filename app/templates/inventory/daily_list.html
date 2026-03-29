@@ -6,7 +6,7 @@
     {% if user_can_cap('inventory_ops.daily.create') %}
     <a href="{{ url_for('main.inventory_daily_new') }}" class="btn btn-success">新增每日录入</a>
     {% endif %}
-    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回库存流水</a>
+    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回库存批次</a>
 </p>
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped">

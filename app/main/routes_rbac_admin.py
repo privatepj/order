@@ -43,6 +43,8 @@ def register_rbac_admin_routes(bp):
     @menu_required("role_mgmt")
     @capability_required("role_mgmt.action.edit")
     def sys_cap_list():
+        # 库表若被 SQL 直接变更，须刷新进程内缓存，否则角色页细项列表仍为旧数据
+        invalidate_rbac_cache()
         rows = SysCapability.query.order_by(
             SysCapability.nav_item_code.asc(),
             SysCapability.sort_order.asc(),

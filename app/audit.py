@@ -29,6 +29,8 @@ def _client_ip():
 def _auth_type():
     if getattr(g, "audit_auth", None) == "api_key":
         return "api_key"
+    if getattr(g, "audit_auth", None) == "api_token":
+        return "api_token"
     if current_user.is_authenticated:
         return "session"
     return "anonymous"
@@ -59,9 +61,18 @@ def persist_audit(response):
         event_type = "ui_click"
         ui_payload = g.audit_ui_payload
         extra = ui_payload if isinstance(ui_payload, dict) else {}
+    elif getattr(g, "audit_openclaw_extra", None) and isinstance(g.audit_openclaw_extra, dict):
+        event_type = "http"
+        extra = g.audit_openclaw_extra
     else:
         event_type = "http"
         extra = None
+
+    audit_uid = None
+    if current_user.is_authenticated:
+        audit_uid = int(current_user.get_id())
+    elif getattr(g, "openclaw_user", None) is not None:
+        audit_uid = int(g.openclaw_user.id)
 
     row = AuditLog(
         event_type=event_type,
@@ -70,7 +81,7 @@ def persist_audit(response):
         query_string=_trunc(qs, 2048) if qs else None,
         status_code=response.status_code,
         duration_ms=duration_ms,
-        user_id=int(current_user.get_id()) if current_user.is_authenticated else None,
+        user_id=audit_uid,
         auth_type=_auth_type(),
         ip=_client_ip(),
         user_agent=_trunc(request.headers.get("User-Agent"), 512),

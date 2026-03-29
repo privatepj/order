@@ -8,6 +8,7 @@ from app.auth.decorators import capability_required, menu_required
 
 from app import db
 from app.models import Customer, Company
+from app.services.customer_svc import next_customer_code
 from app.utils.query import keyword_like_or, cast_str
 from app.utils.visibility import is_admin, customer_view
 from sqlalchemy.exc import IntegrityError
@@ -226,7 +227,7 @@ def register_customer_routes(bp):
                             continue
 
                         customer = Customer(
-                            customer_code=_next_customer_code(),
+                            customer_code=next_customer_code(),
                             name=name,
                             contact=(contact or "").strip() if isinstance(contact, str) else contact,
                             phone=(phone or "").strip() if isinstance(phone, str) else phone,
@@ -295,37 +296,6 @@ def register_customer_routes(bp):
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    def _next_customer_code():
-        # 兼容历史：可能存在小写 `c0001` 等编码。
-        # 同时做“候选存在则递增”兜底，避免并发/历史数据导致的冲突。
-        q = (
-            db.session.query(Customer.customer_code)
-            .filter(
-                db.or_(
-                    Customer.customer_code.like("C%"),
-                    Customer.customer_code.like("c%"),
-                )
-            )
-        )
-        max_num = 0
-        for (code,) in q.all():
-            if not code or len(code) < 2:
-                continue
-            if code[0] not in ("C", "c"):
-                continue
-            try:
-                max_num = max(max_num, int(code[1:]))
-            except ValueError:
-                continue
-
-        next_num = max_num + 1
-        while True:
-            candidate = f"C{next_num:04d}"
-            exists = Customer.query.filter_by(customer_code=candidate).first()
-            if not exists:
-                return candidate
-            next_num += 1
-
     def _customer_save(customer, companies):
         name = (request.form.get("name") or "").strip()
         raw_ids = request.form.getlist("company_ids")
@@ -387,7 +357,7 @@ def register_customer_routes(bp):
             new_specs: list[tuple[Customer, int]] = []
             for co_id in company_ids:
                 c = Customer()
-                c.customer_code = _next_customer_code()
+                c.customer_code = next_customer_code()
                 _apply_fields(c, co_id)
                 db.session.add(c)
                 new_specs.append((c, co_id))
@@ -405,7 +375,7 @@ def register_customer_routes(bp):
                         flash("保存失败：客户编码冲突，请稍后重试。", "danger")
                         return redirect(url_for("main.customer_list"))
                     for c, co_id in new_specs:
-                        c.customer_code = _next_customer_code()
+                        c.customer_code = next_customer_code()
                         _apply_fields(c, co_id)
                         db.session.add(c)
             flash(f"客户已新增（共 {created} 条）。", "success")
@@ -417,7 +387,7 @@ def register_customer_routes(bp):
         new_specs: list[tuple[Customer, int]] = []
         for co_id in company_ids[1:]:
             c = Customer()
-            c.customer_code = _next_customer_code()
+            c.customer_code = next_customer_code()
             _apply_fields(c, co_id)
             db.session.add(c)
             new_specs.append((c, co_id))
@@ -436,7 +406,7 @@ def register_customer_routes(bp):
                 _apply_fields(customer, company_ids[0])
                 db.session.add(customer)
                 for c, co_id in new_specs:
-                    c.customer_code = _next_customer_code()
+                    c.customer_code = next_customer_code()
                     _apply_fields(c, co_id)
                     db.session.add(c)
         if created:

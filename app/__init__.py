@@ -16,7 +16,7 @@ def create_app(config_class=Config):
     login_manager.login_view = "auth.login"
     login_manager.login_message = "请先登录。"
 
-    from app.models import User  # noqa: F401 — 注册 ORM 映射
+    from app.models import User, UserApiToken  # noqa: F401 — 注册 ORM 映射
     from app.models import rbac  # noqa: F401 — sys_nav_item 等表
 
     @login_manager.user_loader
@@ -35,6 +35,10 @@ def create_app(config_class=Config):
     from app.audit import register_audit_hooks
 
     register_audit_hooks(app)
+
+    from app.cli_commands import register_cli
+
+    register_cli(app)
 
     @app.context_processor
     def inject_menu_permissions():

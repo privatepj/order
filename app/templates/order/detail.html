@@ -19,7 +19,7 @@
         {% if order.remark %}<p><strong>备注：</strong>{{ order.remark }}</p>{% endif %}
     </div>
 </div>
-<h5>明细（已送 / 未送）</h5>
+<h5>明细（已发 / 待发占用 / 可再开送货单）</h5>
 <div class="table-responsive app-table-scroll">
 <table class="table table-bordered">
     <thead>
@@ -30,8 +30,9 @@
             <th>物料编号</th>
             <th>订单数量</th>
             <th>单位</th>
-            <th>已送数量</th>
-            <th>未送数量</th>
+            <th>已发数量</th>
+            <th>待发送货占用</th>
+            <th>可再开单数量</th>
             {% if is_admin %}
             <th>单价</th>
             <th>金额</th>
@@ -48,6 +49,7 @@
             <td>{{ row.item.quantity }}</td>
             <td>{{ row.item.unit or '-' }}</td>
             <td>{{ "%.4f"|format(row.delivered_qty) }}</td>
+            <td>{{ "%.4f"|format(row.in_transit_qty) }}</td>
             <td>{{ "%.4f"|format(row.remaining_qty) }}</td>
             {% if is_admin %}
             <td>{{ row.item.price if row.item.price is not none else '-' }}</td>
@@ -55,7 +57,7 @@
             {% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ 10 if is_admin else 8 }}">无明细</td></tr>
+        <tr><td colspan="{{ 11 if is_admin else 9 }}">无明细</td></tr>
         {% endfor %}
     </tbody>
 </table>

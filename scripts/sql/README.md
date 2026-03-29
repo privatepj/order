@@ -50,6 +50,9 @@ mysql -u 用户名 -p sydixon_order < scripts/sql/01_migrations_for_old_db.sql
 | `00_full_schema.sql` | 全量建表 + 初始数据，**新库部署只执行此文件**（无数据库级外键） |
 | `00_reset_drop_all_tables.sql` | 仅删除全部业务表；删后需再执行 `00_full_schema.sql`（开发重建用，先备份） |
 | `01_migrations_for_old_db.sql` | 增量迁移，仅用于从旧库升级（含每日库存表 `inventory_daily_*`） |
+| `run_16_seed_nav_capability.sql` 及 `run_*.sql` | 旧库按需补跑；**勿向已使用过的 `run_XX` 再追加 INSERT**，新增能力只新建更高编号的 `run_XX_*.sql`（幂等），否则已跑过早期脚本的库会漏数据 |
+| `run_23_openclaw_user_token_and_caps.sql` | OpenClaw：`user_api_token` 表 + `openclaw.*` 能力键（旧库升级用；新库已并入 `00_full_schema.sql`） |
+| `run_24_openclaw_confirm_flow_caps.sql` | OpenClaw 确认制：主体/产品查询、建客户与客户产品、订单/送货预览等能力键 |
 | `README.md` | 本说明 |
 
 ---

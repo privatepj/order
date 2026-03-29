@@ -15,7 +15,7 @@
     {% endif %}
     {% if user_can_cap('customer_product.filter.keyword') %}
     <div class="col-md-4">
-        <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="客户、产品编号、品名、料号、物料编号等">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword or '' }}" placeholder="客户、产品编号、品名、客户料号等">
     </div>
     {% endif %}
     <div class="col-auto">

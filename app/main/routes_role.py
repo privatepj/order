@@ -146,6 +146,7 @@ def register_role_routes(bp):
             flash("角色已创建。", "success")
             return redirect(url_for("main.role_list"))
 
+        invalidate_rbac_cache()
         return render_template(
             "role/form.html",
             **_role_form_kwargs(None, [], True, []),
@@ -201,6 +202,7 @@ def register_role_routes(bp):
             flash("角色已保存。", "success")
             return redirect(url_for("main.role_list"))
 
+        invalidate_rbac_cache()
         selected = list(role.resolved_nav_codes()) if role.code != "admin" else []
         from app.auth.capabilities import role_capability_form_defaults
 

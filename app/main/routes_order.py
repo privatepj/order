@@ -6,7 +6,6 @@ from flask_login import login_required
 
 from app.auth.capabilities import current_user_can_cap, order_list_read_filters
 from app.auth.decorators import capability_required, menu_required
-from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from app import db
@@ -15,7 +14,6 @@ from app.models import (
     Company,
     SalesOrder,
     OrderItem,
-    Delivery,
     DeliveryItem,
     CustomerProduct,
     Product,
@@ -24,6 +22,7 @@ from app.utils.query import keyword_like_or
 from app.utils.visibility import is_admin, order_item_view
 from app.utils.payment_type import normalize_payment_type, PAYMENT_TYPE_LABELS
 from app.services.order_svc import create_order_from_data
+from app.services.delivery_svc import order_item_shipped_and_in_transit_maps
 
 
 def _order_item_ids_with_delivery(order_id):
@@ -120,37 +119,26 @@ def register_order_routes(bp):
     def order_detail(order_id):
         order = (
             SalesOrder.query.options(
-                joinedload(SalesOrder.items).joinedload(OrderItem.customer_product)
+                joinedload(SalesOrder.items)
+                .joinedload(OrderItem.customer_product)
+                .joinedload(CustomerProduct.product)
             )
             .get_or_404(order_id)
         )
         item_ids = [it.id for it in order.items if it.id]
-        if item_ids:
-            qrows = (
-                db.session.query(
-                    DeliveryItem.order_item_id,
-                    func.coalesce(func.sum(DeliveryItem.quantity), 0),
-                )
-                .join(Delivery, DeliveryItem.delivery_id == Delivery.id)
-                .filter(
-                    Delivery.status == "shipped",
-                    DeliveryItem.order_item_id.in_(item_ids),
-                )
-                .group_by(DeliveryItem.order_item_id)
-                .all()
-            )
-            delivered_map = {r[0]: float(r[1] or 0) for r in qrows}
-        else:
-            delivered_map = {}
+        shipped_map, in_transit_map = order_item_shipped_and_in_transit_maps(item_ids)
         rows = []
         for item in order.items:
-            delivered = delivered_map.get(item.id, 0.0)
+            shipped = shipped_map.get(item.id, 0.0)
+            in_transit = in_transit_map.get(item.id, 0.0)
             need = float(item.quantity or 0)
-            remaining = max(0, need - delivered)
+            allocated = shipped + in_transit
+            remaining = max(0, need - allocated)
             rows.append(
                 {
                     "item": order_item_view(item),
-                    "delivered_qty": delivered,
+                    "delivered_qty": shipped,
+                    "in_transit_qty": in_transit,
                     "remaining_qty": remaining,
                 }
             )
@@ -169,7 +157,9 @@ def register_order_routes(bp):
     def order_edit(order_id):
         order = (
             SalesOrder.query.options(
-                joinedload(SalesOrder.items).joinedload(OrderItem.customer_product)
+                joinedload(SalesOrder.items)
+                .joinedload(OrderItem.customer_product)
+                .joinedload(CustomerProduct.product)
             )
             .get_or_404(order_id)
         )
@@ -309,7 +299,6 @@ def register_order_routes(bp):
                     Product.spec.like(like),
                     Product.product_code.like(like),
                     CustomerProduct.customer_material_no.like(like),
-                    CustomerProduct.material_no.like(like),
                 )
             )
         q = q.order_by(Product.product_code).limit(limit)
@@ -321,7 +310,7 @@ def register_order_routes(bp):
                 "product_name": p.name,
                 "product_spec": p.spec or "",
                 "customer_material_no": cp.customer_material_no or "",
-                "material_no": cp.material_no or "",
+                "material_no": p.product_code or "",
                 "unit": cp.unit or (p.base_unit or ""),
                 "price": float(cp.price) if cp.price is not None else None,
             }
@@ -378,7 +367,7 @@ def register_order_routes(bp):
                 "product_name": p.name,
                 "product_spec": p.spec or "",
                 "customer_material_no": cp.customer_material_no or "",
-                "material_no": cp.material_no or "",
+                "material_no": p.product_code or "",
                 "unit": cp.unit or (p.base_unit or ""),
                 "price": float(cp.price) if cp.price is not None else None,
             }

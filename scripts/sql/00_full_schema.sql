@@ -1,7 +1,8 @@
 -- 工厂订单系统 - 全量建表脚本（新库部署用）
 -- 使用前请先创建数据库: CREATE DATABASE IF NOT EXISTS sydixon_order DEFAULT CHARSET utf8mb4;
 -- 新服务器部署只需执行本文件即可，无需再执行其他 SQL。
--- 本脚本不创建数据库级 FOREIGN KEY；表间引用由应用层逻辑保证，与 ORM 中 primaryjoin/foreign() 一致。
+-- 本项目不在 MySQL 中创建任何 FOREIGN KEY / REFERENCES 约束；表间引用仅由列语义与应用层保证，
+-- 与 ORM 中 primaryjoin/foreign()（非 db.ForeignKey）一致。新增表或迁移脚本禁止添加 CONSTRAINT ... FOREIGN KEY。
 
 USE sydixon_order;
 
@@ -44,6 +45,23 @@ CREATE TABLE `user` (
   KEY `idx_role_id` (`role_id`),
   KEY `idx_requested_role_id` (`requested_role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+-- ----------------------------
+-- 用户 API 令牌（OpenClaw 等）
+-- ----------------------------
+DROP TABLE IF EXISTS `user_api_token`;
+CREATE TABLE `user_api_token` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL,
+  `token_hash` char(64) NOT NULL COMMENT 'SHA256 十六进制',
+  `label` varchar(128) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime DEFAULT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_token_hash` (`token_hash`),
+  KEY `idx_user_api_token_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户 API 令牌';
 
 -- ----------------------------
 -- 经营主体（先删依赖客户的表）
@@ -304,6 +322,7 @@ CREATE TABLE `inventory_daily_line` (
 -- 期初结存 + 进出明细台账（与 Excel 主表逻辑一致；收发由明细汇总）
 -- ----------------------------
 DROP TABLE IF EXISTS `inventory_movement`;
+DROP TABLE IF EXISTS `inventory_movement_batch`;
 DROP TABLE IF EXISTS `inventory_opening_balance`;
 CREATE TABLE `inventory_opening_balance` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -321,6 +340,24 @@ CREATE TABLE `inventory_opening_balance` (
   KEY `idx_inv_opening_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存期初结存';
 
+CREATE TABLE `inventory_movement_batch` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(16) NOT NULL COMMENT 'finished / semi',
+  `biz_date` date NOT NULL COMMENT '业务日期',
+  `direction` varchar(8) NOT NULL COMMENT 'in=入库 out=出库',
+  `source` varchar(16) NOT NULL COMMENT 'form=手工 excel=导入 delivery=送货出库',
+  `line_count` int unsigned NOT NULL DEFAULT 0 COMMENT '明细行数',
+  `original_filename` varchar(255) DEFAULT NULL COMMENT 'Excel 导入时的文件名',
+  `source_delivery_id` int unsigned DEFAULT NULL COMMENT '送货批次时关联 delivery.id',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_inv_mov_batch_delivery` (`source_delivery_id`),
+  KEY `idx_inv_mov_batch_biz_date` (`biz_date`),
+  KEY `idx_inv_mov_batch_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存进出批次（手工/导入/送货）';
+
 CREATE TABLE `inventory_movement` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `category` varchar(16) NOT NULL COMMENT 'finished / semi',
@@ -337,11 +374,13 @@ CREATE TABLE `inventory_movement` (
   `remark` varchar(255) DEFAULT NULL,
   `created_by` int unsigned NOT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `movement_batch_id` int unsigned DEFAULT NULL COMMENT '关联 inventory_movement_batch.id',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_inv_mov_delivery_item` (`source_delivery_item_id`),
   KEY `idx_inv_mov_delivery` (`source_delivery_id`),
   KEY `idx_inv_mov_product_area` (`product_id`,`storage_area`),
-  KEY `idx_inv_mov_biz_date` (`biz_date`)
+  KEY `idx_inv_mov_biz_date` (`biz_date`),
+  KEY `idx_inv_mov_batch` (`movement_batch_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存进出明细';
 
 -- ----------------------------
@@ -390,8 +429,7 @@ CREATE TABLE `sys_nav_item` (
   `landing_priority` int DEFAULT NULL COMMENT '越小越优先作为登录落地页',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_nav_code` (`code`),
-  KEY `idx_nav_parent` (`parent_id`),
-  CONSTRAINT `fk_nav_parent` FOREIGN KEY (`parent_id`) REFERENCES `sys_nav_item` (`id`) ON DELETE SET NULL
+  KEY `idx_nav_parent` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='导航菜单项';
 
 CREATE TABLE `sys_capability` (
@@ -440,7 +478,7 @@ INSERT INTO `user` (`username`, `password_hash`, `name`, `role_id`, `is_active`)
 ('admin', 'password', '管理员', 1, 1);
 
 -- ----------------------------
--- 初始数据：导航树与能力定义（与 scripts/sql/run_16_seed_nav_capability.sql 同步）
+-- 初始数据：导航树与能力定义（run_16 为旧库种子基线；此处另含 run_18 / run_20 / run_21 等补丁中的能力键，供新库一次到位）
 -- ----------------------------
 INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sort_order`, `is_active`, `admin_only`, `is_assignable`, `landing_priority`) VALUES
 (1, NULL, 'order', '订单', 'main.order_list', 10, 1, 0, 1, 10),
@@ -489,6 +527,7 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('delivery.action.delete', '送货：删除', 'delivery', '送货', 100),
 ('delivery.action.clear_waybill', '送货：清空快递单号', 'delivery', '送货', 110),
 ('delivery.action.edit_delivery_no', '送货：修改送货单号（列表）', 'delivery', '送货', 115),
+('delivery.action.edit_waybill', '送货：修改快递单号（列表）', 'delivery', '送货', 116),
 ('delivery.api.customers_search', '送货：客户搜索接口', 'delivery', '送货', 120),
 ('delivery.api.pending_items', '送货：待送明细接口', 'delivery', '送货', 130),
 ('delivery.api.next_waybill', '送货：取单号接口', 'delivery', '送货', 140),
@@ -505,9 +544,10 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('inventory_query.filter.storage_area', '库存查询：仓储区', 'inventory_query', '库存查询', 40),
 ('inventory_ops.api.products_search', '库存录入：产品搜索接口', 'inventory_ops', '库存录入', 10),
 ('inventory_ops.api.suggest_storage_area', '库存录入：仓储区建议接口', 'inventory_ops', '库存录入', 20),
-('inventory_ops.movement.list', '库存录入：流水列表', 'inventory_ops', '库存录入', 25),
+('inventory_ops.movement.list', '库存录入：库存批次列表', 'inventory_ops', '库存录入', 25),
 ('inventory_ops.movement.create', '库存录入：手工出入库', 'inventory_ops', '库存录入', 30),
 ('inventory_ops.movement.delete', '库存录入：删除进出明细', 'inventory_ops', '库存录入', 40),
+('inventory_ops.movement_batch.void', '库存录入：撤销手工/导入批次', 'inventory_ops', '库存录入', 45),
 ('inventory_ops.opening.list', '库存录入：期初列表', 'inventory_ops', '库存录入', 50),
 ('inventory_ops.opening.create', '库存录入：新建期初', 'inventory_ops', '库存录入', 60),
 ('inventory_ops.opening.edit', '库存录入：编辑期初', 'inventory_ops', '库存录入', 70),
@@ -535,7 +575,18 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('role_mgmt.action.edit', '角色管理：编辑角色', 'role_mgmt', '角色管理', 20),
 ('role_mgmt.action.delete', '角色管理：删除角色', 'role_mgmt', '角色管理', 30),
 ('reconciliation.page.export', '对账：导出页', 'reconciliation', '对账', 10),
-('reconciliation.action.download', '对账：下载文件', 'reconciliation', '对账', 20);
+('reconciliation.action.download', '对账：下载文件', 'reconciliation', '对账', 20),
+('openclaw.customers.read', 'OpenClaw：客户列表', 'customer', 'OpenClaw', 5),
+('openclaw.customer_products.read', 'OpenClaw：客户产品列表', 'customer_product', 'OpenClaw', 6),
+('openclaw.pending_items.read', 'OpenClaw：待发货明细', 'delivery', 'OpenClaw', 7),
+('openclaw.order.create', 'OpenClaw：创建订单', 'order', 'OpenClaw', 8),
+('openclaw.delivery.create', 'OpenClaw：创建送货单', 'delivery', 'OpenClaw', 9),
+('openclaw.companies.read', 'OpenClaw：经营主体列表', 'customer', 'OpenClaw', 1),
+('openclaw.products.read', 'OpenClaw：系统产品搜索', 'product', 'OpenClaw', 2),
+('openclaw.customer.create', 'OpenClaw：新建客户', 'customer', 'OpenClaw', 3),
+('openclaw.customer_product.create', 'OpenClaw：新建客户产品绑定', 'customer_product', 'OpenClaw', 4),
+('openclaw.order.preview', 'OpenClaw：订单创建预览', 'order', 'OpenClaw', 10),
+('openclaw.delivery.preview', 'OpenClaw：送货单创建预览', 'delivery', 'OpenClaw', 11);
 
 -- 将角色 JSON 菜单导入 role_allowed_nav（与 run_17_migrate_role_json_to_nav_cap.sql 一致）
 INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
@@ -567,3 +618,9 @@ JOIN JSON_TABLE(r.`allowed_capability_keys`, '$[*]' COLUMNS (`v` VARCHAR(128) PA
 WHERE r.`allowed_capability_keys` IS NOT NULL
   AND JSON_TYPE(r.`allowed_capability_keys`) = 'ARRAY'
   AND JSON_LENGTH(r.`allowed_capability_keys`) > 0;
+
+-- 与 run_22 一致：拥有「删除进出明细」的角色同步获得「撤销手工/导入批次」
+INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
+SELECT `role_id`, 'inventory_ops.movement_batch.void'
+FROM `role_allowed_capability`
+WHERE `cap_code` = 'inventory_ops.movement.delete';

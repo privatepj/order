@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}库存录入 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">库存流水</h2>
+<h2 class="mb-4">库存批次</h2>
 <p class="d-flex flex-wrap gap-2 align-items-center">
     {% if user_can_cap('inventory_ops.movement.create') %}
     <a href="{{ url_for('main.inventory_movement_new') }}" class="btn btn-success">新增录入</a>
@@ -20,46 +20,55 @@
 <table class="table table-striped table-sm">
     <thead>
         <tr>
+            <th>批次号</th>
             <th>业务日期</th>
             <th>类别</th>
             <th>方向</th>
-            <th>仓储区</th>
-            <th>产品</th>
-            <th class="text-end">数量</th>
             <th>来源</th>
+            <th class="text-end">明细行数</th>
             <th>录入人</th>
+            <th>创建时间</th>
             <th>操作</th>
         </tr>
     </thead>
     <tbody>
-        {% for m in pagination.items %}
+        {% for b in pagination.items %}
         <tr>
-            <td>{{ m.biz_date.isoformat() }}</td>
-            <td>{% if m.category == 'finished' %}成品{% elif m.category == 'semi' %}半成品{% else %}{{ m.category }}{% endif %}</td>
-            <td>{{ '入库' if m.direction == 'in' else '出库' }}</td>
-            <td>{{ m.storage_area or '-' }}</td>
+            <td>#{{ b.id }}</td>
+            <td>{{ b.biz_date.isoformat() }}</td>
+            <td>{% if b.category == 'finished' %}成品{% elif b.category == 'semi' %}半成品{% else %}{{ b.category }}{% endif %}</td>
+            <td>{{ '入库' if b.direction == 'in' else '出库' }}</td>
             <td>
-                {% if m.product %}
-                {{ m.product.product_code }} — {{ m.product.name }}{% if m.product.spec %}（{{ m.product.spec }}）{% endif %}
+                {% if b.source == 'form' %}
+                手工录入
+                {% elif b.source == 'excel' %}
+                Excel 导入{% if b.original_filename %}（{{ b.original_filename }}）{% endif %}
+                {% elif b.source == 'delivery' %}
+                {% if b.delivery %}
+                <a href="{{ url_for('main.delivery_detail', delivery_id=b.delivery.id) }}">送货单 {{ b.delivery.delivery_no }}</a>
                 {% else %}
-                —
+                送货出库（单号 #{{ b.source_delivery_id }}）
+                {% endif %}
+                {% else %}
+                {{ b.source }}
                 {% endif %}
             </td>
-            <td class="text-end">{{ m.quantity }}</td>
-            <td>{% if m.source_type == 'delivery' %}送货单{% else %}手工{% endif %}</td>
-            <td>{{ creators.get(m.created_by, m.created_by) }}</td>
+            <td class="text-end">{{ b.line_count }}</td>
+            <td>{{ creators.get(b.created_by, b.created_by) }}</td>
+            <td class="text-nowrap small">{{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '—' }}</td>
             <td>
-                {% if m.source_type == 'manual' %}
-                <form method="post" action="{{ url_for('main.inventory_movement_delete', movement_id=m.id) }}" class="d-inline" onsubmit="return confirm('确定删除该条手工流水？');">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                <a href="{{ url_for('main.inventory_batch_detail', batch_id=b.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                {% if b.source in ('form', 'excel') and user_can_cap('inventory_ops.movement_batch.void') %}
+                <form method="post" action="{{ url_for('main.inventory_batch_void', batch_id=b.id) }}" class="d-inline" onsubmit="return confirm('确定撤销本批次？将删除该批下全部 {{ b.line_count }} 条明细，且不可恢复。');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">撤销批次</button>
                 </form>
-                {% else %}
-                —
+                {% elif b.source == 'delivery' %}
+                <span class="text-muted small">回退请在送货单操作</span>
                 {% endif %}
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="9">暂无流水</td></tr>
+        <tr><td colspan="9">暂无批次</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -77,6 +86,6 @@
 </nav>
 {% endif %}
 {% else %}
-<p class="text-muted">当前角色未授权查看库存流水表，可通过上方入口进入期初或日结等功能。</p>
+<p class="text-muted">当前角色未授权查看库存批次列表，可通过上方入口进入期初或日结等功能。</p>
 {% endif %}
 {% endblock %}

@@ -16,6 +16,7 @@ from app import db
 from app.models import Customer, Delivery, DeliveryItem, OrderItem, SalesOrder
 from app.models.product import CustomerProduct
 from app.utils.payment_type import normalize_payment_type, payment_type_label
+from app.services.delivery_svc import effective_customer_material_no
 
 thin = Side(style="thin")
 all_border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -52,16 +53,6 @@ def _qty_str(q) -> str:
 
 def _payment_type_sort_key(pt: str) -> Tuple[int, str]:
     return (_PAYMENT_TYPE_SORT.get(pt, 50), pt or "")
-
-
-def _material_no(oi: OrderItem) -> str:
-    if oi.customer_product:
-        mn = oi.customer_product.material_no or ""
-        if oi.customer_product.product:
-            pc = oi.customer_product.product.product_code or ""
-            return pc or mn
-        return mn or ""
-    return (oi.customer_material_no or "") or ""
 
 
 def _name_spec(oi: OrderItem, di: DeliveryItem) -> str:
@@ -184,15 +175,15 @@ def _write_records_sheet(
         )
         remark = (so.customer_order_no or "").strip() or ""
 
-        customer_liao = (oi.customer_material_no or "") or ""
+        customer_liao = effective_customer_material_no(oi)
 
         company_liao = ""
         if oi.customer_product and oi.customer_product.product:
             company_liao = oi.customer_product.product.product_code or ""
 
         material_no = ""
-        if oi.customer_product:
-            material_no = oi.customer_product.material_no or ""
+        if oi.customer_product and oi.customer_product.product:
+            material_no = oi.customer_product.product.product_code or ""
 
         product_name_spec = _name_spec(oi, di)
 

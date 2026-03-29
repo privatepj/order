@@ -76,9 +76,10 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 -- 库存录入
 ('inventory_ops.api.products_search', '库存录入：产品搜索接口', 'inventory_ops', '库存录入', 10),
 ('inventory_ops.api.suggest_storage_area', '库存录入：仓储区建议接口', 'inventory_ops', '库存录入', 20),
-('inventory_ops.movement.list', '库存录入：流水列表', 'inventory_ops', '库存录入', 25),
+('inventory_ops.movement.list', '库存录入：库存批次列表', 'inventory_ops', '库存录入', 25),
 ('inventory_ops.movement.create', '库存录入：手工出入库', 'inventory_ops', '库存录入', 30),
 ('inventory_ops.movement.delete', '库存录入：删除进出明细', 'inventory_ops', '库存录入', 40),
+('inventory_ops.movement_batch.void', '库存录入：撤销手工/导入批次', 'inventory_ops', '库存录入', 45),
 ('inventory_ops.opening.list', '库存录入：期初列表', 'inventory_ops', '库存录入', 50),
 ('inventory_ops.opening.create', '库存录入：新建期初', 'inventory_ops', '库存录入', 60),
 ('inventory_ops.opening.edit', '库存录入：编辑期初', 'inventory_ops', '库存录入', 70),
@@ -112,5 +113,21 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('role_mgmt.action.delete', '角色管理：删除角色', 'role_mgmt', '角色管理', 30),
 -- 对账
 ('reconciliation.page.export', '对账：导出页', 'reconciliation', '对账', 10),
-('reconciliation.action.download', '对账：下载文件', 'reconciliation', '对账', 20)
+('reconciliation.action.download', '对账：下载文件', 'reconciliation', '对账', 20),
+('openclaw.customers.read', 'OpenClaw：客户列表', 'customer', 'OpenClaw', 5),
+('openclaw.customer_products.read', 'OpenClaw：客户产品列表', 'customer_product', 'OpenClaw', 6),
+('openclaw.pending_items.read', 'OpenClaw：待发货明细', 'delivery', 'OpenClaw', 7),
+('openclaw.order.create', 'OpenClaw：创建订单', 'order', 'OpenClaw', 8),
+('openclaw.delivery.create', 'OpenClaw：创建送货单', 'delivery', 'OpenClaw', 9),
+('openclaw.companies.read', 'OpenClaw：经营主体列表', 'customer', 'OpenClaw', 1),
+('openclaw.products.read', 'OpenClaw：系统产品搜索', 'product', 'OpenClaw', 2),
+('openclaw.customer.create', 'OpenClaw：新建客户', 'customer', 'OpenClaw', 3),
+('openclaw.customer_product.create', 'OpenClaw：新建客户产品绑定', 'customer_product', 'OpenClaw', 4),
+('openclaw.order.preview', 'OpenClaw：订单创建预览', 'order', 'OpenClaw', 10),
+('openclaw.delivery.preview', 'OpenClaw：送货单创建预览', 'delivery', 'OpenClaw', 11)
 ON DUPLICATE KEY UPDATE `title`=VALUES(`title`), `nav_item_code`=VALUES(`nav_item_code`), `group_label`=VALUES(`group_label`), `sort_order`=VALUES(`sort_order`);
+
+INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
+SELECT `role_id`, 'inventory_ops.movement_batch.void'
+FROM `role_allowed_capability`
+WHERE `cap_code` = 'inventory_ops.movement.delete';

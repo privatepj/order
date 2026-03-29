@@ -32,13 +32,9 @@ FOOTER_NOTES = (
 
 
 def _material_no(oi: OrderItem) -> str:
-    if oi.customer_product:
-        mn = oi.customer_product.material_no or ""
-        if oi.customer_product.product:
-            pc = oi.customer_product.product.product_code or ""
-            return pc or mn
-        return mn or ""
-    return (oi.customer_material_no or "") or ""
+    if oi.customer_product and oi.customer_product.product:
+        return oi.customer_product.product.product_code or ""
+    return ""
 
 
 def _qty_display(q) -> str:

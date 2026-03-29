@@ -18,7 +18,7 @@
     <div class="mb-3">
         <label class="form-label">送货单号前缀</label>
         <input type="text" class="form-control" name="delivery_no_prefix" value="{{ company.delivery_no_prefix or '' if company else '' }}" maxlength="32" placeholder="空则使用短码">
-        <div class="form-text">送货单号 = 此前缀 + 送货日期(YYYYMMDD) + 转月周期内序号。</div>
+        <div class="form-text">送货单号 = 此前缀 + 送货日期(YYYYMMDD) + 转月周期内尾号（取该周期已有单号最大四位尾数 +1，非按张数）。</div>
     </div>
     <div class="mb-3">
         <label class="form-label">月结日 / 转月日（1–31）</label>

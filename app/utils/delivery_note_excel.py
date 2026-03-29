@@ -15,6 +15,7 @@ from app import db
 from app.models import Delivery, DeliveryItem, OrderItem, SalesOrder
 from app.models.product import CustomerProduct
 from app.utils.payment_type import normalize_payment_type, payment_type_label
+from app.services.delivery_svc import effective_customer_material_no
 
 COLS = 8
 ADDRESS_LINE = "深圳市光明新区公明马山头旭发科技园A3栋1楼、2楼"
@@ -179,12 +180,11 @@ def _write_delivery_section(
 
         product_code = None
         material_no = ""
-        if oi.customer_product:
-            material_no = oi.customer_product.material_no or ""
-            if oi.customer_product.product:
-                product_code = oi.customer_product.product.product_code
+        if oi.customer_product and oi.customer_product.product:
+            product_code = oi.customer_product.product.product_code
+            material_no = product_code or ""
 
-        liao = product_code or (oi.customer_material_no or "")
+        liao = effective_customer_material_no(oi)
         name_spec = (
             " ".join(
                 x for x in (oi.product_name or "", oi.product_spec or "") if x

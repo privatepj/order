@@ -2,7 +2,7 @@
 {% block title %}公司主体 - 工厂订单系统{% endblock %}
 {% block content %}
 <h2 class="mb-4">公司主体（订单号 / 送货单号规则）</h2>
-<p class="text-muted">订单号 = 订单前缀 + 当天月日(MMDD) + 本业务月序号；送货单号 = 送货前缀 + 送货日期(YYYYMMDD) + 本业务月序号。</p>
+<p class="text-muted">订单号 = 订单前缀 + 当天月日(MMDD) + 本业务月序号；送货单号 = 送货前缀 + 送货日期(YYYYMMDD) + 本业务月尾号（按周期内已有单号最大尾数递增，非按张数）。</p>
 <div class="mb-3">
     {% if user_can_cap('company.action.create') %}
     <a href="{{ url_for('main.company_new') }}" class="btn btn-sm btn-primary">新增主体</a>

@@ -6,7 +6,6 @@ from flask_login import current_user, login_required
 
 from app.auth.capabilities import current_user_can_cap, delivery_list_read_filters
 from app.auth.decorators import capability_required, menu_required
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
@@ -33,7 +32,12 @@ from app.utils.delivery_note_excel import (
 )
 from app.utils.delivery_records_excel import build_delivery_records_workbook
 from app.utils.payment_type import PAYMENT_TYPE_LABELS, VALID_PAYMENT_TYPES
-from app.services.delivery_svc import create_delivery_from_data
+from app.services.delivery_svc import (
+    create_delivery_from_data,
+    get_pending_order_items,
+    update_delivery_waybill_for_list,
+    effective_customer_material_no,
+)
 from app.services.order_svc import recompute_orders_status_for_delivery
 from app.services import inventory_svc
 
@@ -62,47 +66,8 @@ def _peek_next_waybill_no(express_company_id: int):
 
 
 def _pending_order_items(customer_id):
-    """该客户下所有订单行及其已送数量，返回可选的 (order_item, order, delivered_qty, remaining_qty)。"""
-    items = (
-        db.session.query(OrderItem, SalesOrder)
-        .join(SalesOrder, OrderItem.order_id == SalesOrder.id)
-        .filter(SalesOrder.customer_id == customer_id)
-        .order_by(SalesOrder.order_no, OrderItem.id)
-        .all()
-    )
-    item_ids = [it.id for it, _ in items if it.id]
-    if item_ids:
-        qrows = (
-            db.session.query(
-                DeliveryItem.order_item_id,
-                func.coalesce(func.sum(DeliveryItem.quantity), 0),
-            )
-            .join(Delivery, DeliveryItem.delivery_id == Delivery.id)
-            .filter(
-                Delivery.status == "shipped",
-                DeliveryItem.order_item_id.in_(item_ids),
-            )
-            .group_by(DeliveryItem.order_item_id)
-            .all()
-        )
-        delivered_map = {r[0]: float(r[1] or 0) for r in qrows}
-    else:
-        delivered_map = {}
-    result = []
-    for item, order in items:
-        delivered = delivered_map.get(item.id, 0.0)
-        need = float(item.quantity or 0)
-        remaining = max(0, need - delivered)
-        if remaining > 0:
-            result.append(
-                {
-                    "order_item": item,
-                    "order": order,
-                    "delivered_qty": delivered,
-                    "remaining_qty": remaining,
-                }
-            )
-    return result
+    """与 delivery_svc.get_pending_order_items 一致（含待发单占用）。"""
+    return get_pending_order_items(customer_id)
 
 
 def _delivery_form_ctx(pending_items=None):
@@ -206,6 +171,16 @@ def register_delivery_routes(bp):
         except IntegrityError:
             db.session.rollback()
             flash("送货单号冲突，请重试。", "danger")
+        return _delivery_list_redirect_from_form()
+
+    @bp.route("/deliveries/<int:delivery_id>/update-waybill", methods=["POST"])
+    @login_required
+    @menu_required("delivery")
+    @capability_required("delivery.action.edit_waybill")
+    def delivery_update_waybill(delivery_id):
+        raw = request.form.get("waybill_no")
+        cat, msg = update_delivery_waybill_for_list(delivery_id, raw or "")
+        flash(msg, cat)
         return _delivery_list_redirect_from_form()
 
     @bp.route("/report-export/delivery-notes", methods=["GET"])
@@ -394,7 +369,31 @@ def register_delivery_routes(bp):
         delivery = Delivery.query.options(
             joinedload(Delivery.express_company)
         ).get_or_404(delivery_id)
-        return render_template("delivery/detail.html", delivery=delivery)
+        # items 为 dynamic，需单独 query 才能 joinedload 订单行与客户产品
+        delivery_items = (
+            delivery.items.order_by(DeliveryItem.id)
+            .options(
+                joinedload(DeliveryItem.order_item).joinedload(
+                    OrderItem.customer_product
+                )
+            )
+            .all()
+        )
+        line_customer_material = {}
+        for di in delivery_items:
+            oi = di.order_item
+            v = (
+                effective_customer_material_no(oi)
+                if oi
+                else (di.customer_material_no or "").strip()
+            )
+            line_customer_material[di.id] = v if v else "-"
+        return render_template(
+            "delivery/detail.html",
+            delivery=delivery,
+            delivery_items=delivery_items,
+            line_customer_material=line_customer_material,
+        )
 
     @bp.route("/deliveries/print")
     @login_required
@@ -441,13 +440,12 @@ def register_delivery_routes(bp):
             if not oi:
                 continue
             so = oi.order
-            product_code = None
             material_no = ""
-            if oi.customer_product:
-                material_no = (oi.customer_product.material_no or "").strip()
-                if oi.customer_product.product:
-                    product_code = oi.customer_product.product.product_code
-            liao = product_code or (oi.customer_material_no or "").strip()
+            if oi.customer_product and oi.customer_product.product:
+                product_code = oi.customer_product.product.product_code
+                material_no = (product_code or "").strip()
+            # 料号列：仅客户料号；优先客户产品当前值，无则留空
+            liao = effective_customer_material_no(oi)
             name_spec = (
                 " ".join(
                     x for x in (oi.product_name or "", oi.product_spec or "") if x
@@ -602,8 +600,12 @@ def register_delivery_routes(bp):
                     "order_no": x["order"].order_no,
                     "product_name": x["order_item"].product_name,
                     "product_spec": x["order_item"].product_spec or "",
-                    "customer_material_no": x["order_item"].customer_material_no or "",
+                    "customer_material_no": effective_customer_material_no(
+                        x["order_item"]
+                    ),
                     "quantity": float(x["order_item"].quantity),
+                    "delivered_qty": x["delivered_qty"],
+                    "in_transit_qty": x["in_transit_qty"],
                     "remaining_qty": x["remaining_qty"],
                     "unit": x["order_item"].unit or "",
                 }

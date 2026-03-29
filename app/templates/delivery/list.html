@@ -62,15 +62,34 @@
                     <input type="hidden" name="ret_status" value="{{ status or '' }}">
                     <input type="hidden" name="ret_keyword" value="{{ keyword or '' }}">
                     <input type="hidden" name="ret_page" value="{{ pagination.page }}">
-                    <input type="text" name="delivery_no" value="{{ d.delivery_no }}" class="form-control form-control-sm" style="min-width:9rem;max-width:14rem" autocomplete="off">
-                    <button type="submit" class="btn btn-sm btn-outline-primary">保存</button>
+                    <div class="d-flex flex-wrap gap-1 align-items-center" data-inline-edit>
+                        <input type="text" name="delivery_no" value="{{ d.delivery_no }}" class="form-control form-control-sm" style="min-width:9rem;max-width:14rem" autocomplete="off" readonly data-inline-edit-input>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-inline-edit-btn>修改</button>
+                    </div>
                 </form>
                 {% else %}
                 {{ d.delivery_no }}
                 {% endif %}
             </td>
             <td>{% if d.express_company_id %}{{ d.express_company.name if d.express_company else '-' }}{% else %}自配送{% endif %}</td>
-            <td>{{ d.waybill_no or '-' }}</td>
+            <td>
+                {% if d.status == 'created' and user_can_cap('delivery.action.edit_waybill') %}
+                <form method="post" action="{{ url_for('main.delivery_update_waybill', delivery_id=d.id) }}" class="d-flex flex-wrap gap-1 align-items-center">
+                    {% if customer_id is not none %}
+                    <input type="hidden" name="ret_customer_id" value="{{ customer_id }}">
+                    {% endif %}
+                    <input type="hidden" name="ret_status" value="{{ status or '' }}">
+                    <input type="hidden" name="ret_keyword" value="{{ keyword or '' }}">
+                    <input type="hidden" name="ret_page" value="{{ pagination.page }}">
+                    <div class="d-flex flex-wrap gap-1 align-items-center" data-inline-edit>
+                        <input type="text" name="waybill_no" value="{{ d.waybill_no or '' }}" class="form-control form-control-sm" style="min-width:9rem;max-width:14rem" placeholder="快递单号" autocomplete="off" readonly data-inline-edit-input>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-inline-edit-btn>修改</button>
+                    </div>
+                </form>
+                {% else %}
+                {{ d.waybill_no or '-' }}
+                {% endif %}
+            </td>
             <td>{{ d.delivery_date }}</td>
             <td>
                 {% if d.status == 'created' %}待发
@@ -112,4 +131,30 @@
     </ul>
 </nav>
 {% endif %}
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  document.querySelectorAll('[data-inline-edit]').forEach(function (wrap) {
+    var inp = wrap.querySelector('[data-inline-edit-input]');
+    var btn = wrap.querySelector('[data-inline-edit-btn]');
+    if (!inp || !btn) return;
+    btn.addEventListener('click', function () {
+      var form = wrap.closest('form');
+      if (!form) return;
+      if (wrap.getAttribute('data-inline-editing') === '1') {
+        form.requestSubmit();
+        return;
+      }
+      wrap.setAttribute('data-inline-editing', '1');
+      inp.removeAttribute('readonly');
+      inp.readOnly = false;
+      inp.focus();
+      btn.textContent = '保存';
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-outline-primary');
+    });
+  });
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,12 @@
+---
+description: 禁止在 MySQL 中使用数据库级外键；表关联仅应用层与 ORM 逻辑外键
+globs: scripts/sql/**/*.sql,app/models/**/*.py
+alwaysApply: true
+---
+
+# 数据库：禁止使用 FOREIGN KEY
+
+- **MySQL 迁移脚本**（`scripts/sql/**/*.sql`、全量 `00_full_schema.sql`）中不得新增 `CONSTRAINT ... FOREIGN KEY`、`REFERENCES` 子句。需要关联时只保留普通列 + 可选 `KEY` 索引。
+- **已存在外键的存量库**：通过增量脚本 `DROP FOREIGN KEY` 删除（见 `run_23_drop_all_foreign_keys.sql`），不要在新库里再创建。
+- **SQLAlchemy**：不在列上使用 `ForeignKey()`（避免生成 DB 约束）。一对多/多对一必须写显式 `primaryjoin`，并用 `foreign(子表.外键列)` 标明「逻辑外键」侧，例如 `InventoryMovementBatch` ↔ `InventoryMovement`；否则 mapper 初始化会报错。
+- 若第三方示例或 ORM 默认写法带 `ForeignKey`，在本项目中应改为无 DB 约束的写法，并在注释或规则中说明「引用由应用保证」。

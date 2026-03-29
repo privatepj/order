@@ -266,8 +266,7 @@ CREATE TABLE IF NOT EXISTS `sys_nav_item` (
   `landing_priority` int DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_nav_code` (`code`),
-  KEY `idx_nav_parent` (`parent_id`),
-  CONSTRAINT `fk_nav_parent` FOREIGN KEY (`parent_id`) REFERENCES `sys_nav_item` (`id`) ON DELETE SET NULL
+  KEY `idx_nav_parent` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='导航菜单项';
 
 CREATE TABLE IF NOT EXISTS `sys_capability` (

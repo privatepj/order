@@ -5,6 +5,36 @@ from __future__ import annotations
 from app import db
 
 
+class InventoryMovementBatch(db.Model):
+    """手工/Excel/送货出库等一次提交对应的批次头。"""
+
+    __tablename__ = "inventory_movement_batch"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    category = db.Column(db.String(16), nullable=False)
+    biz_date = db.Column(db.Date, nullable=False)
+    direction = db.Column(db.String(8), nullable=False)
+    source = db.Column(db.String(16), nullable=False)
+    line_count = db.Column(db.Integer, nullable=False, default=0)
+    original_filename = db.Column(db.String(255))
+    source_delivery_id = db.Column(db.Integer)
+    remark = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    movements = db.relationship(
+        "InventoryMovement",
+        back_populates="batch",
+        primaryjoin="InventoryMovementBatch.id == foreign(InventoryMovement.movement_batch_id)",
+    )
+    delivery = db.relationship(
+        "Delivery",
+        primaryjoin="foreign(InventoryMovementBatch.source_delivery_id) == Delivery.id",
+        lazy=True,
+        viewonly=True,
+    )
+
+
 class InventoryOpeningBalance(db.Model):
     __tablename__ = "inventory_opening_balance"
 
@@ -46,6 +76,13 @@ class InventoryMovement(db.Model):
     remark = db.Column(db.String(255))
     created_by = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
+    movement_batch_id = db.Column(db.Integer)
+
+    batch = db.relationship(
+        "InventoryMovementBatch",
+        back_populates="movements",
+        primaryjoin="foreign(InventoryMovement.movement_batch_id) == InventoryMovementBatch.id",
+    )
 
     product = db.relationship(
         "Product",
