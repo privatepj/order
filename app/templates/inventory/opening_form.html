@@ -14,13 +14,16 @@
 {% endblock %}
 {% block content %}
 <h2 class="mb-4">{{ '编辑期初' if row else '新增期初' }}</h2>
-<form method="post" id="openForm" data-products-search-url="{{ url_for('main.inventory_products_search') }}">
+<form method="post" id="openForm"
+    data-products-search-url="{{ url_for('main.inventory_products_search') }}"
+    data-semi-materials-search-url="{{ url_for('main.inventory_semi_materials_search') }}">
     {% if row %}
     <div class="mb-3">
         <label class="form-label">产品</label>
         <input type="text" class="form-control" readonly
-            value="{% if row.product %}{{ row.product.product_code }} — {{ row.product.name }}{% endif %}">
+            value="{% if row.category == 'finished' and row.product %}{{ row.product.product_code }} — {{ row.product.name }}{% if row.product.spec %}（{{ row.product.spec }}）{% endif %}{% elif row.category in ('semi','material') and row.material %}{{ row.material.code }} — {{ row.material.name }}{% if row.material.spec %}（{{ row.material.spec }}）{% endif %}{% endif %}">
         <input type="hidden" name="product_id" value="{{ row.product_id }}">
+        <input type="hidden" name="material_id" value="{{ row.material_id }}">
     </div>
     <div class="mb-3">
         <label class="form-label">仓储区</label>
@@ -29,14 +32,16 @@
     {% else %}
     <div class="mb-3">
         <label class="form-label">类别</label>
-        <select name="category" class="form-select">
+        <select name="category" id="openingCategory" class="form-select">
             <option value="finished" selected>成品</option>
-            <option value="semi" disabled>半成品（暂未开通）</option>
+            <option value="semi">半成品</option>
+            <option value="material">物料</option>
         </select>
     </div>
     <div class="mb-3 inv-product-cell">
         <label class="form-label">产品 <span class="text-danger">*</span></label>
         <input type="hidden" name="product_id" id="productId" value="">
+        <input type="hidden" name="material_id" id="materialId" value="">
         <input type="text" class="form-control inv-product-search" id="productSearch" autocomplete="off" placeholder="搜索选择产品…">
         <div class="inv-product-dd list-group d-none" id="productDd"></div>
     </div>
@@ -67,8 +72,11 @@
 <script>
 (function () {
     var searchUrl = document.getElementById('openForm').getAttribute('data-products-search-url');
+    var semiSearchUrl = document.getElementById('openForm').getAttribute('data-semi-materials-search-url');
+    var categorySel = document.getElementById('openingCategory');
     var productSearch = document.getElementById('productSearch');
     var productId = document.getElementById('productId');
+    var materialId = document.getElementById('materialId');
     var productDd = document.getElementById('productDd');
     var debounceT;
     function hideDd() { productDd.classList.add('d-none'); productDd.innerHTML = ''; }
@@ -91,7 +99,13 @@
             b.textContent = it.label;
             b.addEventListener('mousedown', function (e) { e.preventDefault(); });
             b.addEventListener('click', function () {
-                productId.value = String(it.id);
+                if (categorySel.value === 'finished') {
+                    productId.value = String(it.id);
+                    if (materialId) materialId.value = '';
+                } else {
+                    productId.value = '';
+                    if (materialId) materialId.value = String(it.id);
+                }
                 productSearch.value = it.label;
                 hideDd();
             });
@@ -99,20 +113,42 @@
         });
         productDd.classList.remove('d-none');
     }
-    function fetchProducts(q) {
-        fetch(searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+    function fetchItems(q) {
+        var kind = categorySel.value;
+        var url = null;
+        if (kind === 'finished') {
+            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+        } else {
+            url = semiSearchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50&kind=' + encodeURIComponent(kind);
+        }
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })
             .then(function (d) { renderDd(d.items || []); });
     }
     productSearch.addEventListener('input', function () {
-        productId.value = '';
+        if (categorySel.value === 'finished') {
+            if (productId) productId.value = '';
+        } else {
+            if (productId) productId.value = '';
+            if (materialId) materialId.value = '';
+        }
         if (debounceT) clearTimeout(debounceT);
-        debounceT = setTimeout(function () { fetchProducts(productSearch.value.trim()); }, 250);
+        debounceT = setTimeout(function () { fetchItems(productSearch.value.trim()); }, 250);
     });
-    productSearch.addEventListener('focus', function () { fetchProducts(productSearch.value.trim()); });
+    productSearch.addEventListener('focus', function () { fetchItems(productSearch.value.trim()); });
+    categorySel.addEventListener('change', function () {
+        if (productId) productId.value = '';
+        if (materialId) materialId.value = '';
+        productSearch.value = '';
+        hideDd();
+    });
     document.addEventListener('click', function (e) { if (!e.target.closest('.inv-product-cell')) hideDd(); });
     document.getElementById('openForm').addEventListener('submit', function (e) {
-        if (!productId.value) { e.preventDefault(); alert('请选择产品。'); }
+        if (categorySel.value === 'finished') {
+            if (!productId.value) { e.preventDefault(); alert('请选择产品。'); }
+        } else {
+            if (!materialId || !materialId.value) { e.preventDefault(); alert('请选择半成品/物料。'); }
+        }
     });
 })();
 </script>

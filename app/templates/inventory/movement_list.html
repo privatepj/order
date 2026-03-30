@@ -36,7 +36,9 @@
         <tr>
             <td>#{{ b.id }}</td>
             <td>{{ b.biz_date.isoformat() }}</td>
-            <td>{% if b.category == 'finished' %}成品{% elif b.category == 'semi' %}半成品{% else %}{{ b.category }}{% endif %}</td>
+            <td>
+                {% if b.category == 'finished' %}成品{% elif b.category == 'semi' %}半成品{% elif b.category == 'material' %}物料{% else %}{{ b.category }}{% endif %}
+            </td>
             <td>{{ '入库' if b.direction == 'in' else '出库' }}</td>
             <td>
                 {% if b.source == 'form' %}

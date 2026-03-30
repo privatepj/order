@@ -32,6 +32,8 @@
             <td>
                 {% if m.product %}
                 {{ m.product.product_code }} — {{ m.product.name }}{% if m.product.spec %}（{{ m.product.spec }}）{% endif %}
+                {% elif m.material %}
+                {{ m.material.code }} — {{ m.material.name }}{% if m.material.spec %}（{{ m.material.spec }}）{% endif %}
                 {% else %}
                 —
                 {% endif %}

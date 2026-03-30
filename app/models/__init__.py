@@ -19,6 +19,12 @@ from app.models.inventory_ledger import (
     InventoryMovementBatch,
     InventoryOpeningBalance,
 )
+from app.models.semi_material import SemiMaterial
+from app.models.bom import BomHeader, BomLine
+from app.models.production_preplan import ProductionPreplan
+from app.models.production_preplan_line import ProductionPreplanLine
+from app.models.production_work_order import ProductionWorkOrder
+from app.models.production_component_need import ProductionComponentNeed
 
 __all__ = [
     "User",
@@ -44,4 +50,11 @@ __all__ = [
     "InventoryOpeningBalance",
     "InventoryMovement",
     "InventoryMovementBatch",
+    "SemiMaterial",
+    "BomHeader",
+    "BomLine",
+    "ProductionPreplan",
+    "ProductionPreplanLine",
+    "ProductionWorkOrder",
+    "ProductionComponentNeed",
 ]

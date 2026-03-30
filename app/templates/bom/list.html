@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}BOM 管理 - 工厂订单系统{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">BOM 管理</h2>
+
+<div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+    <div class="d-flex gap-2 align-items-center">
+        <a href="{{ url_for('main.bom_list', parent_kind='finished') }}" class="btn btn-sm {% if parent_kind == 'finished' %}btn-primary{% else %}btn-outline-secondary{% endif %}">成品父项</a>
+        <a href="{{ url_for('main.bom_list', parent_kind='semi') }}" class="btn btn-sm {% if parent_kind == 'semi' %}btn-primary{% else %}btn-outline-secondary{% endif %}">半成品父项</a>
+        <a href="{{ url_for('main.bom_list', parent_kind='material') }}" class="btn btn-sm {% if parent_kind == 'material' %}btn-primary{% else %}btn-outline-secondary{% endif %}">物料父项</a>
+    </div>
+
+    <form class="d-flex gap-2 ms-auto" method="get">
+        <input type="hidden" name="parent_kind" value="{{ parent_kind }}">
+        {% if user_can_cap('bom.filter.keyword') %}
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="父项编号、名称、规格等">
+        {% endif %}
+        <button type="submit" class="btn btn-primary">搜索</button>
+    </form>
+</div>
+
+<p class="mb-3">
+    {% if user_can_cap('bom.action.create') %}
+    <a href="{{ url_for('main.bom_new', parent_kind=parent_kind) }}" class="btn btn-success me-2">新增 BOM</a>
+    {% endif %}
+    {% if user_can_cap('bom.action.import') %}
+    <a href="{{ url_for('main.bom_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+    {% endif %}
+</p>
+
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>父项</th>
+            <th>版本</th>
+            <th>备注</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for b in pagination.items %}
+        <tr>
+            <td>
+                {% if parent_kind == 'finished' %}
+                    {{ b.parent_product.product_code }} — {{ b.parent_product.name }}
+                    {% if b.parent_product.spec %}（{{ b.parent_product.spec }}）{% endif %}
+                {% else %}
+                    {{ b.parent_material.code }} — {{ b.parent_material.name }}
+                    {% if b.parent_material.spec %}（{{ b.parent_material.spec }}）{% endif %}
+                {% endif %}
+            </td>
+            <td>v{{ b.version_no }}</td>
+            <td>{{ b.remark or '-' }}</td>
+            <td>
+                {% if user_can_cap('bom.action.edit') %}
+                <a href="{{ url_for('main.bom_edit', header_id=b.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('bom.action.delete') %}
+                <form method="post" action="{{ url_for('main.bom_delete', header_id=b.id) }}" class="d-inline" onsubmit="return confirm('确定删除该 BOM 版本？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.bom_list', parent_kind=parent_kind, page=pagination.prev_num, keyword=keyword) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.bom_list', parent_kind=parent_kind, page=pagination.next_num, keyword=keyword) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+

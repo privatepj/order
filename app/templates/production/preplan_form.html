@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if mode == 'edit' else '新建' }}预生产计划 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑预生产计划' if mode == 'edit' else '新建预生产计划' }}</h2>
+
+<form method="post">
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <label class="form-label">计划日期 <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" name="plan_date" required value="{{ preplan.plan_date.isoformat() if preplan and preplan.plan_date else '' }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">客户（可选）</label>
+            <select class="form-select" name="customer_id">
+                <option value="0" {% if not preplan or not preplan.customer_id or preplan.customer_id==0 %}selected{% endif %}>—</option>
+                {% for c in customers %}
+                <option value="{{ c.id }}" {% if preplan and preplan.customer_id==c.id %}selected{% endif %}>{{ c.customer_code or c.short_code or c.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">备注（可选）</label>
+            <input type="text" class="form-control" name="remark" maxlength="255" value="{{ preplan.remark if preplan and preplan.remark else '' }}">
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                <h5 class="mb-0">根需求（成品）</h5>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAddLine">新增行</button>
+            </div>
+            <div class="table-responsive app-table-scroll">
+                <table class="table table-bordered table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="min-width:260px;">产品 <span class="text-danger">*</span></th>
+                            <th style="width:180px;">单位</th>
+                            <th style="width:180px;">数量 <span class="text-danger">*</span></th>
+                            <th>备注</th>
+                            <th style="width:70px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="linesBody">
+                        {% if lines and lines|length > 0 %}
+                            {% for ln in lines %}
+                            <tr class="preplan-line-row">
+                                <td>
+                                    <select name="line_product_id" class="form-select form-select-sm preplan-line-product" required>
+                                        <option value="">请选择产品</option>
+                                        {% for p in products %}
+                                        <option value="{{ p.id }}" {% if ln.product_id==p.id %}selected{% endif %}>{{ p.product_code }} — {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td class="preplan-line-unit text-muted">
+                                    {{ ln.unit or '' }}
+                                </td>
+                                <td>
+                                    <input type="text" name="line_quantity" class="form-control form-control-sm" inputmode="decimal" required value="{{ ln.quantity }}">
+                                </td>
+                                <td>
+                                    <input type="text" name="line_remark" class="form-control form-control-sm" maxlength="255" value="{{ ln.remark or '' }}">
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove-line">删</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr class="preplan-line-row">
+                                <td>
+                                    <select name="line_product_id" class="form-select form-select-sm preplan-line-product" required>
+                                        <option value="">请选择产品</option>
+                                        {% for p in products %}
+                                        <option value="{{ p.id }}">{{ p.product_code }} — {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td class="preplan-line-unit text-muted"></td>
+                                <td>
+                                    <input type="text" name="line_quantity" class="form-control form-control-sm" inputmode="decimal" required value="">
+                                </td>
+                                <td>
+                                    <input type="text" name="line_remark" class="form-control form-control-sm" maxlength="255" value="">
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-danger btn-remove-line">删</button>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.production_preplan_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+
+<template id="lineRowTpl">
+    <tr class="preplan-line-row">
+        <td>
+            <select name="line_product_id" class="form-select form-select-sm preplan-line-product" required>
+                <option value="">请选择产品</option>
+                {% for p in products %}
+                <option value="{{ p.id }}">{{ p.product_code }} — {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td class="preplan-line-unit text-muted"></td>
+        <td>
+            <input type="text" name="line_quantity" class="form-control form-control-sm" inputmode="decimal" required value="">
+        </td>
+        <td>
+            <input type="text" name="line_remark" class="form-control form-control-sm" maxlength="255" value="">
+        </td>
+        <td class="text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger btn-remove-line">删</button>
+        </td>
+    </tr>
+</template>
+
+{% block extra_js %}
+<script>
+(function () {
+    var btnAdd = document.getElementById('btnAddLine');
+    var body = document.getElementById('linesBody');
+    var tpl = document.getElementById('lineRowTpl');
+    if (!btnAdd || !body || !tpl) return;
+
+    var unitMap = {};
+    {% for p in products %}
+    unitMap[{{ p.id }}] = {{ (p.base_unit or '')|tojson }};
+    {% endfor %}
+
+    function bindRow(row) {
+        var sel = row.querySelector('select.preplan-line-product');
+        var unitTd = row.querySelector('.preplan-line-unit');
+        if (!sel || !unitTd) return;
+        function sync() {
+            var v = sel.value;
+            unitTd.textContent = (unitMap[v] || '') || '';
+        }
+        sel.addEventListener('change', sync);
+        sync();
+    }
+
+    // bind existing rows
+    body.querySelectorAll('.preplan-line-row').forEach(bindRow);
+
+    btnAdd.addEventListener('click', function () {
+        var frag = tpl.content.cloneNode(true);
+        var newRow = frag.querySelector('.preplan-line-row');
+        if (!newRow) return;
+        body.appendChild(frag);
+        bindRow(newRow);
+    });
+
+    body.addEventListener('click', function (e) {
+        if (!e.target || !e.target.classList.contains('btn-remove-line')) return;
+        var rows = body.querySelectorAll('.preplan-line-row');
+        if (rows.length <= 1) return;
+        var tr = e.target.closest('tr');
+        if (tr) tr.remove();
+    });
+})();
+</script>
+{% endblock %}
+
+{% endblock %}
+

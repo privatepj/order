@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if item and item.id else '新增' }}半成品/物料主数据 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑主数据' if item and item.id else '新增主数据' }}</h2>
+
+<form method="post">
+    {% if item and item.id %}
+    <div class="mb-3">
+        <label class="form-label">编号</label>
+        <input type="text" class="form-control" value="{{ item.code }}" readonly>
+        <input type="hidden" name="kind" value="{{ item.kind }}">
+    </div>
+    {% else %}
+    <div class="mb-3">
+        <label class="form-label">类别</label>
+        <select name="kind" class="form-select" required>
+            <option value="semi" {% if kind == 'semi' %}selected{% endif %}>半成品</option>
+            <option value="material" {% if kind == 'material' %}selected{% endif %}>物料</option>
+        </select>
+    </div>
+    <div class="mb-3 text-muted small">
+        保存后系统将自动生成编号（全局唯一）。
+    </div>
+    {% endif %}
+
+    <div class="mb-3">
+        <label class="form-label">名称 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" name="name" required value="{{ item.name if item else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">规格</label>
+        <input type="text" class="form-control" name="spec" value="{{ item.spec if item else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">基础单位</label>
+        <input type="text" class="form-control" name="base_unit" value="{{ item.base_unit if item else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <textarea class="form-control" name="remark" rows="3">{{ item.remark if item else '' }}</textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.semi_material_list', kind=(item.kind if item else kind)) }}" class="btn btn-outline-secondary">返回</a>
+</form>
+{% endblock %}
+

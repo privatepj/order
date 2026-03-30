@@ -123,6 +123,22 @@ def recompute_orders_status_for_delivery(delivery_id: int) -> None:
             db.session.add(order)
 
 
+def recompute_orders_status_for_order_ids(order_ids: list[int]) -> None:
+    """根据当前库中已发(shipped)送货数量，重算指定订单状态。不 commit。"""
+    if not order_ids:
+        return
+    unique_ids = sorted({int(x) for x in order_ids if x})
+    for oid in unique_ids:
+        order = (
+            SalesOrder.query.options(joinedload(SalesOrder.items))
+            .filter(SalesOrder.id == oid)
+            .first()
+        )
+        if order:
+            order.status = _order_status_from_items(order)
+            db.session.add(order)
+
+
 def _order_item_ids_with_delivery(order_id: Optional[int]) -> set:
     if not order_id:
         return set()

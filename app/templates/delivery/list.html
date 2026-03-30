@@ -105,6 +105,11 @@
                 {% if user_can_cap('delivery.action.print') %}
                 <a href="{{ url_for('main.delivery_print', delivery_id=d.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">打印</a>
                 {% endif %}
+                {% if d.status == 'created' and user_can_cap('delivery.action.delete') %}
+                <form method="post" action="{{ url_for('main.delivery_delete', delivery_id=d.id) }}" class="d-inline" onsubmit="return confirm('确定删除该送货单？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
                 {% if d.status == 'created' and user_can_cap('delivery.action.mark_shipped') %}
                 <form method="post" action="{{ url_for('main.delivery_mark_shipped', delivery_id=d.id) }}" class="d-inline" onsubmit="return confirm('确认标记为已发？');">
                     <button type="submit" class="btn btn-sm btn-outline-success">标记已发</button>

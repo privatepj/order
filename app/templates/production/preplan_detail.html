@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}预生产计划详情 - 工厂订单系统{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <h2 class="mb-0">预生产计划 #{{ preplan.id }}</h2>
+    <span class="text-muted small">日期：{{ preplan.plan_date.isoformat() if preplan.plan_date else '-' }}</span>
+    <span class="text-muted small">来源：{{ preplan.source_type or '-' }}</span>
+    <span class="text-muted small">状态：{{ preplan.status or '-' }}</span>
+</div>
+
+{% if user_can_cap('production.calc.action.run') %}
+<form method="post" action="{{ url_for('main.production_preplan_measure', preplan_id=preplan.id) }}" class="mb-3">
+    <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('确认重新测算并覆盖现有工作单与缺料明细？');">重新测算</button>
+    <a href="{{ url_for('main.production_preplan_edit', preplan_id=preplan.id) }}" class="btn btn-outline-secondary btn-sm">编辑</a>
+    <a href="{{ url_for('main.production_preplan_list') }}" class="btn btn-outline-secondary btn-sm">返回列表</a>
+</form>
+{% else %}
+<a href="{{ url_for('main.production_preplan_list') }}" class="btn btn-outline-secondary btn-sm mb-3 d-inline-block">返回列表</a>
+{% endif %}
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <h5 class="mb-2">根需求明细（成品）</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle mb-0">
+                <thead>
+                <tr>
+                    <th style="width:80px;">行号</th>
+                    <th>产品</th>
+                    <th style="width:180px;" class="text-end">数量</th>
+                    <th style="width:120px;">单位</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for ln in preplan.lines %}
+                <tr>
+                    <td class="text-nowrap">{{ ln.line_no }}</td>
+                    <td class="text-nowrap">
+                        {% if ln.product %}
+                            {{ ln.product.product_code }} — {{ ln.product.name }}{% if ln.product.spec %}（{{ ln.product.spec }}）{% endif %}
+                        {% else %}
+                            产品ID={{ ln.product_id }}
+                        {% endif %}
+                    </td>
+                    <td class="text-end">{{ ln.quantity }}</td>
+                    <td>{{ ln.unit or '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted">无根需求</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<h5 class="mb-2">工作单与缺料明细</h5>
+{% for wo in work_orders %}
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+            <div class="fw-semibold">WO #{{ wo.id }}</div>
+            <div class="text-muted small">
+                {% if wo.parent_kind == 'finished' %}
+                    成品：{{ wo.parent_product.product_code if wo.parent_product else wo.parent_product_id }}
+                {% elif wo.parent_kind in ('semi','material') %}
+                    {{ wo.parent_kind }}：{{ wo.parent_material.code if wo.parent_material else wo.parent_material_id }}
+                {% else %}
+                    {{ wo.parent_kind }}：{{ wo.parent_product_id or wo.parent_material_id }}
+                {% endif %}
+            </div>
+            <div class="text-muted small ms-auto">净数量：{{ wo.to_produce_qty }}</div>
+        </div>
+        <div class="row g-3 mb-2">
+            <div class="col-md-4">
+                <div class="text-muted small">需求量</div>
+                <div class="fw-semibold">{{ wo.demand_qty }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">库存覆盖</div>
+                <div class="fw-semibold">{{ wo.stock_covered_qty }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small">需要生产</div>
+                <div class="fw-semibold">{{ wo.to_produce_qty }}</div>
+            </div>
+        </div>
+        {% if wo.remark %}
+            <div class="alert alert-info py-2 mb-2">{{ wo.remark }}</div>
+        {% endif %}
+
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle mb-0">
+                <thead>
+                <tr>
+                    <th>子项</th>
+                    <th style="width:180px;" class="text-end">需求量</th>
+                    <th style="width:180px;" class="text-end">库存覆盖</th>
+                    <th style="width:180px;" class="text-end">缺口</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for n in wo.component_needs %}
+                <tr>
+                    <td class="text-nowrap">
+                        {% if n.child_material %}
+                            {{ n.child_kind }}：{{ n.child_material.code }} — {{ n.child_material.name }}{% if n.child_material.spec %}（{{ n.child_material.spec }}）{% endif %}
+                        {% else %}
+                            {{ n.child_kind }}：{{ n.child_material_id }}
+                        {% endif %}
+                    </td>
+                    <td class="text-end">{{ n.required_qty }}</td>
+                    <td class="text-end">{{ n.stock_covered_qty }}</td>
+                    <td class="text-end fw-semibold text-danger">{{ n.shortage_qty }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted">无 BOM 展开明细（可能库存已覆盖或缺少生效 BOM）。</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="text-muted">暂无工作单，请先运行测算。</div>
+{% endfor %}
+
+{% endblock %}
+

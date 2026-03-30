@@ -38,7 +38,10 @@ from app.services.delivery_svc import (
     update_delivery_waybill_for_list,
     effective_customer_material_no,
 )
-from app.services.order_svc import recompute_orders_status_for_delivery
+from app.services.order_svc import (
+    recompute_orders_status_for_delivery,
+    recompute_orders_status_for_order_ids,
+)
 from app.services import inventory_svc
 
 
@@ -485,7 +488,48 @@ def register_delivery_routes(bp):
     @capability_required("delivery.action.delete")
     def delivery_delete(delivery_id):
         delivery = Delivery.query.get_or_404(delivery_id)
-        flash("删除操作已禁用。", "warning")
+        if delivery.status != "created":
+            flash("仅待发(created)状态可删除。", "warning")
+            return redirect(url_for("main.delivery_list"))
+
+        # 删除 delivery 前先收集影响的订单（便于删除后重算订单状态）。
+        order_ids = [
+            x[0]
+            for x in (
+                db.session.query(DeliveryItem.order_id)
+                .filter(DeliveryItem.delivery_id == delivery.id)
+                .distinct()
+                .all()
+            )
+            if x and x[0]
+        ]
+
+        try:
+            # 释放单号池占用（仅当该运单确实指向当前 delivery 时）。
+            if delivery.express_waybill_id:
+                w = db.session.get(ExpressWaybill, delivery.express_waybill_id)
+                if w and w.delivery_id == delivery.id:
+                    w.status = "available"
+                    w.delivery_id = None
+                    w.used_at = None
+                    db.session.add(w)
+                delivery.express_waybill_id = None
+                delivery.waybill_no = None
+                db.session.add(delivery)
+
+            # 删除自动生成的出库流水（如有）。
+            inventory_svc.delete_delivery_sourced_movements(delivery.id)
+
+            # 删除本送货单本身（带 cascade，delivery_item 会随之删除）。
+            db.session.delete(delivery)
+
+            recompute_orders_status_for_order_ids(order_ids)
+            db.session.commit()
+            flash("送货单已删除。", "success")
+        except Exception:
+            db.session.rollback()
+            flash("删除失败，请重试。", "danger")
+
         return redirect(url_for("main.delivery_list"))
 
     @bp.route("/deliveries/<int:delivery_id>/clear-waybill", methods=["POST"])

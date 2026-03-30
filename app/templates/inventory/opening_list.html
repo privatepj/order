@@ -24,10 +24,10 @@
     <tbody>
         {% for r in pagination.items %}
         <tr>
-            <td>{% if r.category == 'finished' %}成品{% elif r.category == 'semi' %}半成品{% else %}{{ r.category }}{% endif %}</td>
+            <td>{% if r.category == 'finished' %}成品{% elif r.category == 'semi' %}半成品{% elif r.category == 'material' %}物料{% else %}{{ r.category }}{% endif %}</td>
             <td>{{ r.storage_area }}</td>
             <td>
-                {% if r.product %}{{ r.product.product_code }} — {{ r.product.name }}{% else %}-{% endif %}
+                {% if r.category == 'finished' and r.product %}{{ r.product.product_code }} — {{ r.product.name }}{% if r.product.spec %}（{{ r.product.spec }}）{% endif %}{% elif r.category in ('semi','material') and r.material %}{{ r.material.code }} — {{ r.material.name }}{% if r.material.spec %}（{{ r.material.spec }}）{% endif %}{% else %}-{% endif %}
             </td>
             <td class="text-end">{{ r.opening_qty }}</td>
             <td>{{ r.unit or '-' }}</td>

@@ -19,6 +19,7 @@ from app.models import (
     InventoryMovementBatch,
     InventoryOpeningBalance,
     Product,
+    SemiMaterial,
     User,
 )
 from app.services import inventory_svc
@@ -70,6 +71,17 @@ def _validate_products(product_ids):
         raise ValueError("存在无效的产品。")
 
 
+def _validate_semi_materials(kind: str, item_ids):
+    if not item_ids:
+        return
+    cnt = (
+        SemiMaterial.query.filter(SemiMaterial.kind == kind, SemiMaterial.id.in_(item_ids))
+        .count()
+    )
+    if cnt != len(set(item_ids)):
+        raise ValueError(f"存在无效的{kind}主数据。")
+
+
 def _parse_movement_line_rows():
     """解析批量手工出入库行：(product_id, storage_area, quantity, unit, remark)；非法时 raise ValueError。"""
     pids = request.form.getlist("line_product_id")
@@ -105,6 +117,44 @@ def _parse_movement_line_rows():
         if remark:
             remark = remark.strip()[:255] or None
         rows.append((product_id, area, qty, unit, remark))
+    return rows
+
+
+def _parse_movement_material_line_rows():
+    """解析批量手工半成品/物料出入库行：(material_id, storage_area, quantity, unit, remark)。"""
+    pids = request.form.getlist("line_material_id")
+    areas = request.form.getlist("line_storage_area")
+    qtys = request.form.getlist("line_quantity")
+    units = request.form.getlist("line_unit")
+    remarks = request.form.getlist("line_remark")
+    rows = []
+    for i, pid in enumerate(pids):
+        pid = (pid or "").strip()
+        if not pid:
+            continue
+        try:
+            material_id = int(pid)
+        except ValueError:
+            continue
+        area = (areas[i] if i < len(areas) else "") or ""
+        area = area.strip()
+        if not area:
+            raise ValueError("每一行有物料的记录都必须填写仓储区。")
+        qraw = (qtys[i] if i < len(qtys) else "") or "0"
+        qraw = str(qraw).strip()
+        try:
+            qty = Decimal(qraw)
+        except InvalidOperation:
+            raise ValueError("数量格式不正确。")
+        if qty <= 0:
+            raise ValueError("每一行数量须大于 0。")
+        unit = (units[i] if i < len(units) else None) or None
+        if unit:
+            unit = unit.strip()[:16] or None
+        remark = (remarks[i] if i < len(remarks) else None) or None
+        if remark:
+            remark = remark.strip()[:255] or None
+        rows.append((material_id, area, qty, unit, remark))
     return rows
 
 
@@ -267,11 +317,68 @@ def register_inventory_routes(bp):
     @login_required
     @menu_required("inventory_ops")
     def inventory_suggest_storage_area():
-        pid = request.args.get("product_id", type=int)
-        if not pid:
+        category = (request.args.get("category") or "").strip() or inventory_svc.INV_FINISHED
+        item_id = request.args.get("item_id", type=int)
+        if not item_id:
+            item_id = request.args.get("product_id", type=int)
+        if not item_id:
+            item_id = request.args.get("material_id", type=int)
+
+        if not item_id:
             return jsonify({"storage_area": ""})
-        area = inventory_svc.suggest_storage_area_for_product(pid)
+
+        if category not in (
+            inventory_svc.INV_FINISHED,
+            inventory_svc.INV_SEMI,
+            inventory_svc.INV_MATERIAL,
+        ):
+            category = inventory_svc.INV_FINISHED
+
+        area = inventory_svc.suggest_storage_area_for_category_item(category, item_id)
         return jsonify({"storage_area": area})
+
+    # ----- API：半成品/物料搜索（库存录入用） -----
+    @bp.route("/api/inventory/semi-materials-search", methods=["GET"])
+    @login_required
+    @menu_required("inventory_ops")
+    def inventory_semi_materials_search():
+        # 复用现有能力键，避免未完成 RBAC 前无法使用
+        if not current_user_can_cap("inventory_ops.api.products_search"):
+            abort(403)
+        qstr = (request.args.get("q") or "").strip()
+        kind = (request.args.get("kind") or request.args.get("category") or "").strip()
+        if kind not in (inventory_svc.INV_SEMI, inventory_svc.INV_MATERIAL):
+            kind = inventory_svc.INV_SEMI
+        limit = request.args.get("limit", 50, type=int)
+        limit = max(1, min(limit, 100))
+
+        q = SemiMaterial.query.filter(SemiMaterial.kind == kind).order_by(SemiMaterial.code)
+        cond = keyword_like_or(
+            qstr,
+            SemiMaterial.code,
+            SemiMaterial.name,
+            SemiMaterial.spec,
+            SemiMaterial.base_unit,
+            SemiMaterial.remark,
+        )
+        if cond is not None:
+            q = q.filter(cond)
+
+        items = []
+        for it in q.limit(limit).all():
+            label = f"{it.code} — {it.name}"
+            if it.spec:
+                label += f"（{it.spec}）"
+            items.append(
+                {
+                    "id": it.id,
+                    "label": label,
+                    "spec": it.spec or "",
+                    "base_unit": it.base_unit or "",
+                    "category": it.kind,
+                }
+            )
+        return jsonify({"items": items})
 
     # ----- 库存查询（结存聚合） -----
     @bp.route("/inventory/query")
@@ -385,9 +492,11 @@ def register_inventory_routes(bp):
             do_excel = request.form.get("do_excel_import") == "1"
             try:
                 cat = (request.form.get("category") or "").strip()
-                if cat == inventory_svc.INV_SEMI:
-                    raise ValueError("半成品出入库尚未接入物料表，暂不可保存。")
-                if cat != inventory_svc.INV_FINISHED:
+                if cat not in (
+                    inventory_svc.INV_FINISHED,
+                    inventory_svc.INV_SEMI,
+                    inventory_svc.INV_MATERIAL,
+                ):
                     raise ValueError("请选择类别。")
                 direction = (request.form.get("direction") or "").strip()
                 if direction not in ("in", "out"):
@@ -418,8 +527,9 @@ def register_inventory_routes(bp):
                     if deduped:
                         xname = (file.filename or "").strip()
                         success_count, svc_errors, svc_failed_rows = (
-                            inventory_svc.import_finished_movements_from_parsed_lines(
+                            inventory_svc.import_movements_from_parsed_lines_by_category(
                                 deduped,
+                                category=cat,
                                 direction=direction,
                                 biz_date=biz_date,
                                 created_by=current_user.id,
@@ -451,35 +561,66 @@ def register_inventory_routes(bp):
                         import_result=import_result,
                     )
 
-                line_rows = _parse_movement_line_rows()
-                if not line_rows:
-                    raise ValueError("请至少录入一行有效的产品、仓储区与数量。")
-                _validate_products([r[0] for r in line_rows])
-                batch = inventory_svc.create_movement_batch(
-                    category=inventory_svc.INV_FINISHED,
-                    biz_date=biz_date,
-                    direction=direction,
-                    source=inventory_svc.BATCH_SOURCE_FORM,
-                    line_count=len(line_rows),
-                    created_by=current_user.id,
-                )
-                for product_id, area, qty, unit, remark in line_rows:
-                    p = Product.query.get(product_id)
-                    if not p:
-                        raise ValueError("存在无效的产品。")
-                    inventory_svc.create_manual_movement(
+                if cat == inventory_svc.INV_FINISHED:
+                    line_rows = _parse_movement_line_rows()
+                    if not line_rows:
+                        raise ValueError("请至少录入一行有效的产品、仓储区与数量。")
+                    _validate_products([r[0] for r in line_rows])
+                    batch = inventory_svc.create_movement_batch(
                         category=inventory_svc.INV_FINISHED,
-                        direction=direction,
-                        product_id=product_id,
-                        material_id=0,
-                        storage_area=area,
-                        quantity=qty,
-                        unit=unit or (p.base_unit or None),
                         biz_date=biz_date,
-                        remark=remark,
+                        direction=direction,
+                        source=inventory_svc.BATCH_SOURCE_FORM,
+                        line_count=len(line_rows),
                         created_by=current_user.id,
-                        movement_batch_id=batch.id,
                     )
+                    for product_id, area, qty, unit, remark in line_rows:
+                        p = Product.query.get(product_id)
+                        if not p:
+                            raise ValueError("存在无效的产品。")
+                        inventory_svc.create_manual_movement(
+                            category=inventory_svc.INV_FINISHED,
+                            direction=direction,
+                            product_id=product_id,
+                            material_id=0,
+                            storage_area=area,
+                            quantity=qty,
+                            unit=unit or (p.base_unit or None),
+                            biz_date=biz_date,
+                            remark=remark,
+                            created_by=current_user.id,
+                            movement_batch_id=batch.id,
+                        )
+                else:
+                    line_rows = _parse_movement_material_line_rows()
+                    if not line_rows:
+                        raise ValueError("请至少录入一行有效的半成品/物料、仓储区与数量。")
+                    _validate_semi_materials(cat, [r[0] for r in line_rows])
+                    batch = inventory_svc.create_movement_batch(
+                        category=cat,
+                        biz_date=biz_date,
+                        direction=direction,
+                        source=inventory_svc.BATCH_SOURCE_FORM,
+                        line_count=len(line_rows),
+                        created_by=current_user.id,
+                    )
+                    for material_id, area, qty, unit, remark in line_rows:
+                        item = SemiMaterial.query.get(material_id)
+                        if not item or item.kind != cat:
+                            raise ValueError("存在无效的半成品/物料主数据。")
+                        inventory_svc.create_manual_movement(
+                            category=cat,
+                            direction=direction,
+                            product_id=0,
+                            material_id=material_id,
+                            storage_area=area,
+                            quantity=qty,
+                            unit=unit or (item.base_unit or None),
+                            biz_date=biz_date,
+                            remark=remark,
+                            created_by=current_user.id,
+                            movement_batch_id=batch.id,
+                        )
                 db.session.commit()
                 flash(f"已保存批次（{len(line_rows)} 条明细）。", "success")
                 return redirect(url_for("main.inventory_list"))
@@ -539,7 +680,10 @@ def register_inventory_routes(bp):
             selectinload(InventoryMovementBatch.delivery),
         ).get_or_404(batch_id)
         movements = (
-            InventoryMovement.query.options(selectinload(InventoryMovement.product))
+            InventoryMovement.query.options(
+                selectinload(InventoryMovement.product),
+                selectinload(InventoryMovement.material),
+            )
             .filter_by(movement_batch_id=batch_id)
             .order_by(InventoryMovement.id.asc())
             .all()
@@ -592,7 +736,8 @@ def register_inventory_routes(bp):
     def inventory_opening_list():
         page = request.args.get("page", 1, type=int)
         q = InventoryOpeningBalance.query.options(
-            selectinload(InventoryOpeningBalance.product)
+            selectinload(InventoryOpeningBalance.product),
+            selectinload(InventoryOpeningBalance.material),
         ).order_by(
             InventoryOpeningBalance.storage_area,
             InventoryOpeningBalance.id,
@@ -610,29 +755,53 @@ def register_inventory_routes(bp):
         if request.method == "POST":
             try:
                 cat = (request.form.get("category") or "").strip()
-                if cat == inventory_svc.INV_SEMI:
-                    raise ValueError("半成品期初尚未接入物料表，请仅维护成品。")
-                if cat != inventory_svc.INV_FINISHED:
+                if cat not in (
+                    inventory_svc.INV_FINISHED,
+                    inventory_svc.INV_SEMI,
+                    inventory_svc.INV_MATERIAL,
+                ):
                     raise ValueError("请选择类别。")
-                pid = int((request.form.get("product_id") or "").strip())
-                if not Product.query.get(pid):
-                    raise ValueError("产品无效。")
+
                 area = (request.form.get("storage_area") or "").strip()
                 if not area:
                     raise ValueError("请填写仓储区。")
+
                 qraw = (request.form.get("opening_qty") or "").strip()
                 oq = Decimal(qraw)
+
                 unit = (request.form.get("unit") or "").strip() or None
                 remark = (request.form.get("remark") or "").strip() or None
-                row = InventoryOpeningBalance(
-                    category=inventory_svc.INV_FINISHED,
-                    product_id=pid,
-                    material_id=0,
-                    storage_area=area[:32],
-                    opening_qty=oq,
-                    unit=unit[:16] if unit else None,
-                    remark=remark[:255] if remark else None,
-                )
+
+                if cat == inventory_svc.INV_FINISHED:
+                    pid = int((request.form.get("product_id") or "").strip())
+                    if not Product.query.get(pid):
+                        raise ValueError("产品无效。")
+                    row = InventoryOpeningBalance(
+                        category=inventory_svc.INV_FINISHED,
+                        product_id=pid,
+                        material_id=0,
+                        storage_area=area[:32],
+                        opening_qty=oq,
+                        unit=unit[:16] if unit else None,
+                        remark=remark[:255] if remark else None,
+                    )
+                else:
+                    mid_raw = (request.form.get("material_id") or request.form.get("product_id") or "").strip()
+                    mid = int(mid_raw) if mid_raw else 0
+                    if not mid:
+                        raise ValueError("请选择半成品/物料。")
+                    item = SemiMaterial.query.get(mid)
+                    if not item or item.kind != cat:
+                        raise ValueError("半成品/物料无效。")
+                    row = InventoryOpeningBalance(
+                        category=cat,
+                        product_id=0,
+                        material_id=mid,
+                        storage_area=area[:32],
+                        opening_qty=oq,
+                        unit=unit[:16] if unit else None,
+                        remark=remark[:255] if remark else None,
+                    )
                 db.session.add(row)
                 db.session.commit()
                 flash("期初已保存。", "success")
@@ -654,7 +823,8 @@ def register_inventory_routes(bp):
     @capability_required("inventory_ops.opening.edit")
     def inventory_opening_edit(opening_id):
         row = InventoryOpeningBalance.query.options(
-            selectinload(InventoryOpeningBalance.product)
+            selectinload(InventoryOpeningBalance.product),
+            selectinload(InventoryOpeningBalance.material),
         ).get_or_404(opening_id)
         if request.method == "POST":
             try:

@@ -57,6 +57,12 @@ class InventoryOpeningBalance(db.Model):
         lazy=True,
     )
 
+    material = db.relationship(
+        "SemiMaterial",
+        primaryjoin="foreign(InventoryOpeningBalance.material_id) == SemiMaterial.id",
+        lazy=True,
+    )
+
 
 class InventoryMovement(db.Model):
     __tablename__ = "inventory_movement"
@@ -87,5 +93,11 @@ class InventoryMovement(db.Model):
     product = db.relationship(
         "Product",
         primaryjoin="foreign(InventoryMovement.product_id) == Product.id",
+        lazy=True,
+    )
+
+    material = db.relationship(
+        "SemiMaterial",
+        primaryjoin="foreign(InventoryMovement.material_id) == SemiMaterial.id",
         lazy=True,
     )

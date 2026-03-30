@@ -14,6 +14,9 @@ from app.main.routes_user import register_user_routes
 from app.main.routes_role import register_role_routes
 from app.main.routes_audit import register_audit_routes
 from app.main.routes_inventory import register_inventory_routes
+from app.main.routes_semi_material import register_semi_material_routes
+from app.main.routes_bom import register_bom_routes
+from app.main.routes_production import register_production_routes
 from app.main.routes_rbac_admin import register_rbac_admin_routes
 
 bp = Blueprint("main", __name__)
@@ -29,6 +32,9 @@ register_product_routes(bp)
 register_role_routes(bp)
 register_audit_routes(bp)
 register_inventory_routes(bp)
+register_semi_material_routes(bp)
+register_bom_routes(bp)
+register_production_routes(bp)
 register_rbac_admin_routes(bp)
 
 

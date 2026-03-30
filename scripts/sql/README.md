@@ -51,8 +51,10 @@ mysql -u 用户名 -p sydixon_order < scripts/sql/01_migrations_for_old_db.sql
 | `00_reset_drop_all_tables.sql` | 仅删除全部业务表；删后需再执行 `00_full_schema.sql`（开发重建用，先备份） |
 | `01_migrations_for_old_db.sql` | 增量迁移，仅用于从旧库升级（含每日库存表 `inventory_daily_*`） |
 | `run_16_seed_nav_capability.sql` 及 `run_*.sql` | 旧库按需补跑；**勿向已使用过的 `run_XX` 再追加 INSERT**，新增能力只新建更高编号的 `run_XX_*.sql`（幂等），否则已跑过早期脚本的库会漏数据 |
+| `run_30_add_production_tables.sql` / `run_31_production_rbac.sql` | 生产管理：新增生产预计划/工作单/缺料明细 + 导航/能力键 |
 | `run_23_openclaw_user_token_and_caps.sql` | OpenClaw：`user_api_token` 表 + `openclaw.*` 能力键（旧库升级用；新库已并入 `00_full_schema.sql`） |
 | `run_24_openclaw_confirm_flow_caps.sql` | OpenClaw 确认制：主体/产品查询、建客户与客户产品、订单/送货预览等能力键 |
+| `user_today/` | 用户脚本目录：存放“今天新增/改动”的 SQL（由 `scripts/run_user_sql_batch.py` 执行，按 sha256 跳过重复脚本） |
 | `README.md` | 本说明 |
 
 ---
@@ -63,3 +65,15 @@ mysql -u 用户名 -p sydixon_order < scripts/sql/01_migrations_for_old_db.sql
 - 历史上分散在 `scripts/` 下的增量 `migrate_*.sql` / `alter_*.sql` / `add_*.sql` 已全部并入 **`01_migrations_for_old_db.sql`**（含 **`audit_log`** 表）；旧库升级执行该文件即可。
 
 部署完成后，请参照项目根目录 **《项目整体部署.md》** 配置 `.env`、启动应用（如 gunicorn）等。
+
+---
+## 用户脚本目录（user_today）
+把今天新增/改动的 SQL 放入 `scripts/sql/user_today/`，然后执行：
+
+```bash
+python scripts/run_user_sql_batch.py
+```
+
+执行器会根据每个文件的 sha256 在数据库表 `sql_user_script_run_log` 中记录已执行脚本；命中则跳过，从而避免增量部署时重复执行同一批脚本。
+
+注意：执行器会粗分割 SQL（按 `;`），并自动忽略 `USE ...;` 行。建议用户脚本尽量保持成“补丁式多条语句”，不要依赖复杂存储过程/函数定义中的分号行为。

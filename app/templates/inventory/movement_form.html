@@ -20,15 +20,16 @@
 </div>
 <form method="post" id="movForm" enctype="multipart/form-data"
     data-products-search-url="{{ url_for('main.inventory_products_search') }}"
+    data-semi-materials-search-url="{{ url_for('main.inventory_semi_materials_search') }}"
     data-suggest-area-url="{{ url_for('main.inventory_suggest_storage_area') }}">
     <div class="row mb-3">
         <div class="col-md-4">
             <label class="form-label">类别 <span class="text-danger">*</span></label>
             <select name="category" id="invCategory" class="form-select" required>
                 <option value="finished" {% if not form_category or form_category == 'finished' %}selected{% endif %}>成品</option>
-                <option value="semi" {% if form_category == 'semi' %}selected{% endif %}>半成品（暂未开通）</option>
+                <option value="semi" {% if form_category == 'semi' %}selected{% endif %}>半成品</option>
+                <option value="material" {% if form_category == 'material' %}selected{% endif %}>物料</option>
             </select>
-            <div class="form-text text-warning d-none" id="semiHint">物料表未接入，无法保存半成品流水。</div>
         </div>
         <div class="col-md-4">
             <label class="form-label">方向 <span class="text-danger">*</span></label>
@@ -80,6 +81,7 @@
             <tr class="mov-line-row">
                 <td class="inv-product-cell">
                     <input type="hidden" name="line_product_id" class="inv-line-product-id" value="">
+                    <input type="hidden" name="line_material_id" class="inv-line-material-id" value="">
                     <input type="text" class="form-control form-control-sm inv-line-product-search" autocomplete="off" placeholder="关键字搜索…">
                     <div class="inv-product-dd list-group d-none"></div>
                 </td>
@@ -126,6 +128,7 @@
     <tr class="mov-line-row">
         <td class="inv-product-cell">
             <input type="hidden" name="line_product_id" class="inv-line-product-id" value="">
+            <input type="hidden" name="line_material_id" class="inv-line-material-id" value="">
             <input type="text" class="form-control form-control-sm inv-line-product-search" autocomplete="off" placeholder="关键字搜索…">
             <div class="inv-product-dd list-group d-none"></div>
         </td>
@@ -143,11 +146,11 @@
 (function () {
     var form = document.getElementById('movForm');
     var searchUrl = form.getAttribute('data-products-search-url');
+    var semiSearchUrl = form.getAttribute('data-semi-materials-search-url');
     var suggestUrl = form.getAttribute('data-suggest-area-url');
     var body = document.getElementById('movLinesBody');
     var tpl = document.getElementById('movLineTpl');
     var categorySel = document.getElementById('invCategory');
-    var semiHint = document.getElementById('semiHint');
     var btnSubmit = document.getElementById('btnSubmit');
     var debounceByInput = new WeakMap();
 
@@ -183,17 +186,26 @@
             btn.addEventListener('click', function () {
                 var row = dd.closest('.mov-line-row');
                 if (!row) return;
-                row.querySelector('.inv-line-product-id').value = String(it.id);
+                var isFinished = categorySel.value === 'finished';
+                var pidInput = row.querySelector('.inv-line-product-id');
+                var midInput = row.querySelector('.inv-line-material-id');
+                if (pidInput) pidInput.value = isFinished ? String(it.id) : '';
+                if (midInput) midInput.value = isFinished ? '' : String(it.id);
                 row.querySelector('.inv-line-product-search').value = it.label || '';
                 row.querySelector('.inv-line-spec').value = it.spec || '';
                 var u = row.querySelector('[name="line_unit"]');
                 if (u && !u.value) u.value = it.base_unit || '';
                 hideAllDd();
                 if (suggestUrl && it.id) {
-                    fetch(suggestUrl + '?product_id=' + encodeURIComponent(String(it.id)), {
+                    fetch(
+                        suggestUrl
+                        + '?category=' + encodeURIComponent(categorySel.value)
+                        + '&item_id=' + encodeURIComponent(String(it.id)),
+                        {
                         credentials: 'same-origin',
                         headers: { 'Accept': 'application/json' }
-                    })
+                        }
+                    )
                         .then(function (r) { return r.json(); })
                         .then(function (data) {
                             var sa = row.querySelector('[name="line_storage_area"]');
@@ -209,10 +221,20 @@
         dd.classList.remove('d-none');
     }
 
-    function fetchProducts(q, row, dd) {
-        if (!searchUrl || categorySel.value !== 'finished') return;
-        var url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+    function fetchItems(q, row, dd) {
+        var kind = categorySel.value;
         var anchor = row.querySelector('.inv-line-product-search');
+        var url = null;
+        if (kind === 'finished') {
+            if (!searchUrl) return;
+            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+        } else {
+            if (!semiSearchUrl) return;
+            url =
+                semiSearchUrl
+                + '?q=' + encodeURIComponent(q || '')
+                + '&limit=50&kind=' + encodeURIComponent(kind);
+        }
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })
             .then(function (data) { renderDd(dd, data.items || [], anchor); })
@@ -221,20 +243,22 @@
 
     function bindRow(row) {
         var search = row.querySelector('.inv-line-product-search');
-        var hid = row.querySelector('.inv-line-product-id');
+        var pidInput = row.querySelector('.inv-line-product-id');
+        var midInput = row.querySelector('.inv-line-material-id');
         var dd = row.querySelector('.inv-product-dd');
         if (!search || !dd) return;
 
         search.addEventListener('input', function () {
-            hid.value = '';
+            if (pidInput) pidInput.value = '';
+            if (midInput) midInput.value = '';
             row.querySelector('.inv-line-spec').value = '';
             var t = debounceByInput.get(search);
             if (t) clearTimeout(t);
-            t = setTimeout(function () { fetchProducts(search.value.trim(), row, dd); }, 250);
+            t = setTimeout(function () { fetchItems(search.value.trim(), row, dd); }, 250);
             debounceByInput.set(search, t);
         });
         search.addEventListener('focus', function () {
-            if (categorySel.value === 'finished') fetchProducts(search.value.trim(), row, dd);
+            fetchItems(search.value.trim(), row, dd);
         });
     }
 
@@ -261,11 +285,14 @@
     });
 
     categorySel.addEventListener('change', function () {
-        var semi = categorySel.value === 'semi';
-        semiHint.classList.toggle('d-none', !semi);
-        btnSubmit.disabled = semi;
-        body.querySelectorAll('.inv-line-product-search').forEach(function (inp) {
-            inp.disabled = semi;
+        btnSubmit.disabled = false;
+        body.querySelectorAll('.mov-line-row').forEach(function (tr) {
+            var pid = tr.querySelector('.inv-line-product-id');
+            var mid = tr.querySelector('.inv-line-material-id');
+            if (pid) pid.value = '';
+            if (mid) mid.value = '';
+            var spec = tr.querySelector('.inv-line-spec');
+            if (spec) spec.value = '';
         });
     });
 
@@ -274,35 +301,29 @@
         if (sub && sub.getAttribute('name') === 'do_excel_import') {
             return;
         }
-        if (categorySel.value === 'semi') {
-            e.preventDefault();
-            return;
-        }
+        var isFinished = categorySel.value === 'finished';
         var ok = false;
         body.querySelectorAll('.mov-line-row').forEach(function (tr) {
-            var pid = tr.querySelector('.inv-line-product-id');
+            var idInput = isFinished
+                ? tr.querySelector('.inv-line-product-id')
+                : tr.querySelector('.inv-line-material-id');
             var qty = tr.querySelector('[name="line_quantity"]');
             var sa = tr.querySelector('[name="line_storage_area"]');
-            if (pid && pid.value && qty && String(qty.value).trim() !== '' &&
+            if (idInput && idInput.value && qty && String(qty.value).trim() !== '' &&
                 sa && String(sa.value).trim() !== '') {
                 ok = true;
             }
         });
         if (!ok) {
             e.preventDefault();
-            alert('请至少填写一行：产品、仓储区与数量。');
+            alert('请至少填写一行：' + (isFinished ? '产品' : '半成品/物料') + '、仓储区与数量。');
         }
     });
 
     bindAllRows();
 
     (function syncCategoryUi() {
-        var semi = categorySel.value === 'semi';
-        semiHint.classList.toggle('d-none', !semi);
-        btnSubmit.disabled = semi;
-        body.querySelectorAll('.inv-line-product-search').forEach(function (inp) {
-            inp.disabled = semi;
-        });
+        btnSubmit.disabled = false;
     })();
 })();
 </script>

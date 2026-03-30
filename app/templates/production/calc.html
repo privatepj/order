@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}生产测算 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">生产测算（合并订单缺货 + 预生产计划）</h2>
+
+<form method="post">
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <label class="form-label">计划日期 <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" name="plan_date" required value="{{ today }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">客户 <span class="text-danger">*</span></label>
+            <select class="form-select" name="customer_id" required>
+                <option value="">请选择客户</option>
+                {% for c in customers %}
+                <option value="{{ c.id }}">{{ c.customer_code or c.short_code or c.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">合并预生产计划（可选）</label>
+            <select class="form-select" name="preplan_id">
+                <option value="">— 不合并 —</option>
+                {% for p in preplans %}
+                <option value="{{ p.id }}">#{{ p.id }} / {{ p.plan_date.isoformat() if p.plan_date else '-' }} / {{ p.status }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <label class="form-label">订单 ID 过滤（可选）</label>
+            <input type="number" class="form-control" name="order_id" placeholder="不填表示该客户所有订单缺货汇总">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">备注（可选）</label>
+            <input type="text" class="form-control" name="remark" maxlength="255">
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button type="submit" class="btn btn-primary">运行测算并生成工作单</button>
+        <a href="{{ url_for('main.production_preplan_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+
+{% endblock %}
+

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}生产管理 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">生产管理</h2>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    {% if user_can_cap('production.preplan.action.create') %}
+    <a href="{{ url_for('main.production_preplan_new') }}" class="btn btn-primary btn-sm">新建预生产计划</a>
+    {% endif %}
+    {% if user_can_cap('production.calc.action.run') %}
+    <a href="{{ url_for('main.production_calc') }}" class="btn btn-outline-secondary btn-sm">生产测算（合并订单缺货/预计划）</a>
+    {% else %}
+    <span class="text-muted small">暂无“生产测算运行”权限</span>
+    {% endif %}
+</div>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>计划</th>
+            <th>日期</th>
+            <th>来源</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for p in preplans %}
+        <tr>
+            <td class="text-nowrap">#{{ p.id }}</td>
+            <td class="text-nowrap">{{ p.plan_date.isoformat() if p.plan_date else '-' }}</td>
+            <td class="text-nowrap">{{ p.source_type or '-' }}</td>
+            <td class="text-nowrap">{{ p.status or '-' }}</td>
+            <td class="text-nowrap">
+                <a href="{{ url_for('main.production_preplan_detail', preplan_id=p.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                {% if user_can_cap('production.calc.action.run') %}
+                <form method="post" action="{{ url_for('main.production_preplan_measure', preplan_id=p.id) }}" class="d-inline" onsubmit="return confirm('确认要运行生产测算？将重新生成工作单与缺料明细。');">
+                    <button type="submit" class="btn btn-sm btn-success">测算</button>
+                </form>
+                {% endif %}
+                {% if user_can_cap('production.preplan.action.delete') %}
+                <form method="post" action="{{ url_for('main.production_preplan_delete', preplan_id=p.id) }}" class="d-inline" onsubmit="return confirm('确认删除该预生产计划及其测算结果？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+                {% if user_can_cap('production.preplan.action.edit') %}
+                <a href="{{ url_for('main.production_preplan_edit', preplan_id=p.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted">暂无预生产计划</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+

@@ -18,6 +18,7 @@
             <option value="" {{ 'selected' if not category else '' }}>全部</option>
             <option value="finished" {{ 'selected' if category == 'finished' else '' }}>成品</option>
             <option value="semi" {{ 'selected' if category == 'semi' else '' }}>半成品</option>
+            <option value="material" {{ 'selected' if category == 'material' else '' }}>物料</option>
         </select>
     </div>
     {% endif %}
@@ -63,7 +64,7 @@
     <tbody>
         {% for r in rows %}
         <tr>
-            <td>{% if r.category == 'finished' %}成品{% elif r.category == 'semi' %}半成品{% else %}{{ r.category }}{% endif %}</td>
+            <td>{% if r.category == 'finished' %}成品{% elif r.category == 'semi' %}半成品{% elif r.category == 'material' %}物料{% else %}{{ r.category }}{% endif %}</td>
             <td>{{ r.storage_area or '-' }}</td>
             <td>{{ r.product_code or '-' }}</td>
             <td>{{ r.product_name or '-' }}</td>

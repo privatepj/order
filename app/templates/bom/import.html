@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}BOM 导入 - 工厂订单系统{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">BOM 导入（Excel）</h2>
+
+<p class="text-muted small mb-3">
+    模板列顺序：<code>父项类别</code>、<code>父项编号</code>、<code>子项类别</code>、<code>子项编号</code>、<code>用量数量</code>、<code>单位</code>、<code>子项备注</code>。
+</p>
+
+<form method="post" enctype="multipart/form-data" class="mb-4">
+    <div class="mb-3">
+        <label class="form-label">选择 Excel 文件（.xlsx）</label>
+        <input type="file" name="file" accept=".xlsx" class="form-control" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">上传并导入</button>
+    <a href="{{ url_for('main.bom_export_import_template') }}" class="btn btn-outline-secondary">下载模板</a>
+    <a href="{{ url_for('main.bom_list', parent_kind='finished') }}" class="btn btn-outline-secondary">返回</a>
+</form>
+
+{% if result %}
+<div class="alert alert-light border">
+    <h5 class="alert-heading mb-2">导入结果</h5>
+    <p class="mb-2">成功：<strong>{{ result.success }}</strong> 个父项 BOM 版本</p>
+    {% if result.errors and result.errors|length > 0 %}
+    <div class="alert alert-warning mb-0 py-2">
+        <div class="small text-muted mb-1">失败/校验失败明细：</div>
+        <ul class="mb-0 small">
+            {% for e in result.errors %}
+            <li>{{ e }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
+

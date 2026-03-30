@@ -136,6 +136,155 @@ CREATE TABLE `product` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品主数据';
 
 -- ----------------------------
+-- 半成品/物料主数据表
+-- ----------------------------
+DROP TABLE IF EXISTS `semi_material`;
+CREATE TABLE `semi_material` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `kind` varchar(16) NOT NULL COMMENT 'semi / material',
+  `code` varchar(64) NOT NULL COMMENT '半成品/物料编号',
+  `name` varchar(128) NOT NULL COMMENT '名称',
+  `spec` varchar(128) DEFAULT NULL COMMENT '规格',
+  `base_unit` varchar(16) DEFAULT NULL COMMENT '基础单位',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_semi_material_code` (`code`),
+  KEY `idx_semi_material_kind` (`kind`),
+  KEY `idx_semi_material_spec` (`spec`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='半成品/物料主数据';
+
+-- ----------------------------
+-- BOM：父项/版本（bom_header）与子项用量（bom_line）
+-- ----------------------------
+DROP TABLE IF EXISTS `bom_line`;
+DROP TABLE IF EXISTS `bom_header`;
+CREATE TABLE `bom_header` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `parent_kind` varchar(16) NOT NULL COMMENT 'finished / semi / material',
+  `parent_product_id` int unsigned NOT NULL DEFAULT 0 COMMENT '当 parent_kind=finished 时使用',
+  `parent_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '当 parent_kind IN(semi,material) 时使用',
+  `version_no` int unsigned NOT NULL COMMENT '版本号（递增）',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '0=历史版本 1=当前生效',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_bom_header_parent_version` (`parent_kind`,`parent_product_id`,`parent_material_id`,`version_no`),
+  KEY `idx_bom_header_parent` (`parent_kind`,`parent_product_id`,`parent_material_id`),
+  KEY `idx_bom_header_active` (`parent_kind`,`parent_product_id`,`parent_material_id`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='BOM 主表：父项/版本';
+
+CREATE TABLE `bom_line` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `bom_header_id` int unsigned NOT NULL COMMENT '关联 bom_header.id（应用层保证）',
+  `line_no` int unsigned NOT NULL COMMENT '行号（从 1 开始）',
+  `child_kind` varchar(16) NOT NULL COMMENT 'semi / material',
+  `child_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '半成品/物料 id',
+  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `unit` varchar(16) DEFAULT NULL COMMENT '数量单位（用于展示）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_bom_line_header_line` (`bom_header_id`,`line_no`),
+  KEY `idx_bom_line_child` (`child_kind`,`child_material_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='BOM 明细：子项用量';
+
+-- ----------------------------
+-- 生产管理（预生产计划 / 工作单 / 缺料明细）
+-- ----------------------------
+-- 生产管理四张表：无外键约束；应用层保证 join 语义。
+-- ----------------------------
+DROP TABLE IF EXISTS `production_component_need`;
+DROP TABLE IF EXISTS `production_work_order`;
+DROP TABLE IF EXISTS `production_preplan_line`;
+DROP TABLE IF EXISTS `production_preplan`;
+
+CREATE TABLE `production_preplan` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `source_type` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual=手工预计划 order_shortage=由订单缺货生成 combined=合并测算',
+  `plan_date` date NOT NULL COMMENT '预生产计划日期',
+  `customer_id` int unsigned NOT NULL DEFAULT 0 COMMENT '关联 customer.id（可为空用 0 占位）',
+  `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/planned/closed',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_preplan_customer` (`customer_id`),
+  KEY `idx_preplan_plan_date` (`plan_date`),
+  KEY `idx_preplan_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='预生产计划';
+
+CREATE TABLE `production_preplan_line` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `line_no` int unsigned NOT NULL DEFAULT 1 COMMENT '行号（从 1 开始）',
+  `source_type` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual=手工预计划 order_item=订单缺货生成',
+  `source_order_item_id` int unsigned DEFAULT NULL,
+  `product_id` int unsigned NOT NULL DEFAULT 0 COMMENT '成品 product.id',
+  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `unit` varchar(16) DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_preplan_line` (`preplan_id`,`line_no`),
+  KEY `idx_preplan_line_preplan` (`preplan_id`),
+  KEY `idx_preplan_line_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='预生产计划明细（根需求）';
+
+CREATE TABLE `production_work_order` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `root_preplan_line_id` int unsigned DEFAULT NULL COMMENT '追溯到根需求行（订单缺货行/预计划行）',
+  `parent_kind` varchar(16) NOT NULL COMMENT 'finished=成品 semi=半成品 material=物料',
+  `parent_product_id` int unsigned NOT NULL DEFAULT 0 COMMENT 'parent_kind=finished 时使用',
+  `parent_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT 'parent_kind IN(semi,material) 时使用',
+  `plan_date` date NOT NULL,
+  `status` varchar(16) NOT NULL DEFAULT 'planned' COMMENT 'planned/released/closed/cancelled',
+  `demand_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '根需求推导出的总需求',
+  `stock_covered_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '库存覆盖数量（计算时点）',
+  `to_produce_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '需要生产的净数量',
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `remark` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_work_order_preplan` (`preplan_id`),
+  KEY `idx_work_order_root_line` (`root_preplan_line_id`),
+  KEY `idx_work_order_parent` (`parent_kind`,`parent_product_id`,`parent_material_id`),
+  KEY `idx_work_order_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生产工作单';
+
+CREATE TABLE `production_component_need` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `work_order_id` int unsigned NOT NULL,
+  `root_preplan_line_id` int unsigned DEFAULT NULL COMMENT '追溯到根需求行',
+  `bom_header_id` int unsigned DEFAULT NULL COMMENT '关联 bom_header.id（用于追溯）',
+  `bom_line_id` int unsigned DEFAULT NULL COMMENT '关联 bom_line.id（用于追溯）',
+  `child_kind` varchar(16) NOT NULL COMMENT 'semi/material',
+  `child_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '半成品/物料 id',
+  `required_qty` decimal(18,4) NOT NULL DEFAULT 0,
+  `stock_covered_qty` decimal(18,4) NOT NULL DEFAULT 0,
+  `shortage_qty` decimal(18,4) NOT NULL DEFAULT 0,
+  `coverage_mode` varchar(16) NOT NULL DEFAULT 'stock' COMMENT 'stock=库存覆盖',
+  `storage_area_hint` varchar(32) DEFAULT NULL COMMENT '未来：精确到仓储区的出入库提示',
+  `unit` varchar(16) DEFAULT NULL COMMENT '用于展示',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_component_need_wo_bom_line` (`work_order_id`,`bom_line_id`),
+  KEY `idx_component_need_preplan` (`preplan_id`),
+  KEY `idx_component_need_wo` (`work_order_id`),
+  KEY `idx_component_need_child` (`child_kind`,`child_material_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作单需求/缺料明细';
+
+-- ----------------------------
 -- 客户产品表
 -- ----------------------------
 CREATE TABLE `customer_product` (
@@ -467,7 +616,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO `role` (`name`, `code`, `description`, `allowed_menu_keys`) VALUES
 ('管理员', 'admin', '系统管理员', NULL),
 ('销售', 'sales', '销售员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
-('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","customer_product","reconciliation"]' AS JSON)),
+('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","semi_material","bom","production","customer_product","reconciliation"]' AS JSON)),
 ('财务', 'finance', '财务人员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
 ('待分配', 'pending', '注册后等待管理员分配', CAST('[]' AS JSON));
 
@@ -487,6 +636,7 @@ INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sor
 (4, 2, 'express', '快递', 'main.express_company_list', 20, 1, 0, 1, 80),
 (5, 2, 'inventory_query', '库存查询', 'main.inventory_stock_query', 30, 1, 0, 1, 85),
 (6, 2, 'inventory_ops', '库存录入', 'main.inventory_list', 40, 1, 0, 1, 86),
+(21, 2, 'production', '生产管理', 'main.production_preplan_list', 50, 1, 0, 1, 87),
 (7, NULL, 'nav_base', '基础数据', NULL, 30, 1, 0, 0, NULL),
 (8, 7, 'customer', '客户', 'main.customer_list', 10, 1, 0, 1, 30),
 (9, 7, 'product', '产品', 'main.product_list', 20, 1, 0, 1, 40),
@@ -494,6 +644,8 @@ INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sor
 (11, 7, 'company', '公司主体', 'main.company_list', 40, 1, 1, 1, 90),
 (12, 7, 'user_mgmt', '用户管理', 'main.user_list', 50, 1, 1, 1, 100),
 (13, 7, 'role_mgmt', '角色管理', 'main.role_list', 60, 1, 1, 1, 101),
+(19, 7, 'semi_material', '半成品/物料', 'main.semi_material_list', 25, 1, 0, 1, 88),
+(20, 7, 'bom', 'BOM 管理', 'main.bom_list', 26, 1, 0, 1, 89),
 (14, NULL, 'nav_finance', '财务', NULL, 40, 1, 0, 0, NULL),
 (15, 14, 'reconciliation', '对账导出', 'main.reconciliation_export', 10, 1, 0, 1, 60),
 (16, NULL, 'nav_report', '报表导出', NULL, 50, 1, 0, 0, NULL),
@@ -567,6 +719,23 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('product.action.edit', '产品：编辑', 'product', '产品', 30),
 ('product.action.delete', '产品：删除', 'product', '产品', 40),
 ('product.action.import', '产品：Excel 导入', 'product', '产品', 50),
+-- 半成品/物料主数据
+('semi_material.filter.keyword', '半成品/物料列表：关键词搜索', 'semi_material', '半成品/物料', 10),
+('semi_material.action.create', '半成品/物料：新建主数据', 'semi_material', '半成品/物料', 20),
+('semi_material.action.edit', '半成品/物料：编辑主数据', 'semi_material', '半成品/物料', 30),
+('semi_material.action.delete', '半成品/物料：删除主数据', 'semi_material', '半成品/物料', 40),
+('semi_material.action.import', '半成品/物料：Excel 导入', 'semi_material', '半成品/物料', 50),
+-- BOM 主数据
+('bom.filter.keyword', 'BOM 列表：关键词搜索', 'bom', 'BOM', 10),
+('bom.action.create', 'BOM：新建', 'bom', 'BOM', 20),
+('bom.action.edit', 'BOM：编辑', 'bom', 'BOM', 30),
+('bom.action.delete', 'BOM：删除', 'bom', 'BOM', 40),
+('bom.action.import', 'BOM：Excel 导入', 'bom', 'BOM', 50),
+-- 生产管理
+('production.preplan.action.create', '生产管理：预生产计划新建', 'production', '生产管理', 10),
+('production.preplan.action.edit', '生产管理：预生产计划编辑', 'production', '生产管理', 20),
+('production.preplan.action.delete', '生产管理：预生产计划删除', 'production', '生产管理', 30),
+('production.calc.action.run', '生产管理：生产测算运行', 'production', '生产管理', 40),
 ('company.action.create', '公司主体：新建', 'company', '公司主体', 10),
 ('company.action.edit', '公司主体：编辑', 'company', '公司主体', 20),
 ('company.action.delete', '公司主体：删除', 'company', '公司主体', 30),

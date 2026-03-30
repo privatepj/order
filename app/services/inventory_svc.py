@@ -19,10 +19,12 @@ from app.models import (
     InventoryOpeningBalance,
     OrderItem,
     Product,
+    SemiMaterial,
 )
 
 INV_FINISHED = "finished"
 INV_SEMI = "semi"
+INV_MATERIAL = "material"
 SOURCE_MANUAL = "manual"
 SOURCE_DELIVERY = "delivery"
 
@@ -216,6 +218,245 @@ def find_product_id_by_name_spec(name: str, spec: str) -> Tuple[Optional[int], O
     return int(matches[0].id), None
 
 
+def find_semi_material_id_by_name_spec(
+    category: str, name: str, spec: str
+) -> Tuple[Optional[int], Optional[str]]:
+    """
+    按品名 + 规格精确匹配半成品/物料主数据。
+    - category 取值：'semi' / 'material'
+    返回 (semi_material_id, None) 或 (None, 简短错误说明)。
+    """
+    n = (name or "").strip()
+    spec_n = normalize_spec_for_match(spec)
+    if not n:
+        return None, "品名为空"
+
+    matches = (
+        SemiMaterial.query.filter(
+            SemiMaterial.kind == category,
+            SemiMaterial.name == n,
+            func.coalesce(SemiMaterial.spec, "") == spec_n,
+        )
+        .order_by(SemiMaterial.id)
+        .all()
+    )
+    if not matches:
+        return None, "未找到匹配的半成品/物料（品名+规格）"
+    if len(matches) > 1:
+        return None, "匹配到多条半成品/物料，请核对主数据"
+    return int(matches[0].id), None
+
+
+def find_item_id_by_name_spec(
+    category: str, name: str, spec: str
+) -> Tuple[Optional[int], Optional[str]]:
+    """统一入口：finished -> Product；semi/material -> SemiMaterial。"""
+    if category == INV_FINISHED:
+        return find_product_id_by_name_spec(name, spec)
+    if category in (INV_SEMI, INV_MATERIAL):
+        return find_semi_material_id_by_name_spec(category, name, spec)
+    return None, "请选择类别。"
+
+
+def import_semi_material_movements_from_parsed_lines(
+    parsed_lines: List[
+        Tuple[int, str, str, str, Decimal, Optional[str], Optional[str]]
+    ],
+    *,
+    category: str,
+    direction: str,
+    biz_date,
+    created_by: int,
+    original_filename: Optional[str] = None,
+) -> Tuple[int, List[str], List[Dict[str, Any]]]:
+    """
+    半成品/物料手工流水批量导入。parsed_lines 每项：
+    (excel_row, name, spec_raw, storage_area, quantity, unit, remark)。
+    仅当至少一行成功时 commit；否则 rollback。
+    返回 (成功条数, 错误信息列表, 失败行明细供导出)。
+    """
+    if category not in (INV_SEMI, INV_MATERIAL):
+        raise ValueError("category 只能是 semi 或 material。")
+
+    errors: List[str] = []
+    failed_rows: List[Dict[str, Any]] = []
+    to_write: List[
+        Tuple[int, str, Decimal, Optional[str], Optional[str], str, str]
+    ] = []
+
+    def _qty_str(q: Decimal) -> str:
+        s = format(q, "f").rstrip("0").rstrip(".")
+        return s if s else "0"
+
+    for _excel_row, name, spec_raw, storage_area, qty, unit, remark in parsed_lines:
+        spec_cell = (
+            (spec_raw or "").strip()
+            if isinstance(spec_raw, str)
+            else str(spec_raw or "").strip()
+        )
+        name_st = (name or "").strip()
+        area = (storage_area or "").strip()
+        u_raw = unit
+        r_raw = remark
+
+        def _append_fail(reason: str) -> None:
+            u_disp = (
+                u_raw.strip()
+                if isinstance(u_raw, str)
+                else (str(u_raw).strip() if u_raw is not None else "")
+            )
+            r_disp = (
+                r_raw.strip()
+                if isinstance(r_raw, str)
+                else (str(r_raw).strip() if r_raw is not None else "")
+            )
+            errors.append(
+                f"{movement_import_label(name_st, spec_raw)}：{reason}"
+            )
+            failed_rows.append(
+                movement_import_failed_row(
+                    name=name_st,
+                    spec=spec_cell,
+                    area=area,
+                    quantity=_qty_str(qty) if qty is not None else "",
+                    unit=u_disp or None,
+                    remark=r_disp or None,
+                    reason=reason,
+                )
+            )
+
+        if not name_st:
+            has_other = bool(
+                normalize_spec_for_match(spec_raw)
+                or area
+                or qty > 0
+                or (unit and str(unit).strip())
+                or (remark and str(remark).strip())
+            )
+            if has_other:
+                _append_fail("品名为空")
+            continue
+
+        mid, err = find_semi_material_id_by_name_spec(category, name_st, spec_raw)
+        if err:
+            _append_fail(err)
+            continue
+
+        if not area:
+            _append_fail("仓储区不能为空")
+            continue
+
+        if qty <= 0:
+            _append_fail("数量须大于 0")
+            continue
+
+        item = SemiMaterial.query.get(mid)
+        if not item:
+            db.session.rollback()
+            reason = "内部错误：半成品/物料不存在"
+            errors.append(f"{movement_import_label(name_st, spec_cell)}：{reason}")
+            failed_rows.append(
+                movement_import_failed_row(
+                    name=name_st,
+                    spec=spec_cell,
+                    area=area,
+                    quantity=_qty_str(qty),
+                    unit=(unit or "") or "",
+                    remark=(remark or "") or "",
+                    reason=reason,
+                )
+            )
+            return 0, errors, failed_rows
+
+        u = None
+        if unit is not None:
+            u = unit.strip()[:16] if isinstance(unit, str) else str(unit).strip()[:16]
+            u = u or None
+        u_final = u or (item.base_unit or None)
+
+        rmk = None
+        if remark is not None:
+            rmk = (
+                remark.strip()[:255]
+                if isinstance(remark, str)
+                else str(remark).strip()[:255]
+            )
+            rmk = rmk or None
+
+        to_write.append((mid, area, qty, u_final, rmk, name_st, spec_cell))
+
+    if not to_write:
+        db.session.rollback()
+        return 0, errors, failed_rows
+
+    try:
+        batch = create_movement_batch(
+            category=category,
+            biz_date=biz_date,
+            direction=direction,
+            source=BATCH_SOURCE_EXCEL,
+            line_count=len(to_write),
+            created_by=created_by,
+            original_filename=original_filename,
+        )
+        for mid, area, qty, unit, remark, name_st, spec_cell in to_write:
+            create_manual_movement(
+                category=category,
+                direction=direction,
+                product_id=0,
+                material_id=mid,
+                storage_area=area,
+                quantity=qty,
+                unit=unit,
+                biz_date=biz_date,
+                remark=remark,
+                created_by=created_by,
+                movement_batch_id=batch.id,
+            )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    return len(to_write), errors, failed_rows
+
+
+def import_movements_from_parsed_lines_by_category(
+    parsed_lines: List[
+        Tuple[int, str, str, str, Decimal, Optional[str], Optional[str]]
+    ],
+    *,
+    category: str,
+    direction: str,
+    biz_date,
+    created_by: int,
+    original_filename: Optional[str] = None,
+) -> Tuple[int, List[str], List[Dict[str, Any]]]:
+    """
+    根据 category 选择对应的导入逻辑：
+    - finished -> Product
+    - semi/material -> SemiMaterial
+    """
+    if category == INV_FINISHED:
+        return import_finished_movements_from_parsed_lines(
+            parsed_lines,
+            direction=direction,
+            biz_date=biz_date,
+            created_by=created_by,
+            original_filename=original_filename,
+        )
+    if category in (INV_SEMI, INV_MATERIAL):
+        return import_semi_material_movements_from_parsed_lines(
+            parsed_lines,
+            category=category,
+            direction=direction,
+            biz_date=biz_date,
+            created_by=created_by,
+            original_filename=original_filename,
+        )
+    raise ValueError("请选择正确的 category。")
+
+
 def import_finished_movements_from_parsed_lines(
     parsed_lines: List[
         Tuple[int, str, str, str, Decimal, Optional[str], Optional[str]]
@@ -397,38 +638,58 @@ def create_manual_movement(
     return m
 
 
-def suggest_storage_area_for_product(product_id: int) -> str:
-    """按历史流水或期初推断成品默认仓储区；无则返回空串。"""
-    if not product_id:
+def suggest_storage_area_for_category_item(category: str, item_id: int) -> str:
+    """
+    按历史流水或期初推断默认仓储区；无则返回空串。
+    - finished：item_id -> product_id
+    - semi/material：item_id -> material_id
+    """
+    if not item_id:
         return ""
-    m = (
-        InventoryMovement.query.filter_by(
-            category=INV_FINISHED, product_id=product_id
-        )
-        .filter(InventoryMovement.storage_area != "")
-        .order_by(InventoryMovement.id.desc())
-        .first()
-    )
+
+    # 历史流水优先
+    q = InventoryMovement.query.filter(InventoryMovement.storage_area != "")
+    if category == INV_FINISHED:
+        q = q.filter(InventoryMovement.category == INV_FINISHED, InventoryMovement.product_id == item_id)
+    elif category in (INV_SEMI, INV_MATERIAL):
+        q = q.filter(InventoryMovement.category == category, InventoryMovement.material_id == item_id)
+    else:
+        return ""
+    m = q.order_by(InventoryMovement.id.desc()).first()
     if m and (m.storage_area or "").strip():
         return (m.storage_area or "").strip()[:32]
-    o = (
-        InventoryOpeningBalance.query.filter_by(
-            category=INV_FINISHED, product_id=product_id
-        )
-        .filter(InventoryOpeningBalance.storage_area != "")
-        .order_by(InventoryOpeningBalance.id.asc())
-        .first()
+
+    # 再看期初
+    o_q = InventoryOpeningBalance.query.filter(
+        InventoryOpeningBalance.storage_area != ""
     )
+    if category == INV_FINISHED:
+        o_q = o_q.filter(
+            InventoryOpeningBalance.category == INV_FINISHED,
+            InventoryOpeningBalance.product_id == item_id,
+        )
+    else:
+        o_q = o_q.filter(
+            InventoryOpeningBalance.category == category,
+            InventoryOpeningBalance.material_id == item_id,
+        )
+    o = o_q.order_by(InventoryOpeningBalance.id.asc()).first()
     if o and (o.storage_area or "").strip():
         return (o.storage_area or "").strip()[:32]
     return ""
+
+
+def suggest_storage_area_for_product(product_id: int) -> str:
+    """兼容旧代码：成品默认仓储区建议。"""
+    return suggest_storage_area_for_category_item(INV_FINISHED, product_id)
 
 
 def _like_pat(kw: str) -> str:
     s = kw.strip()
     if not s:
         return ""
-    return f"%{s.replace('%', r'\\%').replace('_', r'\\_')}%"
+    esc = s.replace("%", r"\%").replace("_", r"\_")
+    return f"%{esc}%"
 
 
 def query_stock_aggregate(
@@ -448,7 +709,7 @@ def query_stock_aggregate(
     where_parts = ["1=1"]
     params: dict[str, Any] = {}
 
-    if category in (INV_FINISHED, INV_SEMI):
+    if category in (INV_FINISHED, INV_SEMI, INV_MATERIAL):
         where_parts.append("b.category = :category")
         params["category"] = category
     if storage_area_kw.strip():
@@ -456,15 +717,18 @@ def query_stock_aggregate(
         params["sa_pat"] = _like_pat(storage_area_kw)
     if spec_kw.strip():
         where_parts.append(
-            "(b.category != 'finished' OR b.product_id = 0 OR "
-            "COALESCE(p.spec,'') LIKE :spec_pat ESCAPE '\\\\')"
+            "((b.category = 'finished' AND b.product_id > 0 AND COALESCE(p.spec,'') LIKE :spec_pat ESCAPE '\\\\')"
+            " OR (b.category IN ('semi','material') AND b.material_id > 0 AND COALESCE(sm.spec,'') LIKE :spec_pat ESCAPE '\\\\')"
+            " OR b.category NOT IN ('finished','semi','material'))"
         )
         params["spec_pat"] = _like_pat(spec_kw)
     if name_spec_kw.strip():
         where_parts.append(
-            "(b.category != 'finished' OR b.product_id = 0 OR "
-            "p.name LIKE :ns_pat ESCAPE '\\\\' OR COALESCE(p.spec,'') LIKE :ns_pat ESCAPE '\\\\' "
-            "OR p.product_code LIKE :ns_pat ESCAPE '\\\\')"
+            "((b.category = 'finished' AND b.product_id > 0 AND ("
+            "p.name LIKE :ns_pat ESCAPE '\\\\' OR COALESCE(p.spec,'') LIKE :ns_pat ESCAPE '\\\\' OR p.product_code LIKE :ns_pat ESCAPE '\\\\') )"
+            " OR (b.category IN ('semi','material') AND b.material_id > 0 AND ("
+            "sm.name LIKE :ns_pat ESCAPE '\\\\' OR COALESCE(sm.spec,'') LIKE :ns_pat ESCAPE '\\\\' OR sm.code LIKE :ns_pat ESCAPE '\\\\') )"
+            " OR b.category NOT IN ('finished','semi','material'))"
         )
         params["ns_pat"] = _like_pat(name_spec_kw)
 
@@ -488,6 +752,7 @@ LEFT JOIN (
 ) a ON a.category = b.category AND a.product_id = b.product_id
   AND a.material_id = b.material_id AND a.storage_area = b.storage_area
 LEFT JOIN product p ON b.product_id = p.id AND b.category = 'finished' AND b.product_id > 0
+LEFT JOIN semi_material sm ON b.material_id = sm.id AND b.category IN ('semi','material') AND b.material_id > 0
 WHERE {where_sql}
 """
 
@@ -504,9 +769,9 @@ SELECT
   COALESCE(o.opening_qty, 0) AS opening_qty,
   COALESCE(a.qty_in, 0) AS qty_in,
   COALESCE(a.qty_out, 0) AS qty_out,
-  p.product_code AS product_code,
-  p.name AS product_name,
-  p.spec AS product_spec
+  COALESCE(p.product_code, sm.code) AS product_code,
+  COALESCE(p.name, sm.name) AS product_name,
+  COALESCE(p.spec, sm.spec) AS product_spec
 {inner}
 ORDER BY b.storage_area, b.category, b.product_id, b.material_id
 LIMIT :limit OFFSET :offset
