@@ -32,6 +32,7 @@ requires:
 4. **确认用语**：执行写操作前，用户须给出明确指令，例如包含 **「确认执行」** 或 **「确认创建」**。若用户需要**下单并送货**，须在同一轮对话中完成「双表一步确认」（见下文），**禁止**先让用户确认订单、再单独让用户确认送货（除非用户明确只要下单、不送货）。含糊的「好」「行」若上下文不清，应再次复述要点并请用户说「确认执行」。
 5. **编号**：订单号、送货单号、运单占号均由**服务端**生成；请求体**不得**自拟 `order_no`、`delivery_no`；成功以后端返回为准。
 6. **产品候选展示**：`GET .../products` 返回的 `name`、`spec`、`remark` 均来自数据库主数据；若多行名称/规格看似相同，须用 **`id` + `product_code` + `remark`** 区分并请用户点名确认。若与实物不符，应在系统中修正 `product` 表，而非归咎于接口。
+7. **⚠️ 关键：确认表格中必须显示完整产品名**：`POST .../orders/preview` 返回的 `product_name`（完整系统名称，如"双面A公橙胶夹板焊GB-01五芯 MT888+5.1K"）**必须原样展示**，禁止截断或用用户简称替代。确认双表时产品列必须显示产品编码 + 完整名称（如 `XDS.0201 - 双面A公橙胶夹板焊GB-01五芯 MT888+5.1K`），确保用户能识别是否选错产品。
 
 ## 约定
 
@@ -71,7 +72,7 @@ requires:
 
 **若不存在**：
 
-1. `GET .../api/openclaw/products?q=` 搜索系统产品；向用户展示候选时**必须使用 Markdown 表格**，列至少含 **`id`、`product_code`、`name`、`spec`、`remark`**（`remark` 常含颜色等补充信息），**请用户确认**唯一 `product_id`。不得仅凭规格简称（如「3D-A」）在未展示编码与 `id` 时让用户猜选。
+1. `GET .../api/openclaw/products?q=` 搜索系统产品；向用户展示候选时**必须使用 Markdown 表格**，列至少含 **`id`、`product_code`、`name`、`spec`、`remark`**（`remark` 常含颜色等补充信息），表格中产品名称列显示**完整名称**，**请用户确认**唯一 `product_id`。不得仅凭规格简称（如「3D-A」）在未展示编码与 `id` 时让用户猜选。
 2. **必须**向用户确认并写入复述清单：**单价 `price`、币种 `currency`**（与 Web 一致）；未确认单价不得进入后续下单。
 3. 用户确认后：`POST .../api/openclaw/customer-products`，Body 含 `customer_id`、`product_id`，以及确认后的 `price`、`currency`（及可选 `unit`、`customer_material_no` 等）。**物料编号与产品 `product_code` 一致，勿单独传 `material_no`（服务端会忽略并写入产品编号）。**具备 `openclaw.customer_product.create` 的令牌可写单价/币种；若接口返回成功但此前未传单价，说明未满足业务要求，应回到用户处补全并重试。
 
@@ -112,8 +113,8 @@ requires:
 当用户意图为「下单并送货」时（**本节优先级高于阶段 C/D 里「逐步确认」的字面顺序**）：
 
 1. 在调用任何写库接口前，在**同一条助手消息**内输出 **两个 Markdown 表格**（缺一不可）：
-   - **表 1（订单）**：基于 `POST .../orders/preview` 的 `summary`，至少含：客户简称、`customer_order_no`、付款方式（`payment_type_label`）、各行产品/数量、单价/金额等。
-   - **表 2（送货计划）**：送货日期、是否自配送、快递公司、**各行本次送货数量**；若尚无 `order_item_id`，列中可用与表 1 对齐的 **产品编码 / 客户产品** 描述，并注明「保存订单后由 `pending-items` 匹配 `order_item_id`」。
+   - **表 1（订单）**：基于 `POST .../orders/preview` 的 `summary`，**产品列必须显示 `product_code` + 完整 `product_name`**（禁止截断或用简称）。至少含：客户简称、`customer_order_no`、付款方式（`payment_type_label`）、各行产品（编码+全名）/数量、单价/金额等。
+   - **表 2（送货计划）**：送货日期、是否自配送、快递公司、**各行本次送货数量**；产品列必须与表 1 一致，显示编码+全名；若尚无 `order_item_id`，列中可用与表 1 对齐的 **产品编码 / 完整名称** 描述，并注明「保存订单后由 `pending-items` 匹配 `order_item_id`」。
 2. 用户仅对上述双表回复 **一次**「确认执行」后，Agent **连续**执行，**中间不得再向用户索要第二次确认**：
    - `POST .../orders`（与表 1 / 预览 body 一致）；
    - `GET .../deliveries/pending-items`（可用 `order_id` 过滤）；
