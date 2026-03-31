@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}生产事故 {{ incident.incident_no or ('#' ~ incident.id) }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">生产事故详情</h2>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="{{ url_for('main.production_incident_list') }}" class="btn btn-outline-secondary btn-sm">返回列表</a>
+    {% if user_can_cap('production_incident.action.edit') %}
+    <a href="{{ url_for('main.production_incident_edit', incident_id=incident.id) }}" class="btn btn-outline-primary btn-sm">编辑</a>
+    {% endif %}
+    {% if user_can_cap('production_incident.report.8d') %}
+    <a href="{{ url_for('main.production_incident_8d_print', incident_id=incident.id) }}" class="btn btn-outline-secondary btn-sm" target="_blank">8D 打印</a>
+    <a href="{{ url_for('main.production_incident_8d_export', incident_id=incident.id) }}" class="btn btn-outline-secondary btn-sm">下载 8D Excel</a>
+    {% endif %}
+    {% if user_can_cap('production_incident.action.delete') %}
+    <form method="post" action="{{ url_for('main.production_incident_delete', incident_id=incident.id) }}" class="d-inline" onsubmit="return confirm('确认删除？');">
+        <button type="submit" class="btn btn-outline-danger btn-sm">删除</button>
+    </form>
+    {% endif %}
+</div>
+
+<dl class="row mb-0">
+    <dt class="col-sm-2">编号</dt>
+    <dd class="col-sm-10">{{ incident.incident_no or ('#' ~ incident.id) }}</dd>
+    <dt class="col-sm-2">标题</dt>
+    <dd class="col-sm-10">{{ incident.title }}</dd>
+    <dt class="col-sm-2">发生时间</dt>
+    <dd class="col-sm-10">{{ incident.occurred_at.strftime('%Y-%m-%d %H:%M') if incident.occurred_at else '-' }}</dd>
+    <dt class="col-sm-2">车间/地点</dt>
+    <dd class="col-sm-10">{{ incident.workshop or '—' }}</dd>
+    <dt class="col-sm-2">严重程度</dt>
+    <dd class="col-sm-10">{{ incident.severity or '—' }}</dd>
+    <dt class="col-sm-2">状态</dt>
+    <dd class="col-sm-10">{{ incident.status or '—' }}</dd>
+    <dt class="col-sm-2">登记人</dt>
+    <dd class="col-sm-10">{{ creator_name }}</dd>
+    <dt class="col-sm-2">备注/D0</dt>
+    <dd class="col-sm-10">{{ incident.remark or '—' }}</dd>
+</dl>
+
+<hr class="my-4">
+<h5 class="mb-3">8D</h5>
+{% macro block8d(label, text) %}
+<div class="mb-3">
+    <div class="text-muted small">{{ label }}</div>
+    <div class="border rounded p-2 bg-light" style="white-space: pre-wrap;">{{ text or '—' }}</div>
+</div>
+{% endmacro %}
+{{ block8d('D1 小组', incident.d1_team) }}
+{{ block8d('D2 问题描述', incident.d2_problem) }}
+{{ block8d('D3 临时措施', incident.d3_containment) }}
+{{ block8d('D4 根本原因', incident.d4_root_cause) }}
+{{ block8d('D5 永久纠正措施', incident.d5_corrective) }}
+{{ block8d('D6 实施与验证', incident.d6_implementation) }}
+{{ block8d('D7 预防再发', incident.d7_prevention) }}
+{{ block8d('D8 总结与表彰', incident.d8_recognition) }}
+{% endblock %}

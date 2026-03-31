@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}机台台账 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">机台台账</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编号/名称/车间">
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" name="machine_type_id">
+            <option value="">全部种类</option>
+            {% for t in types %}
+            <option value="{{ t.id }}" {% if machine_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" name="status">
+            <option value="">全部状态</option>
+            {% for s in machine_statuses %}
+            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+    {% if user_can_cap('machine_asset.action.create') %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.machine_new') }}" class="btn btn-primary">新建机台</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+            <tr>
+                <th>编号</th>
+                <th>名称</th>
+                <th>种类</th>
+                <th class="text-end">产能(件/小时)</th>
+                <th>状态</th>
+                <th>车间/产线</th>
+                <th>责任人</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.machine_no }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.machine_type.name if r.machine_type else '-' }}</td>
+                <td class="text-end">{{ r.capacity_per_hour }}</td>
+                <td>{{ r.status }}</td>
+                <td>{{ r.location or '-' }}</td>
+                <td>{{ r.owner.name if r.owner else '-' }}</td>
+                <td class="text-nowrap">
+                    <a href="{{ url_for('main.machine_detail', machine_id=r.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                    {% if user_can_cap('machine_asset.action.edit') %}
+                    <a href="{{ url_for('main.machine_edit', machine_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                    {% endif %}
+                    {% if user_can_cap('machine_asset.action.delete') %}
+                    <form method="post" action="{{ url_for('main.machine_delete', machine_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该机台？');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-muted">暂无数据</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

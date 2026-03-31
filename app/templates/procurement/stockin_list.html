@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}采购入库 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">采购入库记录</h2>
+
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}（{{ c.code }}）</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if user_can_cap('procurement_stockin.filter.keyword') %}
+    <div class="col-auto">
+        <label class="form-label">关键词</label>
+        <input type="text" class="form-control form-control-sm" name="keyword" value="{{ keyword or '' }}" placeholder="入库单号/库区">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">筛选</button>
+    </div>
+    {% endif %}
+</form>
+
+<div class="table-responsive">
+<table class="table table-striped table-sm align-middle">
+    <thead>
+        <tr>
+            <th>入库单号</th>
+            <th>收货单号</th>
+            <th class="text-end">数量</th>
+            <th>库区</th>
+            <th>入库时间</th>
+            <th>创建人</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.stock_in_no }}</td>
+            <td>{{ r.receipt.receipt_no if r.receipt else '-' }}</td>
+            <td class="text-end">{{ r.qty }}</td>
+            <td>{{ r.storage_area or '-' }}</td>
+            <td>{{ r.stock_in_at }}</td>
+            <td>{{ r.creator.name if r.creator else r.created_by }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-muted">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ '新增采购单' if not row else '编辑采购单' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '新增采购单' if not row else '编辑采购单' }}</h2>
+<form method="post" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select" required>
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if row and row.company_id == c.id %}selected{% elif not row and companies and companies[0].id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">关联请购单</label>
+        <select name="requisition_id" class="form-select">
+            <option value="">不关联</option>
+            {% for req in requisitions %}
+            <option value="{{ req.id }}" {% if row and row.requisition_id == req.id %}selected{% endif %}>{{ req.req_no }} / {{ req.supplier_name }} / {{ req.item_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">供应商</label>
+        <input type="text" class="form-control" name="supplier_name" value="{{ row.supplier_name if row else '' }}" maxlength="128" required>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">物料名称</label>
+        <input type="text" class="form-control" name="item_name" value="{{ row.item_name if row else '' }}" maxlength="128" required>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">规格</label>
+        <input type="text" class="form-control" name="item_spec" value="{{ row.item_spec if row else '' }}" maxlength="128">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">数量</label>
+        <input type="number" step="0.01" min="0.01" class="form-control" name="qty" value="{{ row.qty if row else '' }}" required>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">单位</label>
+        <input type="text" class="form-control" name="unit" value="{{ row.unit if row else 'pcs' }}" maxlength="16" required>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">单价</label>
+        <input type="number" step="0.01" min="0" class="form-control" name="unit_price" value="{{ row.unit_price if row else '' }}" required>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">期望到货日期</label>
+        <input type="date" class="form-control" name="expected_date" value="{{ row.expected_date.strftime('%Y-%m-%d') if row and row.expected_date else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">状态</label>
+        <select name="status" class="form-select">
+            {% for s in po_statuses %}
+            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'draft') %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="form-label">备注</label>
+        <textarea name="remark" rows="3" class="form-control" maxlength="500">{{ row.remark if row else '' }}</textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.procurement_order_list', company_id=row.company_id if row else None) }}" class="btn btn-secondary">返回</a>
+    </div>
+</form>
+{% endblock %}

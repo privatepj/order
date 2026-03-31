@@ -18,6 +18,9 @@ from app.main.routes_semi_material import register_semi_material_routes
 from app.main.routes_bom import register_bom_routes
 from app.main.routes_production import register_production_routes
 from app.main.routes_rbac_admin import register_rbac_admin_routes
+from app.main.routes_hr import register_hr_routes
+from app.main.routes_machine import register_machine_routes
+from app.main.routes_procurement import register_procurement_routes
 
 bp = Blueprint("main", __name__)
 register_customer_routes(bp)
@@ -36,6 +39,9 @@ register_semi_material_routes(bp)
 register_bom_routes(bp)
 register_production_routes(bp)
 register_rbac_admin_routes(bp)
+register_hr_routes(bp)
+register_machine_routes(bp)
+register_procurement_routes(bp)
 
 
 @bp.route("/")

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from collections import defaultdict
+from datetime import date, datetime
+from io import BytesIO
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -15,11 +17,13 @@ from app.models import (
     Customer,
     Product,
     ProductionComponentNeed,
+    ProductionIncident,
     ProductionPreplan,
     ProductionPreplanLine,
     ProductionWorkOrder,
+    User,
 )
-from app.services import delivery_svc, production_svc
+from app.services import bom_svc, delivery_svc, production_svc
 
 
 def _parse_decimal(val: Any, *, default: Optional[Decimal] = None) -> Optional[Decimal]:
@@ -32,6 +36,25 @@ def _parse_decimal(val: Any, *, default: Optional[Decimal] = None) -> Optional[D
         return Decimal(s)
     except (InvalidOperation, ValueError):
         return default
+
+
+def _parse_occurred_at(raw: Any) -> Optional[datetime]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        if "T" in s:
+            return datetime.fromisoformat(s)
+        return datetime.combine(date.fromisoformat(s), datetime.min.time())
+    except ValueError:
+        return None
+
+
+def _text_or_none(raw: Any) -> Optional[str]:
+    s = (raw or "").strip()
+    return s if s else None
 
 
 def _parse_plan_date(raw: Any) -> Optional[date]:
@@ -75,6 +98,55 @@ def _parse_preplan_lines_from_form() -> List[Dict[str, Any]]:
     return rows
 
 
+def _raw_material_totals_from_work_orders(
+    work_orders: List[ProductionWorkOrder],
+) -> List[Dict[str, Any]]:
+    """按原材料汇总全计划需求量（child_kind=material）。"""
+    agg: Dict[int, Decimal] = defaultdict(lambda: Decimal(0))
+    meta: Dict[int, Dict[str, Any]] = {}
+    for wo in work_orders:
+        for n in wo.component_needs:
+            if n.child_kind != bom_svc.PARENT_MATERIAL:
+                continue
+            mid = int(n.child_material_id)
+            agg[mid] += Decimal(str(n.required_qty))
+            m = n.child_material
+            if mid not in meta:
+                meta[mid] = {
+                    "material_id": mid,
+                    "material": m,
+                    "code": m.code if m else str(mid),
+                    "name": m.name if m else "",
+                    "spec": (m.spec or "") if m else "",
+                    "unit": None,
+                }
+            row = meta[mid]
+            if row["unit"] is None:
+                if m and (m.base_unit or "").strip():
+                    row["unit"] = m.base_unit.strip()
+                elif n.unit and str(n.unit).strip():
+                    row["unit"] = str(n.unit).strip()
+    rows: List[Dict[str, Any]] = []
+    for mid, total in agg.items():
+        r = meta[mid]
+        u = r["unit"] or "-"
+        mr = r["material"]
+        if mr and (mr.base_unit or "").strip():
+            u = mr.base_unit.strip()
+        rows.append(
+            {
+                "material_id": mid,
+                "code": r["code"],
+                "name": r["name"],
+                "spec": r["spec"],
+                "required_total": total,
+                "unit": u,
+            }
+        )
+    rows.sort(key=lambda x: x["code"])
+    return rows
+
+
 def _require_preplan_with_lines(preplan_id: int) -> ProductionPreplan:
     preplan = (
         ProductionPreplan.query.options(selectinload(ProductionPreplan.lines))
@@ -92,7 +164,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/preplans")
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     def production_preplan_list():
         preplans = (
             ProductionPreplan.query.order_by(ProductionPreplan.id.desc()).limit(100).all()
@@ -104,7 +176,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/preplans/new", methods=["GET", "POST"])
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     @capability_required("production.preplan.action.create")
     def production_preplan_new():
         if request.method == "POST":
@@ -184,7 +256,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/preplans/<int:preplan_id>/edit", methods=["GET", "POST"])
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     @capability_required("production.preplan.action.edit")
     def production_preplan_edit(preplan_id: int):
         preplan = _require_preplan_with_lines(preplan_id)
@@ -273,7 +345,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/preplans/<int:preplan_id>/delete", methods=["POST"])
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     @capability_required("production.preplan.action.delete")
     def production_preplan_delete(preplan_id: int):
         try:
@@ -305,7 +377,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/calc", methods=["GET", "POST"])
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     @capability_required("production.calc.action.run")
     def production_calc():
         if request.method == "POST":
@@ -417,7 +489,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/preplans/<int:preplan_id>")
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     def production_preplan_detail(preplan_id: int):
         preplan = ProductionPreplan.query.options(selectinload(ProductionPreplan.lines)).get_or_404(preplan_id)
         work_orders = (
@@ -432,10 +504,12 @@ def register_production_routes(bp):
             .order_by(ProductionWorkOrder.id.asc())
             .all()
         )
+        raw_material_totals = _raw_material_totals_from_work_orders(work_orders)
         return render_template(
             "production/preplan_detail.html",
             preplan=preplan,
             work_orders=work_orders,
+            raw_material_totals=raw_material_totals,
         )
 
     # ----------------------------
@@ -443,7 +517,7 @@ def register_production_routes(bp):
     # ----------------------------
     @bp.route("/production/preplans/<int:preplan_id>/measure", methods=["POST"])
     @login_required
-    @menu_required("production")
+    @menu_required("production_preplan")
     @capability_required("production.calc.action.run")
     def production_preplan_measure(preplan_id: int):
         try:
@@ -456,5 +530,220 @@ def register_production_routes(bp):
             flash(f"测算失败：{e}", "danger")
         return redirect(
             url_for("main.production_preplan_detail", preplan_id=preplan_id)
+        )
+
+    # ----------------------------
+    # 生产事故
+    # ----------------------------
+    @bp.route("/production/incidents")
+    @login_required
+    @menu_required("production_incident")
+    def production_incident_list():
+        q = (request.args.get("q") or "").strip()
+        query = ProductionIncident.query
+        if q:
+            like = f"%{q}%"
+            query = query.filter(
+                db.or_(
+                    ProductionIncident.title.like(like),
+                    ProductionIncident.incident_no.like(like),
+                    ProductionIncident.workshop.like(like),
+                    ProductionIncident.d2_problem.like(like),
+                )
+            )
+        incidents = query.order_by(ProductionIncident.occurred_at.desc()).limit(200).all()
+        return render_template("production/incident_list.html", incidents=incidents, q=q)
+
+    @bp.route("/production/incidents/new", methods=["GET", "POST"])
+    @login_required
+    @menu_required("production_incident")
+    @capability_required("production_incident.action.create")
+    def production_incident_new():
+        if request.method == "POST":
+            try:
+                title = _text_or_none(request.form.get("title"))
+                if not title:
+                    raise ValueError("请填写标题。")
+                occurred_at = _parse_occurred_at(request.form.get("occurred_at"))
+                if not occurred_at:
+                    raise ValueError("请填写发生时间。")
+                incident_no = _text_or_none(request.form.get("incident_no"))
+                inc = ProductionIncident(
+                    incident_no=incident_no,
+                    title=title,
+                    occurred_at=occurred_at,
+                    workshop=_text_or_none(request.form.get("workshop")),
+                    severity=_text_or_none(request.form.get("severity")),
+                    status=(request.form.get("status") or "open").strip() or "open",
+                    remark=_text_or_none(request.form.get("remark")),
+                    d1_team=_text_or_none(request.form.get("d1_team")),
+                    d2_problem=_text_or_none(request.form.get("d2_problem")),
+                    d3_containment=_text_or_none(request.form.get("d3_containment")),
+                    d4_root_cause=_text_or_none(request.form.get("d4_root_cause")),
+                    d5_corrective=_text_or_none(request.form.get("d5_corrective")),
+                    d6_implementation=_text_or_none(request.form.get("d6_implementation")),
+                    d7_prevention=_text_or_none(request.form.get("d7_prevention")),
+                    d8_recognition=_text_or_none(request.form.get("d8_recognition")),
+                    created_by=current_user.id,
+                )
+                db.session.add(inc)
+                db.session.flush()
+                if not inc.incident_no:
+                    inc.incident_no = f"INC-{inc.id:05d}"
+                db.session.commit()
+                flash("生产事故已保存。", "success")
+                return redirect(url_for("main.production_incident_detail", incident_id=inc.id))
+            except ValueError as e:
+                db.session.rollback()
+                flash(str(e), "danger")
+            except IntegrityError:
+                db.session.rollback()
+                flash("保存失败：事故编号重复或数据冲突。", "danger")
+
+        return render_template("production/incident_form.html", mode="new", incident=None)
+
+    @bp.route("/production/incidents/<int:incident_id>")
+    @login_required
+    @menu_required("production_incident")
+    def production_incident_detail(incident_id: int):
+        inc = db.session.get(ProductionIncident, incident_id)
+        if not inc:
+            flash("记录不存在。", "warning")
+            return redirect(url_for("main.production_incident_list"))
+        creator = db.session.get(User, inc.created_by)
+        creator_name = (creator.name or creator.username) if creator else str(inc.created_by)
+        return render_template(
+            "production/incident_detail.html",
+            incident=inc,
+            creator_name=creator_name,
+        )
+
+    @bp.route("/production/incidents/<int:incident_id>/edit", methods=["GET", "POST"])
+    @login_required
+    @menu_required("production_incident")
+    @capability_required("production_incident.action.edit")
+    def production_incident_edit(incident_id: int):
+        inc = db.session.get(ProductionIncident, incident_id)
+        if not inc:
+            flash("记录不存在。", "warning")
+            return redirect(url_for("main.production_incident_list"))
+
+        if request.method == "POST":
+            try:
+                title = _text_or_none(request.form.get("title"))
+                if not title:
+                    raise ValueError("请填写标题。")
+                occurred_at = _parse_occurred_at(request.form.get("occurred_at"))
+                if not occurred_at:
+                    raise ValueError("请填写发生时间。")
+                new_no = _text_or_none(request.form.get("incident_no"))
+                inc.incident_no = new_no
+                inc.title = title
+                inc.occurred_at = occurred_at
+                inc.workshop = _text_or_none(request.form.get("workshop"))
+                inc.severity = _text_or_none(request.form.get("severity"))
+                inc.status = (request.form.get("status") or "open").strip() or "open"
+                inc.remark = _text_or_none(request.form.get("remark"))
+                inc.d1_team = _text_or_none(request.form.get("d1_team"))
+                inc.d2_problem = _text_or_none(request.form.get("d2_problem"))
+                inc.d3_containment = _text_or_none(request.form.get("d3_containment"))
+                inc.d4_root_cause = _text_or_none(request.form.get("d4_root_cause"))
+                inc.d5_corrective = _text_or_none(request.form.get("d5_corrective"))
+                inc.d6_implementation = _text_or_none(request.form.get("d6_implementation"))
+                inc.d7_prevention = _text_or_none(request.form.get("d7_prevention"))
+                inc.d8_recognition = _text_or_none(request.form.get("d8_recognition"))
+                db.session.flush()
+                if not inc.incident_no:
+                    inc.incident_no = f"INC-{inc.id:05d}"
+                db.session.commit()
+                flash("已更新。", "success")
+                return redirect(url_for("main.production_incident_detail", incident_id=incident_id))
+            except ValueError as e:
+                db.session.rollback()
+                flash(str(e), "danger")
+            except IntegrityError:
+                db.session.rollback()
+                flash("保存失败：事故编号重复或数据冲突。", "danger")
+
+        return render_template("production/incident_form.html", mode="edit", incident=inc)
+
+    @bp.route("/production/incidents/<int:incident_id>/delete", methods=["POST"])
+    @login_required
+    @menu_required("production_incident")
+    @capability_required("production_incident.action.delete")
+    def production_incident_delete(incident_id: int):
+        inc = db.session.get(ProductionIncident, incident_id)
+        if not inc:
+            flash("记录不存在。", "warning")
+        else:
+            try:
+                db.session.delete(inc)
+                db.session.commit()
+                flash("已删除。", "success")
+            except Exception:
+                db.session.rollback()
+                flash("删除失败。", "danger")
+        return redirect(url_for("main.production_incident_list"))
+
+    @bp.route("/production/incidents/<int:incident_id>/8d-print")
+    @login_required
+    @menu_required("production_incident")
+    @capability_required("production_incident.report.8d")
+    def production_incident_8d_print(incident_id: int):
+        inc = db.session.get(ProductionIncident, incident_id)
+        if not inc:
+            flash("记录不存在。", "warning")
+            return redirect(url_for("main.production_incident_list"))
+        creator = db.session.get(User, inc.created_by)
+        creator_name = (creator.name or creator.username) if creator else str(inc.created_by)
+        return render_template(
+            "production/incident_8d_print.html",
+            incident=inc,
+            creator_name=creator_name,
+        )
+
+    @bp.route("/production/incidents/<int:incident_id>/8d-export.xlsx")
+    @login_required
+    @menu_required("production_incident")
+    @capability_required("production_incident.report.8d")
+    def production_incident_8d_export(incident_id: int):
+        from openpyxl import Workbook
+
+        inc = db.session.get(ProductionIncident, incident_id)
+        if not inc:
+            flash("记录不存在。", "warning")
+            return redirect(url_for("main.production_incident_list"))
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "8D"
+        no = inc.incident_no or f"#{inc.id}"
+        rows = [
+            ("8D 报告", no),
+            ("标题", inc.title),
+            ("发生时间", inc.occurred_at.strftime("%Y-%m-%d %H:%M") if inc.occurred_at else ""),
+            ("车间/地点", inc.workshop or ""),
+            ("严重程度", inc.severity or ""),
+            ("状态", inc.status or ""),
+            ("备注/D0", inc.remark or ""),
+            ("D1 小组", inc.d1_team or ""),
+            ("D2 问题描述", inc.d2_problem or ""),
+            ("D3 临时措施", inc.d3_containment or ""),
+            ("D4 根本原因", inc.d4_root_cause or ""),
+            ("D5 永久纠正措施", inc.d5_corrective or ""),
+            ("D6 实施与验证", inc.d6_implementation or ""),
+            ("D7 预防再发", inc.d7_prevention or ""),
+            ("D8 总结与表彰", inc.d8_recognition or ""),
+        ]
+        for r in rows:
+            ws.append(list(r))
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"8D_{no}.xlsx".replace("/", "-")
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=fname,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 

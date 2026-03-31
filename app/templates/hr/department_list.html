@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}HR 部门 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">部门</h2>
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}（{{ c.code }}）</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if user_can_cap('hr_department.filter.keyword') %}
+    <div class="col-auto">
+        <label class="form-label">关键词</label>
+        <input type="text" class="form-control form-control-sm" name="keyword" value="{{ keyword or '' }}" placeholder="部门名称">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">筛选</button>
+    </div>
+    {% endif %}
+</form>
+{% if user_can_cap('hr_department.action.create') %}
+<div class="mb-3">
+    <a href="{{ url_for('main.hr_department_new') }}" class="btn btn-sm btn-primary">新增部门</a>
+</div>
+{% endif %}
+<div class="table-responsive">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>部门名称</th>
+            <th>排序</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.name }}</td>
+            <td>{{ r.sort_order }}</td>
+            <td class="d-flex gap-2">
+                {% if user_can_cap('hr_department.action.edit') %}
+                <a href="{{ url_for('main.hr_department_edit', dept_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('hr_department.action.delete') %}
+                <form method="post" action="{{ url_for('main.hr_department_delete', dept_id=r.id) }}" onsubmit="return confirm('确认删除？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="text-muted">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

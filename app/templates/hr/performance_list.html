@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}绩效管理 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">绩效管理</h2>
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label">考核周期</label>
+        <input type="text" class="form-control form-control-sm" name="cycle" value="{{ cycle or '' }}" placeholder="如 2026-Q1">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">筛选</button>
+    </div>
+</form>
+{% if user_can_cap('hr_performance.action.create') %}
+<div class="mb-3">
+    <a href="{{ url_for('main.hr_performance_new') }}" class="btn btn-sm btn-primary">新增考核</a>
+</div>
+{% endif %}
+<div class="table-responsive">
+<table class="table table-striped table-sm">
+    <thead>
+        <tr>
+            <th>周期</th>
+            <th>工号</th>
+            <th>姓名</th>
+            <th>评分</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.cycle }}</td>
+            <td>{{ r.employee.employee_no if r.employee else '—' }}</td>
+            <td>{{ r.employee.name if r.employee else '—' }}</td>
+            <td>{{ r.score if r.score is not none else '—' }}</td>
+            <td>{{ '已定稿' if r.status == 'finalized' else '草稿' }}</td>
+            <td class="d-flex gap-2 flex-wrap">
+                {% if r.status != 'finalized' and user_can_cap('hr_performance.action.edit') %}
+                <a href="{{ url_for('main.hr_performance_edit', pr_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if r.status == 'finalized' and user_can_cap('hr_performance.action.override') %}
+                <a href="{{ url_for('main.hr_performance_edit', pr_id=r.id) }}" class="btn btn-sm btn-outline-warning">修改</a>
+                {% endif %}
+                {% if user_can_cap('hr_performance.action.finalize') and r.status != 'finalized' %}
+                <form method="post" action="{{ url_for('main.hr_performance_finalize', pr_id=r.id) }}" onsubmit="return confirm('确认定稿？');">
+                    <button type="submit" class="btn btn-sm btn-success">定稿</button>
+                </form>
+                {% endif %}
+                {% if user_can_cap('hr_performance.action.delete') %}
+                <form method="post" action="{{ url_for('main.hr_performance_delete', pr_id=r.id) }}" onsubmit="return confirm('确认删除？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-muted">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

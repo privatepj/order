@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}机台种类 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">机台种类</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编码/名称">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+    {% if user_can_cap('machine_type.action.create') %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.machine_type_new') }}" class="btn btn-primary">新建机台种类</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>种类编码</th>
+                <th>种类名称</th>
+                <th>启用</th>
+                <th>备注</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td>{{ r.code }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ '是' if r.is_active else '否' }}</td>
+                <td>{{ r.remark or '-' }}</td>
+                <td class="text-nowrap">
+                    {% if user_can_cap('machine_type.action.edit') %}
+                    <a href="{{ url_for('main.machine_type_edit', type_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                    {% endif %}
+                    {% if user_can_cap('machine_type.action.delete') %}
+                    <form method="post" action="{{ url_for('main.machine_type_delete', type_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该机台种类？');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-muted">暂无数据</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

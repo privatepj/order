@@ -99,14 +99,15 @@ def user_capability_key_set(user) -> Optional[frozenset]:
 
 
 def user_can_cap(user, key: str) -> bool:
-    _, _, all_keys = _cap_maps()
-    if key not in all_keys:
-        return False
     if not user or not getattr(user, "is_authenticated", False):
         return False
     code = getattr(user, "role_code", None)
+    # 管理员不受 sys_capability / 缓存是否已含某 key 影响，始终具备全部细项能力
     if code == "admin":
         return True
+    _, _, all_keys = _cap_maps()
+    if key not in all_keys:
+        return False
     if code == "pending":
         return False
     _, cap_to_nav, _ = _cap_maps()

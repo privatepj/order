@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}采购单详情 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">采购单详情</h2>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div><strong>采购单号：</strong>{{ row.po_no }}</div>
+        <div><strong>请购单号：</strong>{{ row.requisition.req_no if row.requisition else '-' }}</div>
+        <div><strong>供应商：</strong>{{ row.supplier_name }}</div>
+        <div><strong>物料：</strong>{{ row.item_name }}{% if row.item_spec %} / {{ row.item_spec }}{% endif %}</div>
+        <div><strong>数量：</strong>{{ row.qty }} {{ row.unit }}</div>
+        <div><strong>单价/金额：</strong>{{ row.unit_price }} / {{ row.amount }}</div>
+        <div><strong>状态：</strong>{{ row.status }}</div>
+        <div><strong>期望到货：</strong>{{ row.expected_date or '-' }}</div>
+        <div><strong>备注：</strong>{{ row.remark or '-' }}</div>
+    </div>
+</div>
+
+<h5>收货记录</h5>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+    <thead>
+        <tr>
+            <th>收货单号</th>
+            <th class="text-end">收货数量</th>
+            <th>收货时间</th>
+            <th>状态</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in receipts %}
+        <tr>
+            <td>{{ r.receipt_no }}</td>
+            <td class="text-end">{{ r.received_qty }}</td>
+            <td>{{ r.received_at }}</td>
+            <td>{{ r.status }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted">暂无收货记录</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<a href="{{ url_for('main.procurement_order_list', company_id=row.company_id) }}" class="btn btn-secondary">返回列表</a>
+{% endblock %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set prod_kind_zh = {'finished': '成品', 'semi': '半成品', 'material': '原材料'} %}
 {% block title %}预生产计划详情 - 工厂订单系统{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
@@ -18,6 +19,11 @@
 <a href="{{ url_for('main.production_preplan_list') }}" class="btn btn-outline-secondary btn-sm mb-3 d-inline-block">返回列表</a>
 {% endif %}
 
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <button type="button" class="btn btn-outline-primary btn-sm" id="btnQtyKilo" aria-pressed="false">千单位显示</button>
+    <span class="text-muted small">开启后数量按 ÷1000 展示（与 1K 同义）；单位列会加「千」前缀。</span>
+</div>
+
 <div class="card mb-3">
     <div class="card-body py-2">
         <h5 class="mb-2">根需求明细（成品）</h5>
@@ -28,7 +34,7 @@
                     <th style="width:80px;">行号</th>
                     <th>产品</th>
                     <th style="width:180px;" class="text-end">数量</th>
-                    <th style="width:120px;">单位</th>
+                    <th style="width:120px;" class="js-unit js-unit-th">单位</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -42,11 +48,45 @@
                             产品ID={{ ln.product_id }}
                         {% endif %}
                     </td>
-                    <td class="text-end">{{ ln.quantity }}</td>
-                    <td>{{ ln.unit or '-' }}</td>
+                    <td class="text-end"><span class="js-qty" data-qty="{{ ln.quantity }}">{{ ln.quantity|qty_plain }}</span></td>
+                    <td><span class="js-unit" data-unit="{{ ln.unit or '' }}">{{ ln.unit or '-' }}</span></td>
                 </tr>
                 {% else %}
                 <tr><td colspan="4" class="text-muted">无根需求</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <h5 class="mb-2">原材料总需求汇总</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle mb-0">
+                <thead>
+                <tr>
+                    <th style="width:64px;">序号</th>
+                    <th>物料编码</th>
+                    <th>名称</th>
+                    <th>规格</th>
+                    <th style="width:180px;" class="text-end">需求总量</th>
+                    <th style="width:120px;" class="js-unit js-unit-th">单位</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in raw_material_totals %}
+                <tr>
+                    <td class="text-nowrap">{{ loop.index }}</td>
+                    <td class="text-nowrap">{{ row.code }}</td>
+                    <td class="text-nowrap">{{ row.name }}</td>
+                    <td class="text-nowrap">{{ row.spec or '-' }}</td>
+                    <td class="text-end"><span class="js-qty" data-qty="{{ row.required_total }}">{{ row.required_total|qty_plain }}</span></td>
+                    <td><span class="js-unit" data-unit="{{ row.unit if row.unit != '-' else '' }}">{{ row.unit }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-muted">暂无原材料需求（或尚未运行测算）。</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -64,25 +104,25 @@
                 {% if wo.parent_kind == 'finished' %}
                     成品：{{ wo.parent_product.product_code if wo.parent_product else wo.parent_product_id }}
                 {% elif wo.parent_kind in ('semi','material') %}
-                    {{ wo.parent_kind }}：{{ wo.parent_material.code if wo.parent_material else wo.parent_material_id }}
+                    {{ prod_kind_zh.get(wo.parent_kind, wo.parent_kind) }}：{{ wo.parent_material.code if wo.parent_material else wo.parent_material_id }}
                 {% else %}
-                    {{ wo.parent_kind }}：{{ wo.parent_product_id or wo.parent_material_id }}
+                    {{ prod_kind_zh.get(wo.parent_kind, wo.parent_kind) }}：{{ wo.parent_product_id or wo.parent_material_id }}
                 {% endif %}
             </div>
-            <div class="text-muted small ms-auto">净数量：{{ wo.to_produce_qty }}</div>
+            <div class="text-muted small ms-auto">净数量：<span class="js-qty" data-qty="{{ wo.to_produce_qty }}">{{ wo.to_produce_qty|qty_plain }}</span></div>
         </div>
         <div class="row g-3 mb-2">
             <div class="col-md-4">
                 <div class="text-muted small">需求量</div>
-                <div class="fw-semibold">{{ wo.demand_qty }}</div>
+                <div class="fw-semibold"><span class="js-qty" data-qty="{{ wo.demand_qty }}">{{ wo.demand_qty|qty_plain }}</span></div>
             </div>
             <div class="col-md-4">
                 <div class="text-muted small">库存覆盖</div>
-                <div class="fw-semibold">{{ wo.stock_covered_qty }}</div>
+                <div class="fw-semibold"><span class="js-qty" data-qty="{{ wo.stock_covered_qty }}">{{ wo.stock_covered_qty|qty_plain }}</span></div>
             </div>
             <div class="col-md-4">
                 <div class="text-muted small">需要生产</div>
-                <div class="fw-semibold">{{ wo.to_produce_qty }}</div>
+                <div class="fw-semibold"><span class="js-qty" data-qty="{{ wo.to_produce_qty }}">{{ wo.to_produce_qty|qty_plain }}</span></div>
             </div>
         </div>
         {% if wo.remark %}
@@ -94,9 +134,10 @@
                 <thead>
                 <tr>
                     <th>子项</th>
-                    <th style="width:180px;" class="text-end">需求量</th>
-                    <th style="width:180px;" class="text-end">库存覆盖</th>
-                    <th style="width:180px;" class="text-end">缺口</th>
+                    <th style="width:100px;" class="js-unit js-unit-th">单位</th>
+                    <th style="width:160px;" class="text-end">需求量</th>
+                    <th style="width:160px;" class="text-end">库存覆盖</th>
+                    <th style="width:160px;" class="text-end">缺口</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -104,17 +145,21 @@
                 <tr>
                     <td class="text-nowrap">
                         {% if n.child_material %}
-                            {{ n.child_kind }}：{{ n.child_material.code }} — {{ n.child_material.name }}{% if n.child_material.spec %}（{{ n.child_material.spec }}）{% endif %}
+                            {{ prod_kind_zh.get(n.child_kind, n.child_kind) }}：{{ n.child_material.code }} — {{ n.child_material.name }}{% if n.child_material.spec %}（{{ n.child_material.spec }}）{% endif %}
                         {% else %}
-                            {{ n.child_kind }}：{{ n.child_material_id }}
+                            {{ prod_kind_zh.get(n.child_kind, n.child_kind) }}：{{ n.child_material_id }}
                         {% endif %}
                     </td>
-                    <td class="text-end">{{ n.required_qty }}</td>
-                    <td class="text-end">{{ n.stock_covered_qty }}</td>
-                    <td class="text-end fw-semibold text-danger">{{ n.shortage_qty }}</td>
+                    <td>
+                        {% set u = (n.child_material.base_unit if n.child_material and n.child_material.base_unit else n.unit) %}
+                        <span class="js-unit" data-unit="{{ u or '' }}">{{ u or '-' }}</span>
+                    </td>
+                    <td class="text-end"><span class="js-qty" data-qty="{{ n.required_qty }}">{{ n.required_qty|qty_plain }}</span></td>
+                    <td class="text-end"><span class="js-qty" data-qty="{{ n.stock_covered_qty }}">{{ n.stock_covered_qty|qty_plain }}</span></td>
+                    <td class="text-end fw-semibold text-danger"><span class="js-qty" data-qty="{{ n.shortage_qty }}">{{ n.shortage_qty|qty_plain }}</span></td>
                 </tr>
                 {% else %}
-                <tr><td colspan="4" class="text-muted">无 BOM 展开明细（可能库存已覆盖或缺少生效 BOM）。</td></tr>
+                <tr><td colspan="5" class="text-muted">无 BOM 展开明细（可能库存已覆盖或缺少生效 BOM）。</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -127,3 +172,59 @@
 
 {% endblock %}
 
+{% block extra_js %}
+<script>
+(function () {
+  function formatQtyPlainNum(n) {
+    if (n === null || n === undefined || !Number.isFinite(n)) return '-';
+    if (Object.is(n, -0) || n === 0) return '0';
+    var s = n.toFixed(12);
+    if (s.indexOf('.') !== -1) s = s.replace(/\.?0+$/, '');
+    return s;
+  }
+  function parseQty(s) {
+    if (s === null || s === undefined || s === '') return null;
+    var n = parseFloat(String(s).trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  function applyQtyMode(kilo) {
+    document.querySelectorAll('.js-qty').forEach(function (el) {
+      var raw = el.getAttribute('data-qty');
+      var n = parseQty(raw);
+      if (n === null) {
+        el.textContent = '-';
+        return;
+      }
+      var v = kilo ? n / 1000 : n;
+      el.textContent = formatQtyPlainNum(v);
+    });
+    document.querySelectorAll('.js-unit').forEach(function (el) {
+      var u = el.getAttribute('data-unit') || '';
+      if (el.tagName === 'TH') {
+        el.textContent = kilo ? '千单位' : '单位';
+        return;
+      }
+      var base = (u === '-' || u === '') ? '' : u;
+      if (!base) {
+        el.textContent = '-';
+        return;
+      }
+      el.textContent = kilo ? ('千' + base) : base;
+    });
+    var btn = document.getElementById('btnQtyKilo');
+    if (btn) {
+      btn.setAttribute('aria-pressed', kilo ? 'true' : 'false');
+      btn.textContent = kilo ? '原单位显示' : '千单位显示';
+    }
+  }
+  var btn = document.getElementById('btnQtyKilo');
+  if (btn) {
+    var kilo = false;
+    btn.addEventListener('click', function () {
+      kilo = !kilo;
+      applyQtyMode(kilo);
+    });
+  }
+})();
+</script>
+{% endblock %}

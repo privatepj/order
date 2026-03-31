@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}机台详情 - 工厂订单系统{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">机台详情：{{ row.machine_no }}</h2>
+    <a href="{{ url_for('main.machine_list') }}" class="btn btn-outline-secondary btn-sm">返回台账</a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-3"><strong>机台编号：</strong>{{ row.machine_no }}</div>
+            <div class="col-md-3"><strong>机台名称：</strong>{{ row.name }}</div>
+            <div class="col-md-3"><strong>机台种类：</strong>{{ row.machine_type.name if row.machine_type else '-' }}</div>
+            <div class="col-md-3"><strong>标准产能：</strong>{{ row.capacity_per_hour }} 件/小时</div>
+            <div class="col-md-3"><strong>状态：</strong>{{ row.status }}</div>
+            <div class="col-md-5"><strong>车间/产线：</strong>{{ row.location or '-' }}</div>
+            <div class="col-md-4"><strong>责任人：</strong>{{ row.owner.name if row.owner else '-' }}</div>
+            <div class="col-12"><strong>备注：</strong>{{ row.remark or '-' }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h5>当前运转情况</h5>
+        {% if open_log %}
+        <div class="alert alert-info mb-0">
+            状态：{{ open_log.runtime_status }}，开始时间：{{ open_log.started_at.strftime('%Y-%m-%d %H:%M') }}
+        </div>
+        {% else %}
+        <div class="text-muted">当前无进行中的运转记录。</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5>最近 20 条运转记录</h5>
+        <div class="table-responsive app-table-scroll">
+            <table class="table table-bordered table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>状态</th>
+                        <th>开始时间</th>
+                        <th>结束时间</th>
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in latest_logs %}
+                    <tr>
+                        <td>{{ r.id }}</td>
+                        <td>{{ r.runtime_status }}</td>
+                        <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>{{ r.ended_at.strftime('%Y-%m-%d %H:%M') if r.ended_at else '进行中' }}</td>
+                        <td>{{ r.remark or '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-muted">暂无记录</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

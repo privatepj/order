@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ '新增工资' if not line else '编辑工资' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '新增工资' if not line else '编辑工资' }}</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select" required {% if line %}disabled{% endif %}>
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if (line and line.company_id == c.id) or (not line and default_company_id == c.id) %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+        {% if line %}<input type="hidden" name="company_id" value="{{ line.company_id }}">{% endif %}
+    </div>
+    {% if not line %}
+    <div class="mb-3">
+        <label class="form-label">账期（YYYY-MM）</label>
+        <input type="text" class="form-control" name="period" required pattern="\d{4}-\d{2}" placeholder="2026-03" value="{{ default_period }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">员工</label>
+        <select name="employee_id" class="form-select" required>
+            <option value="">请选择</option>
+            {% for e in employees %}
+            <option value="{{ e.id }}">{{ e.employee_no }} {{ e.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% else %}
+    <div class="mb-2 text-muted">账期 {{ line.period }} · {{ line.employee.employee_no if line.employee else '' }} {{ line.employee.name if line.employee else '' }}</div>
+    {% endif %}
+    <div class="row">
+        <div class="col-md-4 mb-3">
+            <label class="form-label">基本工资</label>
+            <input type="number" step="0.01" class="form-control" name="base_salary" value="{{ line.base_salary if line else '0' }}" required>
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label">津贴</label>
+            <input type="number" step="0.01" class="form-control" name="allowance" value="{{ line.allowance if line else '0' }}" required>
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label">扣款</label>
+            <input type="number" step="0.01" class="form-control" name="deduction" value="{{ line.deduction if line else '0' }}" required>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <input type="text" class="form-control" name="remark" value="{{ line.remark if line else '' }}" maxlength="500">
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.hr_payroll_list', company_id=line.company_id if line else default_company_id, period=line.period if line else '') }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

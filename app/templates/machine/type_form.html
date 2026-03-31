@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if row else '新建' }}机台种类 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑' if row else '新建' }}机台种类</h2>
+
+<form method="post" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">种类编码 <span class="text-danger">*</span></label>
+        <input class="form-control" name="code" maxlength="32" required value="{{ row.code if row else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">种类名称 <span class="text-danger">*</span></label>
+        <input class="form-control" name="name" maxlength="64" required value="{{ row.name if row else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">启用状态</label>
+        <select class="form-select" name="is_active">
+            <option value="1" {% if not row or row.is_active %}selected{% endif %}>启用</option>
+            <option value="0" {% if row and not row.is_active %}selected{% endif %}>停用</option>
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="form-label">备注</label>
+        <input class="form-control" name="remark" maxlength="255" value="{{ row.remark if row else '' }}">
+    </div>
+    <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.machine_type_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+{% endblock %}

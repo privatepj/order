@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ '新增部门' if not dept else '编辑部门' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '新增部门' if not dept else '编辑部门' }}</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select" required>
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if dept and dept.company_id == c.id %}selected{% elif not dept and companies[0].id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">部门名称</label>
+        <input type="text" class="form-control" name="name" value="{{ dept.name if dept else '' }}" required maxlength="128">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">排序</label>
+        <input type="number" class="form-control" name="sort_order" value="{{ dept.sort_order if dept else 0 }}">
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.hr_department_list', company_id=dept.company_id if dept else (companies[0].id if companies else None)) }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

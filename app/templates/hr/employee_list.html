@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}人员档案 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">人员档案</h2>
+<p class="text-muted small">敏感列默认脱敏；具备「查看身份证/完整手机」能力后显示完整信息。</p>
+<form method="get" class="row g-2 mb-3 align-items-end">
+    {% if user_can_cap('hr_employee.filter.company') %}
+    <div class="col-auto">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}（{{ c.code }}）</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    {% if user_can_cap('hr_employee.filter.keyword') %}
+    <div class="col-auto">
+        <label class="form-label">关键词</label>
+        <input type="text" class="form-control form-control-sm" name="keyword" value="{{ keyword or '' }}" placeholder="姓名/工号/手机">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">筛选</button>
+    </div>
+    {% endif %}
+</form>
+<div class="mb-3 d-flex gap-2 flex-wrap">
+    {% if user_can_cap('hr_employee.action.create') %}
+    <a href="{{ url_for('main.hr_employee_new') }}" class="btn btn-sm btn-primary">新增人员</a>
+    {% endif %}
+    {% if user_can_cap('hr_employee.action.export_template') %}
+    <a href="{{ url_for('main.hr_employee_export_import_template') }}" class="btn btn-sm btn-outline-secondary">下载导入模板</a>
+    {% endif %}
+    {% if user_can_cap('hr_employee.action.import') %}
+    <a href="{{ url_for('main.hr_employee_import') }}" class="btn btn-sm btn-outline-secondary">Excel 导入</a>
+    {% endif %}
+</div>
+<div class="table-responsive">
+<table class="table table-striped table-sm">
+    <thead>
+        <tr>
+            <th>工号</th>
+            <th>姓名</th>
+            <th>部门</th>
+            <th>手机</th>
+            <th>身份证</th>
+            <th>岗位</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in rows %}
+        <tr>
+            <td>{{ e.employee_no }}</td>
+            <td>{{ e.name }}</td>
+            <td>{{ e.department.name if e.department else '—' }}</td>
+            <td>{{ display_phone(e.phone, sensitive=show_sensitive) }}</td>
+            <td>{{ display_id_card(e.id_card, sensitive=show_sensitive) }}</td>
+            <td>{{ e.job_title or '—' }}</td>
+            <td>{{ '在职' if e.status == 'active' else '离职' }}</td>
+            <td class="d-flex gap-2 flex-wrap">
+                {% if user_can_cap('hr_employee.action.edit') %}
+                <a href="{{ url_for('main.hr_employee_edit', emp_id=e.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('hr_employee.action.delete') %}
+                <form method="post" action="{{ url_for('main.hr_employee_delete', emp_id=e.id) }}" onsubmit="return confirm('确认删除该人员档案？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-muted">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

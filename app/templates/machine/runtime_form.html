@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if row else '新建' }}运转记录 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑' if row else '新建' }}运转记录</h2>
+
+<form method="post" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">机台 <span class="text-danger">*</span></label>
+        <select class="form-select" name="machine_id" required>
+            <option value="">请选择</option>
+            {% for m in machines %}
+            <option value="{{ m.id }}" {% if row and row.machine_id == m.id %}selected{% endif %}>{{ m.machine_no }} - {{ m.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">运转状态 <span class="text-danger">*</span></label>
+        <select class="form-select" name="runtime_status" required>
+            {% for s in runtime_statuses %}
+            <option value="{{ s }}" {% if (row and row.runtime_status == s) or (not row and s == 'running') %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-5">
+        <label class="form-label">开始时间 <span class="text-danger">*</span></label>
+        <input type="datetime-local" class="form-control" name="started_at" required value="{{ row.started_at.strftime('%Y-%m-%dT%H:%M') if row and row.started_at else '' }}">
+    </div>
+    <div class="col-md-5">
+        <label class="form-label">结束时间（留空表示进行中）</label>
+        <input type="datetime-local" class="form-control" name="ended_at" value="{{ row.ended_at.strftime('%Y-%m-%dT%H:%M') if row and row.ended_at else '' }}">
+    </div>
+    <div class="col-md-7">
+        <label class="form-label">备注</label>
+        <input class="form-control" name="remark" maxlength="255" value="{{ row.remark if row else '' }}">
+    </div>
+    <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.machine_runtime_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+{% endblock %}

@@ -25,6 +25,15 @@ from app.models.production_preplan import ProductionPreplan
 from app.models.production_preplan_line import ProductionPreplanLine
 from app.models.production_work_order import ProductionWorkOrder
 from app.models.production_component_need import ProductionComponentNeed
+from app.models.production_incident import ProductionIncident
+from app.models.hr import HrDepartment, HrEmployee, HrPayrollLine, HrPerformanceReview
+from app.models.machine import MachineType, Machine, MachineRuntimeLog
+from app.models.procurement import (
+    PurchaseRequisition,
+    PurchaseOrder,
+    PurchaseReceipt,
+    PurchaseStockIn,
+)
 
 __all__ = [
     "User",
@@ -57,4 +66,16 @@ __all__ = [
     "ProductionPreplanLine",
     "ProductionWorkOrder",
     "ProductionComponentNeed",
+    "ProductionIncident",
+    "HrDepartment",
+    "HrEmployee",
+    "HrPayrollLine",
+    "HrPerformanceReview",
+    "MachineType",
+    "Machine",
+    "MachineRuntimeLog",
+    "PurchaseRequisition",
+    "PurchaseOrder",
+    "PurchaseReceipt",
+    "PurchaseStockIn",
 ]

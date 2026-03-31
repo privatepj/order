@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if row else '新建' }}机台 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑' if row else '新建' }}机台</h2>
+
+<form method="post" class="row g-3">
+    <div class="col-md-3">
+        <label class="form-label">机台编号 <span class="text-danger">*</span></label>
+        <input class="form-control" name="machine_no" maxlength="32" required value="{{ row.machine_no if row else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">机台名称 <span class="text-danger">*</span></label>
+        <input class="form-control" name="name" maxlength="64" required value="{{ row.name if row else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">机台种类 <span class="text-danger">*</span></label>
+        <select class="form-select" name="machine_type_id" required>
+            <option value="">请选择</option>
+            {% for t in types %}
+            <option value="{{ t.id }}" {% if row and row.machine_type_id == t.id %}selected{% endif %}>{{ t.code }} - {{ t.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">标准产能(件/小时)</label>
+        <input class="form-control" type="number" min="0" step="0.01" name="capacity_per_hour" value="{{ row.capacity_per_hour if row else '0' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">机台状态</label>
+        <select class="form-select" name="status">
+            {% for s in machine_statuses %}
+            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'enabled') %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-5">
+        <label class="form-label">车间/产线</label>
+        <input class="form-control" name="location" maxlength="128" value="{{ row.location if row else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">责任人</label>
+        <select class="form-select" name="owner_user_id">
+            <option value="">-- 无 --</option>
+            {% for u in users %}
+            <option value="{{ u.id }}" {% if row and row.owner_user_id == u.id %}selected{% endif %}>{{ u.username }}{% if u.name %} ({{ u.name }}){% endif %}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="form-label">备注</label>
+        <input class="form-control" name="remark" maxlength="255" value="{{ row.remark if row else '' }}">
+    </div>
+    <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.machine_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+{% endblock %}

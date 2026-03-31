@@ -197,6 +197,7 @@ CREATE TABLE `bom_line` (
 -- ----------------------------
 -- 生产管理四张表：无外键约束；应用层保证 join 语义。
 -- ----------------------------
+DROP TABLE IF EXISTS `production_incident`;
 DROP TABLE IF EXISTS `production_component_need`;
 DROP TABLE IF EXISTS `production_work_order`;
 DROP TABLE IF EXISTS `production_preplan_line`;
@@ -283,6 +284,32 @@ CREATE TABLE `production_component_need` (
   KEY `idx_component_need_wo` (`work_order_id`),
   KEY `idx_component_need_child` (`child_kind`,`child_material_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作单需求/缺料明细';
+
+CREATE TABLE `production_incident` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `incident_no` varchar(32) DEFAULT NULL COMMENT '事故编号（唯一，可空后由系统补全）',
+  `title` varchar(255) NOT NULL COMMENT '标题',
+  `occurred_at` datetime NOT NULL COMMENT '发生时间',
+  `workshop` varchar(128) DEFAULT NULL COMMENT '车间/地点',
+  `severity` varchar(32) DEFAULT NULL COMMENT '严重程度',
+  `status` varchar(16) NOT NULL DEFAULT 'open' COMMENT 'open/closed',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注/D0 计划摘要',
+  `d1_team` text COMMENT 'D1 小组',
+  `d2_problem` text COMMENT 'D2 问题描述',
+  `d3_containment` text COMMENT 'D3 临时措施',
+  `d4_root_cause` text COMMENT 'D4 根本原因',
+  `d5_corrective` text COMMENT 'D5 永久纠正措施',
+  `d6_implementation` text COMMENT 'D6 实施与验证',
+  `d7_prevention` text COMMENT 'D7 预防再发',
+  `d8_recognition` text COMMENT 'D8 总结与表彰',
+  `created_by` int unsigned NOT NULL COMMENT 'user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_production_incident_no` (`incident_no`),
+  KEY `idx_production_incident_occurred` (`occurred_at`),
+  KEY `idx_production_incident_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生产事故与 8D';
 
 -- ----------------------------
 -- 客户产品表
@@ -558,6 +585,232 @@ CREATE TABLE `audit_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
+-- 人力资源（部门 / 人员 / 工资 / 绩效；逻辑关联 company / user；无 DB 外键）
+-- ----------------------------
+DROP TABLE IF EXISTS `hr_performance_review`;
+DROP TABLE IF EXISTS `hr_payroll_line`;
+DROP TABLE IF EXISTS `hr_employee`;
+DROP TABLE IF EXISTS `hr_department`;
+CREATE TABLE `hr_department` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
+  `name` varchar(128) NOT NULL COMMENT '部门名称',
+  `sort_order` int NOT NULL DEFAULT 0,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_hr_dept_company_name` (`company_id`,`name`),
+  KEY `idx_hr_dept_company` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HR 部门';
+
+CREATE TABLE `hr_employee` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL,
+  `department_id` int unsigned DEFAULT NULL COMMENT 'hr_department.id',
+  `user_id` int unsigned DEFAULT NULL COMMENT '可选关联登录用户 user.id',
+  `employee_no` varchar(32) NOT NULL COMMENT '工号',
+  `name` varchar(64) NOT NULL,
+  `id_card` varchar(32) DEFAULT NULL COMMENT '身份证（敏感）',
+  `phone` varchar(32) DEFAULT NULL,
+  `job_title` varchar(64) DEFAULT NULL COMMENT '岗位',
+  `status` varchar(16) NOT NULL DEFAULT 'active' COMMENT 'active=在职 left=离职',
+  `hire_date` date DEFAULT NULL,
+  `leave_date` date DEFAULT NULL,
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_hr_emp_company_no` (`company_id`,`employee_no`),
+  KEY `idx_hr_emp_company` (`company_id`),
+  KEY `idx_hr_emp_dept` (`department_id`),
+  KEY `idx_hr_emp_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HR 人员档案';
+
+CREATE TABLE `hr_payroll_line` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL,
+  `employee_id` int unsigned NOT NULL COMMENT 'hr_employee.id',
+  `period` char(7) NOT NULL COMMENT '账期 YYYY-MM',
+  `base_salary` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `allowance` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '津贴',
+  `deduction` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '扣款',
+  `net_pay` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '实发',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL COMMENT 'user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_hr_pay_company_emp_period` (`company_id`,`employee_id`,`period`),
+  KEY `idx_hr_pay_company_period` (`company_id`,`period`),
+  KEY `idx_hr_pay_employee` (`employee_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HR 工资明细（按月一行）';
+
+CREATE TABLE `hr_performance_review` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL,
+  `employee_id` int unsigned NOT NULL,
+  `cycle` varchar(32) NOT NULL COMMENT '考核周期 如 2026-Q1',
+  `score` decimal(6,2) DEFAULT NULL,
+  `comment` text COMMENT '评语',
+  `reviewer_user_id` int unsigned DEFAULT NULL COMMENT '考核人 user.id',
+  `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft=草稿 finalized=已定稿',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_hr_perf_company_emp_cycle` (`company_id`,`employee_id`,`cycle`),
+  KEY `idx_hr_perf_company` (`company_id`),
+  KEY `idx_hr_perf_employee` (`employee_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HR 绩效考核';
+
+-- ----------------------------
+-- 机台管理（机台种类 / 机台台账 / 运转情况；逻辑关联 user；无 DB 外键）
+-- ----------------------------
+DROP TABLE IF EXISTS `machine_runtime_log`;
+DROP TABLE IF EXISTS `machine`;
+DROP TABLE IF EXISTS `machine_type`;
+CREATE TABLE `machine_type` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `code` varchar(32) NOT NULL COMMENT '机台种类编码',
+  `name` varchar(64) NOT NULL COMMENT '机台种类名称',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=启用 0=停用',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_machine_type_code` (`code`),
+  UNIQUE KEY `uk_machine_type_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台种类';
+
+CREATE TABLE `machine` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `machine_no` varchar(32) NOT NULL COMMENT '机台编号',
+  `name` varchar(64) NOT NULL COMMENT '机台名称',
+  `machine_type_id` int unsigned NOT NULL COMMENT '机台种类 machine_type.id',
+  `capacity_per_hour` decimal(12,2) NOT NULL DEFAULT 0.00 COMMENT '标准产能（件/小时）',
+  `status` varchar(16) NOT NULL DEFAULT 'enabled' COMMENT 'enabled/disabled/maintenance/scrapped',
+  `location` varchar(128) DEFAULT NULL COMMENT '车间/产线',
+  `owner_user_id` int unsigned DEFAULT NULL COMMENT '责任人 user.id',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_machine_no` (`machine_no`),
+  KEY `idx_machine_type` (`machine_type_id`),
+  KEY `idx_machine_status` (`status`),
+  KEY `idx_machine_owner` (`owner_user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台台账';
+
+CREATE TABLE `machine_runtime_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `machine_id` int unsigned NOT NULL COMMENT '机台 machine.id',
+  `runtime_status` varchar(16) NOT NULL COMMENT 'running/idle/fault',
+  `started_at` datetime NOT NULL COMMENT '开始时间',
+  `ended_at` datetime DEFAULT NULL COMMENT '结束时间，NULL=进行中',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL COMMENT '录入人 user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_machine_runtime_machine` (`machine_id`),
+  KEY `idx_machine_runtime_started` (`started_at`),
+  KEY `idx_machine_runtime_open` (`machine_id`,`ended_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台运转情况记录';
+
+-- ----------------------------
+-- 采购管理（请购 / 采购单 / 收货 / 入库；逻辑关联 company / user；无 DB 外键）
+-- ----------------------------
+DROP TABLE IF EXISTS `purchase_stock_in`;
+DROP TABLE IF EXISTS `purchase_receipt`;
+DROP TABLE IF EXISTS `purchase_order`;
+DROP TABLE IF EXISTS `purchase_requisition`;
+CREATE TABLE `purchase_requisition` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
+  `req_no` varchar(32) NOT NULL COMMENT '请购单号',
+  `requester_user_id` int unsigned NOT NULL COMMENT '申请人 user.id',
+  `supplier_name` varchar(128) NOT NULL COMMENT '供应商',
+  `item_name` varchar(128) NOT NULL COMMENT '物料名称',
+  `item_spec` varchar(128) DEFAULT NULL COMMENT '规格',
+  `qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '请购数量',
+  `unit` varchar(16) NOT NULL DEFAULT 'pcs' COMMENT '单位',
+  `expected_date` date DEFAULT NULL COMMENT '期望到货日期',
+  `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/ordered/cancelled',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purchase_requisition_no` (`req_no`),
+  KEY `idx_purchase_requisition_company` (`company_id`),
+  KEY `idx_purchase_requisition_requester` (`requester_user_id`),
+  KEY `idx_purchase_requisition_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购请购单';
+
+CREATE TABLE `purchase_order` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
+  `po_no` varchar(32) NOT NULL COMMENT '采购单号',
+  `requisition_id` int unsigned DEFAULT NULL COMMENT '请购单 purchase_requisition.id',
+  `buyer_user_id` int unsigned NOT NULL COMMENT '采购员 user.id',
+  `supplier_name` varchar(128) NOT NULL COMMENT '供应商',
+  `item_name` varchar(128) NOT NULL COMMENT '物料名称',
+  `item_spec` varchar(128) DEFAULT NULL COMMENT '规格',
+  `qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '采购数量',
+  `unit` varchar(16) NOT NULL DEFAULT 'pcs' COMMENT '单位',
+  `unit_price` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '单价',
+  `amount` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '金额',
+  `expected_date` date DEFAULT NULL COMMENT '期望到货日期',
+  `status` varchar(24) NOT NULL DEFAULT 'draft' COMMENT 'draft/ordered/partially_received/received/cancelled',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purchase_order_no` (`po_no`),
+  KEY `idx_purchase_order_company` (`company_id`),
+  KEY `idx_purchase_order_req` (`requisition_id`),
+  KEY `idx_purchase_order_buyer` (`buyer_user_id`),
+  KEY `idx_purchase_order_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购单';
+
+CREATE TABLE `purchase_receipt` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
+  `receipt_no` varchar(32) NOT NULL COMMENT '收货单号',
+  `purchase_order_id` int unsigned NOT NULL COMMENT '采购单 purchase_order.id',
+  `receiver_user_id` int unsigned NOT NULL COMMENT '收货人 user.id',
+  `received_qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '收货数量',
+  `received_at` datetime NOT NULL COMMENT '收货时间',
+  `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/posted',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purchase_receipt_no` (`receipt_no`),
+  KEY `idx_purchase_receipt_company` (`company_id`),
+  KEY `idx_purchase_receipt_po` (`purchase_order_id`),
+  KEY `idx_purchase_receipt_receiver` (`receiver_user_id`),
+  KEY `idx_purchase_receipt_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购收货单';
+
+CREATE TABLE `purchase_stock_in` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
+  `stock_in_no` varchar(32) NOT NULL COMMENT '入库单号',
+  `receipt_id` int unsigned NOT NULL COMMENT '收货单 purchase_receipt.id',
+  `qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '入库数量',
+  `storage_area` varchar(64) DEFAULT NULL COMMENT '仓储区',
+  `stock_in_at` datetime NOT NULL COMMENT '入库时间',
+  `created_by` int unsigned NOT NULL COMMENT '创建人 user.id',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purchase_stock_in_no` (`stock_in_no`),
+  KEY `idx_purchase_stock_in_company` (`company_id`),
+  KEY `idx_purchase_stock_in_receipt` (`receipt_id`),
+  KEY `idx_purchase_stock_in_creator` (`created_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购入库记录';
+
+-- ----------------------------
 -- 导航与细项能力（RBAC 库表，与 run_15/run_16 一致）
 -- ----------------------------
 DROP TABLE IF EXISTS `role_allowed_capability`;
@@ -616,7 +869,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO `role` (`name`, `code`, `description`, `allowed_menu_keys`) VALUES
 ('管理员', 'admin', '系统管理员', NULL),
 ('销售', 'sales', '销售员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
-('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","semi_material","bom","production","customer_product","reconciliation"]' AS JSON)),
+('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","semi_material","bom","production_preplan","production_incident","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
 ('财务', 'finance', '财务人员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
 ('待分配', 'pending', '注册后等待管理员分配', CAST('[]' AS JSON));
 
@@ -636,7 +889,23 @@ INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sor
 (4, 2, 'express', '快递', 'main.express_company_list', 20, 1, 0, 1, 80),
 (5, 2, 'inventory_query', '库存查询', 'main.inventory_stock_query', 30, 1, 0, 1, 85),
 (6, 2, 'inventory_ops', '库存录入', 'main.inventory_list', 40, 1, 0, 1, 86),
-(21, 2, 'production', '生产管理', 'main.production_preplan_list', 50, 1, 0, 1, 87),
+(21, NULL, 'production', '生产管理', NULL, 15, 1, 0, 0, NULL),
+(36, 21, 'production_preplan', '预生产计划', 'main.production_preplan_list', 10, 1, 0, 1, 87),
+(37, 21, 'production_incident', '生产事故', 'main.production_incident_list', 20, 1, 0, 1, 88),
+(22, NULL, 'nav_hr', '人力资源', NULL, 17, 1, 0, 0, NULL),
+(23, 22, 'hr_department', '部门', 'main.hr_department_list', 10, 1, 0, 1, 92),
+(24, 22, 'hr_employee', '人员档案', 'main.hr_employee_list', 20, 1, 0, 1, 93),
+(25, 22, 'hr_payroll', '工资录入', 'main.hr_payroll_list', 30, 1, 0, 1, 94),
+(26, 22, 'hr_performance', '绩效管理', 'main.hr_performance_list', 40, 1, 0, 1, 95),
+(27, NULL, 'nav_machine', '机台管理', NULL, 16, 1, 0, 0, NULL),
+(28, 27, 'machine_type', '机台种类', 'main.machine_type_list', 10, 1, 0, 1, 96),
+(29, 27, 'machine_asset', '机台台账', 'main.machine_list', 20, 1, 0, 1, 97),
+(30, 27, 'machine_runtime', '运转情况', 'main.machine_runtime_list', 30, 1, 0, 1, 98),
+(31, NULL, 'nav_procurement', '采购管理', NULL, 18, 1, 0, 0, NULL),
+(32, 31, 'procurement_requisition', '采购请购', 'main.procurement_requisition_list', 10, 1, 0, 1, 102),
+(33, 31, 'procurement_order', '采购单', 'main.procurement_order_list', 20, 1, 0, 1, 103),
+(34, 31, 'procurement_receipt', '采购收货', 'main.procurement_receipt_list', 30, 1, 0, 1, 104),
+(35, 31, 'procurement_stockin', '采购入库', 'main.procurement_stockin_list', 40, 1, 0, 1, 105),
 (7, NULL, 'nav_base', '基础数据', NULL, 30, 1, 0, 0, NULL),
 (8, 7, 'customer', '客户', 'main.customer_list', 10, 1, 0, 1, 30),
 (9, 7, 'product', '产品', 'main.product_list', 20, 1, 0, 1, 40),
@@ -731,11 +1000,60 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('bom.action.edit', 'BOM：编辑', 'bom', 'BOM', 30),
 ('bom.action.delete', 'BOM：删除', 'bom', 'BOM', 40),
 ('bom.action.import', 'BOM：Excel 导入', 'bom', 'BOM', 50),
--- 生产管理
-('production.preplan.action.create', '生产管理：预生产计划新建', 'production', '生产管理', 10),
-('production.preplan.action.edit', '生产管理：预生产计划编辑', 'production', '生产管理', 20),
-('production.preplan.action.delete', '生产管理：预生产计划删除', 'production', '生产管理', 30),
-('production.calc.action.run', '生产管理：生产测算运行', 'production', '生产管理', 40),
+-- 预生产计划 / 生产事故
+('production.preplan.action.create', '预生产计划：新建', 'production_preplan', '预生产计划', 10),
+('production.preplan.action.edit', '预生产计划：编辑', 'production_preplan', '预生产计划', 20),
+('production.preplan.action.delete', '预生产计划：删除', 'production_preplan', '预生产计划', 30),
+('production.calc.action.run', '预生产计划：生产测算运行', 'production_preplan', '预生产计划', 40),
+('production_incident.filter.keyword', '生产事故：关键词筛选', 'production_incident', '生产事故', 11),
+('production_incident.action.create', '生产事故：新建', 'production_incident', '生产事故', 21),
+('production_incident.action.edit', '生产事故：编辑', 'production_incident', '生产事故', 31),
+('production_incident.action.delete', '生产事故：删除', 'production_incident', '生产事故', 41),
+('production_incident.report.8d', '生产事故：8D 报告（打印/导出）', 'production_incident', '生产事故', 51),
+('hr_department.filter.keyword', 'HR 部门：关键词', 'hr_department', '人力资源', 200),
+('hr_department.action.create', 'HR 部门：新建', 'hr_department', '人力资源', 210),
+('hr_department.action.edit', 'HR 部门：编辑', 'hr_department', '人力资源', 220),
+('hr_department.action.delete', 'HR 部门：删除', 'hr_department', '人力资源', 230),
+('hr_employee.filter.company', 'HR 人员：按主体筛选', 'hr_employee', '人力资源', 300),
+('hr_employee.filter.keyword', 'HR 人员：关键词', 'hr_employee', '人力资源', 310),
+('hr_employee.action.create', 'HR 人员：新建', 'hr_employee', '人力资源', 320),
+('hr_employee.action.edit', 'HR 人员：编辑', 'hr_employee', '人力资源', 330),
+('hr_employee.action.delete', 'HR 人员：删除', 'hr_employee', '人力资源', 340),
+('hr_employee.action.import', 'HR 人员：Excel 导入', 'hr_employee', '人力资源', 350),
+('hr_employee.action.export_template', 'HR 人员：下载导入模板', 'hr_employee', '人力资源', 360),
+('hr_employee.view_sensitive', 'HR 人员：查看身份证/完整手机', 'hr_employee', '人力资源', 370),
+('hr_payroll.view', 'HR 工资：查看', 'hr_payroll', '人力资源', 400),
+('hr_payroll.edit', 'HR 工资：录入与修改', 'hr_payroll', '人力资源', 410),
+('hr_payroll.export', 'HR 工资：导出 Excel', 'hr_payroll', '人力资源', 420),
+('hr_performance.action.create', 'HR 绩效：新建', 'hr_performance', '人力资源', 500),
+('hr_performance.action.edit', 'HR 绩效：编辑', 'hr_performance', '人力资源', 510),
+('hr_performance.action.delete', 'HR 绩效：删除', 'hr_performance', '人力资源', 520),
+('hr_performance.action.finalize', 'HR 绩效：定稿', 'hr_performance', '人力资源', 530),
+('hr_performance.action.override', 'HR 绩效：已定稿后修改', 'hr_performance', '人力资源', 540),
+('machine_type.action.create', '机台种类：新建', 'machine_type', '机台管理', 600),
+('machine_type.action.edit', '机台种类：编辑', 'machine_type', '机台管理', 610),
+('machine_type.action.delete', '机台种类：删除', 'machine_type', '机台管理', 620),
+('machine_asset.filter.keyword', '机台台账：关键词', 'machine_asset', '机台管理', 700),
+('machine_asset.action.create', '机台台账：新建', 'machine_asset', '机台管理', 710),
+('machine_asset.action.edit', '机台台账：编辑', 'machine_asset', '机台管理', 720),
+('machine_asset.action.delete', '机台台账：删除', 'machine_asset', '机台管理', 730),
+('machine_runtime.action.create', '机台运转：新建记录', 'machine_runtime', '机台管理', 800),
+('machine_runtime.action.edit', '机台运转：编辑记录', 'machine_runtime', '机台管理', 810),
+('machine_runtime.action.close', '机台运转：结束记录', 'machine_runtime', '机台管理', 820),
+('procurement_requisition.filter.keyword', '采购请购：关键词', 'procurement_requisition', '采购管理', 900),
+('procurement_requisition.action.create', '采购请购：新建', 'procurement_requisition', '采购管理', 910),
+('procurement_requisition.action.edit', '采购请购：编辑', 'procurement_requisition', '采购管理', 920),
+('procurement_requisition.action.delete', '采购请购：删除', 'procurement_requisition', '采购管理', 930),
+('procurement_order.filter.keyword', '采购单：关键词', 'procurement_order', '采购管理', 940),
+('procurement_order.action.create', '采购单：新建', 'procurement_order', '采购管理', 950),
+('procurement_order.action.edit', '采购单：编辑', 'procurement_order', '采购管理', 960),
+('procurement_order.action.delete', '采购单：删除', 'procurement_order', '采购管理', 970),
+('procurement_order.action.detail', '采购单：详情', 'procurement_order', '采购管理', 980),
+('procurement_receipt.filter.keyword', '采购收货：关键词', 'procurement_receipt', '采购管理', 990),
+('procurement_receipt.action.create', '采购收货：新建', 'procurement_receipt', '采购管理', 1000),
+('procurement_receipt.action.edit', '采购收货：编辑', 'procurement_receipt', '采购管理', 1010),
+('procurement_receipt.action.delete', '采购收货：删除', 'procurement_receipt', '采购管理', 1020),
+('procurement_stockin.filter.keyword', '采购入库：关键词', 'procurement_stockin', '采购管理', 1030),
 ('company.action.create', '公司主体：新建', 'company', '公司主体', 10),
 ('company.action.edit', '公司主体：编辑', 'company', '公司主体', 20),
 ('company.action.delete', '公司主体：删除', 'company', '公司主体', 30),
@@ -780,6 +1098,38 @@ JOIN JSON_TABLE(r.`allowed_menu_keys`, '$[*]' COLUMNS (`v` VARCHAR(64) PATH '$')
 WHERE r.`allowed_menu_keys` IS NOT NULL
   AND JSON_TYPE(r.`allowed_menu_keys`) = 'ARRAY'
   AND jt.`v` NOT IN ('inventory', 'report_export');
+
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'hr_department' FROM `role` r WHERE r.`code`='finance';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'hr_employee' FROM `role` r WHERE r.`code`='finance';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'hr_payroll' FROM `role` r WHERE r.`code`='finance';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'hr_performance' FROM `role` r WHERE r.`code`='finance';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'machine_type' FROM `role` r WHERE r.`code`='warehouse';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'machine_asset' FROM `role` r WHERE r.`code`='warehouse';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'machine_runtime' FROM `role` r WHERE r.`code`='warehouse';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'procurement_requisition' FROM `role` r WHERE r.`code`='warehouse';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'procurement_order' FROM `role` r WHERE r.`code`='warehouse';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'procurement_receipt' FROM `role` r WHERE r.`code`='warehouse';
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'procurement_stockin' FROM `role` r WHERE r.`code`='warehouse';
+
+-- 能力键 express.action.waybill_batch_delete（快递：单号池批量删除）
+INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `sort_order`) VALUES
+('express.action.waybill_batch_delete', '快递：单号池批量删除', 'express', '快递', 35)
+ON DUPLICATE KEY UPDATE
+  `title`=VALUES(`title`),
+  `nav_item_code`=VALUES(`nav_item_code`),
+  `group_label`=VALUES(`group_label`),
+  `sort_order`=VALUES(`sort_order`);
 
 INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
 SELECT r.`id`, jt.`v` FROM `role` r

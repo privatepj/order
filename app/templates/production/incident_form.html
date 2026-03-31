@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if mode == 'edit' else '新建' }}生产事故 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑生产事故' if mode == 'edit' else '新建生产事故' }}</h2>
+
+<form method="post">
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <label class="form-label">事故编号</label>
+            <input type="text" class="form-control" name="incident_no" maxlength="32" value="{{ incident.incident_no if incident and incident.incident_no else '' }}" placeholder="留空保存后自动生成">
+        </div>
+        <div class="col-md-5">
+            <label class="form-label">标题 <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="title" required maxlength="255" value="{{ incident.title if incident else '' }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">发生时间 <span class="text-danger">*</span></label>
+            <input type="datetime-local" class="form-control" name="occurred_at" required step="60"
+                   value="{% if incident and incident.occurred_at %}{{ incident.occurred_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">车间/地点</label>
+            <input type="text" class="form-control" name="workshop" maxlength="128" value="{{ incident.workshop if incident and incident.workshop else '' }}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">严重程度</label>
+            <input type="text" class="form-control" name="severity" maxlength="32" value="{{ incident.severity if incident and incident.severity else '' }}" placeholder="如：轻微/一般/重大">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">状态</label>
+            <select class="form-select" name="status">
+                <option value="open" {% if not incident or incident.status == 'open' %}selected{% endif %}>open</option>
+                <option value="closed" {% if incident and incident.status == 'closed' %}selected{% endif %}>closed</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">备注 / D0 计划摘要</label>
+            <input type="text" class="form-control" name="remark" maxlength="500" value="{{ incident.remark if incident and incident.remark else '' }}">
+        </div>
+    </div>
+
+    <h5 class="mt-4 mb-3">8D 内容</h5>
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <label class="form-label">D1 小组</label>
+            <textarea class="form-control" name="d1_team" rows="2">{{ incident.d1_team if incident and incident.d1_team else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D2 问题描述</label>
+            <textarea class="form-control" name="d2_problem" rows="3">{{ incident.d2_problem if incident and incident.d2_problem else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D3 临时措施（围堵）</label>
+            <textarea class="form-control" name="d3_containment" rows="3">{{ incident.d3_containment if incident and incident.d3_containment else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D4 根本原因</label>
+            <textarea class="form-control" name="d4_root_cause" rows="3">{{ incident.d4_root_cause if incident and incident.d4_root_cause else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D5 永久纠正措施</label>
+            <textarea class="form-control" name="d5_corrective" rows="3">{{ incident.d5_corrective if incident and incident.d5_corrective else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D6 实施与验证</label>
+            <textarea class="form-control" name="d6_implementation" rows="3">{{ incident.d6_implementation if incident and incident.d6_implementation else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D7 预防再发</label>
+            <textarea class="form-control" name="d7_prevention" rows="3">{{ incident.d7_prevention if incident and incident.d7_prevention else '' }}</textarea>
+        </div>
+        <div class="col-12">
+            <label class="form-label">D8 总结与表彰</label>
+            <textarea class="form-control" name="d8_recognition" rows="2">{{ incident.d8_recognition if incident and incident.d8_recognition else '' }}</textarea>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.production_incident_list') }}" class="btn btn-outline-secondary">返回列表</a>
+        {% if mode == 'edit' and incident %}
+        <a href="{{ url_for('main.production_incident_detail', incident_id=incident.id) }}" class="btn btn-outline-secondary">返回详情</a>
+        {% endif %}
+    </div>
+</form>
+{% endblock %}

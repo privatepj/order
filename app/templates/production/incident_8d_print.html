@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8D 报告 - {{ incident.incident_no or incident.id }}</title>
+    <style>
+        body { font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; font-size: 12px; color: #111; margin: 20px; }
+        .sheet { max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 18px; text-align: center; margin: 0 0 16px; }
+        .meta { display: grid; grid-template-columns: 100px 1fr; gap: 6px 12px; margin-bottom: 16px; font-size: 11px; }
+        .meta .k { color: #555; }
+        .sec { margin-top: 14px; page-break-inside: avoid; }
+        .sec h2 { font-size: 13px; margin: 0 0 6px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+        .sec .body { white-space: pre-wrap; line-height: 1.45; min-height: 1.2em; }
+        .no-print { margin-top: 20px; text-align: center; }
+        @media print {
+            body { margin: 12px; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="sheet">
+    <h1>8D 纠正与预防措施报告</h1>
+    <div class="meta">
+        <span class="k">报告编号</span><span>{{ incident.incident_no or ('#' ~ incident.id) }}</span>
+        <span class="k">标题</span><span>{{ incident.title }}</span>
+        <span class="k">发生时间</span><span>{{ incident.occurred_at.strftime('%Y-%m-%d %H:%M') if incident.occurred_at else '—' }}</span>
+        <span class="k">车间/地点</span><span>{{ incident.workshop or '—' }}</span>
+        <span class="k">严重程度</span><span>{{ incident.severity or '—' }}</span>
+        <span class="k">状态</span><span>{{ incident.status or '—' }}</span>
+        <span class="k">登记人</span><span>{{ creator_name }}</span>
+        <span class="k">备注/D0</span><span>{{ incident.remark or '—' }}</span>
+    </div>
+
+    <div class="sec"><h2>D1 — 建立小组</h2><div class="body">{{ incident.d1_team or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D2 — 问题描述</h2><div class="body">{{ incident.d2_problem or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D3 — 临时措施（围堵）</h2><div class="body">{{ incident.d3_containment or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D4 — 根本原因</h2><div class="body">{{ incident.d4_root_cause or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D5 — 永久纠正措施</h2><div class="body">{{ incident.d5_corrective or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D6 — 实施与验证</h2><div class="body">{{ incident.d6_implementation or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D7 — 预防再发</h2><div class="body">{{ incident.d7_prevention or '（未填写）' }}</div></div>
+    <div class="sec"><h2>D8 — 总结与表彰</h2><div class="body">{{ incident.d8_recognition or '（未填写）' }}</div></div>
+</div>
+<p class="no-print">
+    <button type="button" onclick="window.print()">打印</button>
+</p>
+<script>
+    window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 200); });
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}生产事故 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">生产事故</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <input type="text" class="form-control" name="q" value="{{ q or '' }}" placeholder="标题/编号/车间/问题描述">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+    {% if user_can_cap('production_incident.action.create') %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.production_incident_new') }}" class="btn btn-primary">新建事故记录</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>编号</th>
+            <th>标题</th>
+            <th>发生时间</th>
+            <th>车间</th>
+            <th>严重程度</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in incidents %}
+        <tr>
+            <td class="text-nowrap">{{ r.incident_no or ('#' ~ r.id) }}</td>
+            <td>{{ r.title }}</td>
+            <td class="text-nowrap">{{ r.occurred_at.strftime('%Y-%m-%d %H:%M') if r.occurred_at else '-' }}</td>
+            <td>{{ r.workshop or '-' }}</td>
+            <td>{{ r.severity or '-' }}</td>
+            <td>{{ r.status or '-' }}</td>
+            <td class="text-nowrap">
+                <a href="{{ url_for('main.production_incident_detail', incident_id=r.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                {% if user_can_cap('production_incident.report.8d') %}
+                <a href="{{ url_for('main.production_incident_8d_print', incident_id=r.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank">8D 打印</a>
+                {% endif %}
+                {% if user_can_cap('production_incident.action.edit') %}
+                <a href="{{ url_for('main.production_incident_edit', incident_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('production_incident.action.delete') %}
+                <form method="post" action="{{ url_for('main.production_incident_delete', incident_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该记录？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-muted">暂无记录</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

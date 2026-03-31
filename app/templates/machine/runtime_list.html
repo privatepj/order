@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}机台运转情况 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">机台运转情况</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select class="form-select" name="machine_id">
+            <option value="">全部机台</option>
+            {% for m in machines %}
+            <option value="{{ m.id }}" {% if machine_id == m.id %}selected{% endif %}>{{ m.machine_no }} - {{ m.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" name="runtime_status">
+            <option value="">全部运转状态</option>
+            {% for s in runtime_statuses %}
+            <option value="{{ s }}" {% if runtime_status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" name="open_only">
+            <option value="0" {% if not open_only %}selected{% endif %}>全部记录</option>
+            <option value="1" {% if open_only %}selected{% endif %}>仅进行中</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+    {% if user_can_cap('machine_runtime.action.create') %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.machine_runtime_new') }}" class="btn btn-primary">新建运转记录</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>机台</th>
+                <th>运转状态</th>
+                <th>开始时间</th>
+                <th>结束时间</th>
+                <th>录入人</th>
+                <th>备注</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td>{{ r.machine.machine_no if r.machine else r.machine_id }}</td>
+                <td>{{ r.runtime_status }}</td>
+                <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ r.ended_at.strftime('%Y-%m-%d %H:%M') if r.ended_at else '进行中' }}</td>
+                <td>{{ r.creator.name if r.creator else r.created_by }}</td>
+                <td>{{ r.remark or '-' }}</td>
+                <td class="text-nowrap">
+                    {% if user_can_cap('machine_runtime.action.edit') %}
+                    <a href="{{ url_for('main.machine_runtime_edit', log_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                    {% endif %}
+                    {% if user_can_cap('machine_runtime.action.close') and not r.ended_at %}
+                    <form method="post" action="{{ url_for('main.machine_runtime_close', log_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认结束该运转记录？');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">结束</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-muted">暂无数据</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

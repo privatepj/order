@@ -16,10 +16,12 @@ from app.auth.rbac_cache import (
 
 NO_MENU_ACCESS_ENDPOINT = "main.no_menu_access"
 
-# 库表无数据时的兜底（与 run_16 叶子一致）
+# 库表无数据时的兜底（与全量种子 / run_16 基线一致）
 _FALLBACK_ASSIGNABLE = frozenset(
     {
         "order",
+        "production_preplan",
+        "production_incident",
         "delivery",
         "express",
         "inventory_query",
@@ -33,11 +35,24 @@ _FALLBACK_ASSIGNABLE = frozenset(
         "reconciliation",
         "report_notes",
         "report_records",
+        "hr_department",
+        "hr_employee",
+        "hr_payroll",
+        "hr_performance",
+        "machine_type",
+        "machine_asset",
+        "machine_runtime",
+        "procurement_requisition",
+        "procurement_order",
+        "procurement_receipt",
+        "procurement_stockin",
     }
 )
 _FALLBACK_ADMIN_ONLY = frozenset({"company", "user_mgmt", "role_mgmt"})
 _FALLBACK_ENDPOINTS = {
     "order": "main.order_list",
+    "production_preplan": "main.production_preplan_list",
+    "production_incident": "main.production_incident_list",
     "delivery": "main.delivery_list",
     "customer": "main.customer_list",
     "product": "main.product_list",
@@ -51,9 +66,22 @@ _FALLBACK_ENDPOINTS = {
     "inventory_ops": "main.inventory_list",
     "user_mgmt": "main.user_list",
     "role_mgmt": "main.role_list",
+    "hr_department": "main.hr_department_list",
+    "hr_employee": "main.hr_employee_list",
+    "hr_payroll": "main.hr_payroll_list",
+    "hr_performance": "main.hr_performance_list",
+    "machine_type": "main.machine_type_list",
+    "machine_asset": "main.machine_list",
+    "machine_runtime": "main.machine_runtime_list",
+    "procurement_requisition": "main.procurement_requisition_list",
+    "procurement_order": "main.procurement_order_list",
+    "procurement_receipt": "main.procurement_receipt_list",
+    "procurement_stockin": "main.procurement_stockin_list",
 }
 _FALLBACK_LANDING = [
     "order",
+    "production_preplan",
+    "production_incident",
     "delivery",
     "customer",
     "product",
@@ -67,9 +95,22 @@ _FALLBACK_LANDING = [
     "inventory_ops",
     "user_mgmt",
     "role_mgmt",
+    "hr_department",
+    "hr_employee",
+    "hr_payroll",
+    "hr_performance",
+    "machine_type",
+    "machine_asset",
+    "machine_runtime",
+    "procurement_requisition",
+    "procurement_order",
+    "procurement_receipt",
+    "procurement_stockin",
 ]
 _FALLBACK_MENU_LABELS = {
     "order": "订单",
+    "production_preplan": "预生产计划",
+    "production_incident": "生产事故",
     "delivery": "送货",
     "express": "快递",
     "inventory_query": "库存查询",
@@ -83,6 +124,17 @@ _FALLBACK_MENU_LABELS = {
     "reconciliation": "对账导出",
     "report_notes": "导出送货单Excel",
     "report_records": "导出送货记录Excel",
+    "hr_department": "部门",
+    "hr_employee": "人员档案",
+    "hr_payroll": "工资录入",
+    "hr_performance": "绩效管理",
+    "machine_type": "机台种类",
+    "machine_asset": "机台台账",
+    "machine_runtime": "运转情况",
+    "procurement_requisition": "采购请购",
+    "procurement_order": "采购单",
+    "procurement_receipt": "采购收货",
+    "procurement_stockin": "采购入库",
 }
 
 
@@ -222,6 +274,27 @@ def _fallback_nav_specs():
     """库表无数据时的静态树（与 run_16 一致）。"""
     return [
         ("order", "订单", "main.order_list", None),
+        ("production", "生产管理", None, [
+            ("production_preplan", "预生产计划", "main.production_preplan_list", None),
+            ("production_incident", "生产事故", "main.production_incident_list", None),
+        ]),
+        ("nav_hr", "人力资源", None, [
+            ("hr_department", "部门", "main.hr_department_list", None),
+            ("hr_employee", "人员档案", "main.hr_employee_list", None),
+            ("hr_payroll", "工资录入", "main.hr_payroll_list", None),
+            ("hr_performance", "绩效管理", "main.hr_performance_list", None),
+        ]),
+        ("nav_machine", "机台管理", None, [
+            ("machine_type", "机台种类", "main.machine_type_list", None),
+            ("machine_asset", "机台台账", "main.machine_list", None),
+            ("machine_runtime", "运转情况", "main.machine_runtime_list", None),
+        ]),
+        ("nav_procurement", "采购管理", None, [
+            ("procurement_requisition", "采购请购", "main.procurement_requisition_list", None),
+            ("procurement_order", "采购单", "main.procurement_order_list", None),
+            ("procurement_receipt", "采购收货", "main.procurement_receipt_list", None),
+            ("procurement_stockin", "采购入库", "main.procurement_stockin_list", None),
+        ]),
         ("nav_warehouse", "仓管", None, [
             ("delivery", "送货", "main.delivery_list", None),
             ("express", "快递", "main.express_company_list", None),

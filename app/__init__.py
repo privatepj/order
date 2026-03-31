@@ -18,6 +18,8 @@ def create_app(config_class=Config):
 
     from app.models import User, UserApiToken  # noqa: F401 — 注册 ORM 映射
     from app.models import rbac  # noqa: F401 — sys_nav_item 等表
+    from app.models import hr  # noqa: F401 — HR 表
+    from app.models import machine  # noqa: F401 — 机台管理表
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -39,6 +41,10 @@ def create_app(config_class=Config):
     from app.cli_commands import register_cli
 
     register_cli(app)
+
+    from app.utils.qty_display import format_qty_plain
+
+    app.jinja_env.filters["qty_plain"] = format_qty_plain
 
     @app.context_processor
     def inject_menu_permissions():

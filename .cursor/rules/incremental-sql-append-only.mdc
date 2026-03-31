@@ -1,0 +1,11 @@
+---
+description: 增量 SQL（run_xxxxx）仅允许新增文件，禁止就地修改已有脚本
+alwaysApply: true
+---
+
+# 增量脚本：只增不改
+
+- **允许修改**：全量库表定义文件，例如 `scripts/sql/00_full_schema.sql`、以及 `app/scripts/sql/00_full_schema.sql`（若存在）等与「全量 schema」直接对应的文件。
+- **禁止修改**：`scripts/sql/run_*.sql` 下**已存在**的任意增量脚本。需要新行为时，**只能新增**下一个 `run_NN_*.sql`，不得在原文件上追加、改写或「合并修正」。
+- **原因**：增量脚本往往已在测试/生产环境执行过；就地修改会导致「同文件名、不同语义」，无法对账与重放。
+- **若误改了某个 run_xx**：应恢复该文件到已发布版本，并把新语义拆到**新的** `run_NN_*.sql`（参考 `run_38_production_rbac_nav_top_level.sql` 的做法）。

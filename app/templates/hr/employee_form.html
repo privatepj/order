@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ '新增人员' if not emp else '编辑人员' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '新增人员' if not emp else '编辑人员' }}</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">经营主体</label>
+        <select name="company_id" class="form-select" required>
+            {% for c in companies %}
+            <option value="{{ c.id }}" {% if emp and emp.company_id == c.id %}selected{% elif not emp and default_company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">工号</label>
+            <input type="text" class="form-control" name="employee_no" value="{{ emp.employee_no if emp else '' }}" required maxlength="32">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">姓名</label>
+            <input type="text" class="form-control" name="name" value="{{ emp.name if emp else '' }}" required maxlength="64">
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">部门</label>
+        <select name="department_id" class="form-select">
+            <option value="">—</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}" {% if emp and emp.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">关联登录用户（可选）</label>
+        <select name="user_id" class="form-select">
+            <option value="">—</option>
+            {% for u in users %}
+            <option value="{{ u.id }}" {% if emp and emp.user_id == u.id %}selected{% endif %}>{{ u.username }}（{{ u.name or '' }}）</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if show_sensitive %}
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">手机</label>
+            <input type="text" class="form-control" name="phone" value="{{ emp.phone if emp else '' }}" maxlength="32">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">身份证</label>
+            <input type="text" class="form-control" name="id_card" value="{{ emp.id_card if emp else '' }}" maxlength="32">
+        </div>
+    </div>
+    {% else %}
+    <p class="text-muted small">当前角色无「查看身份证/完整手机」权限，保存时不会修改手机与身份证字段。</p>
+    {% endif %}
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">岗位</label>
+            <input type="text" class="form-control" name="job_title" value="{{ emp.job_title if emp else '' }}" maxlength="64">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">状态</label>
+            <select name="status" class="form-select">
+                <option value="active" {% if emp and emp.status == 'active' %}selected{% elif not emp %}selected{% endif %}>在职</option>
+                <option value="left" {% if emp and emp.status == 'left' %}selected{% endif %}>离职</option>
+            </select>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">入职日期</label>
+            <input type="date" class="form-control" name="hire_date" value="{{ emp.hire_date.isoformat() if emp and emp.hire_date else '' }}">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">离职日期</label>
+            <input type="date" class="form-control" name="leave_date" value="{{ emp.leave_date.isoformat() if emp and emp.leave_date else '' }}">
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <textarea class="form-control" name="remark" rows="2" maxlength="500">{{ emp.remark if emp else '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.hr_employee_list', company_id=emp.company_id if emp else (company_id or None)) }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

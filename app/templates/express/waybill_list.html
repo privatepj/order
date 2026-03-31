@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}单号池 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">单号池</h2>
+{% if not user_can_cap('express.action.waybill_batch_delete') %}
+<p class="text-muted small mb-3">当前账号仅可查看可用单号；批量删除需管理员在角色中勾选「快递：单号池批量删除」。</p>
+{% endif %}
+
+<form class="mb-3 row g-2 align-items-end" method="get">
+    <div class="col-auto">
+        <label class="form-label mb-0">快递公司</label>
+        <select name="express_company_id" class="form-select" required>
+            <option value="">请选择</option>
+            {% for c in companies %}
+            <option value="{{ c.id }}" {{ 'selected' if express_company_id == c.id else '' }}>{{ c.name }} ({{ c.code }})</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label mb-0">关键词</label>
+        <input type="text" class="form-control" name="q" value="{{ keyword or '' }}" placeholder="按快递单号搜索">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">查询</button>
+    </div>
+</form>
+
+{% if selected_company %}
+<p class="text-muted small mb-3">
+    当前公司：{{ selected_company.name }} ({{ selected_company.code }})
+    · 仅展示可用单号（`available`）
+</p>
+{% endif %}
+
+{% if pagination %}
+{% if user_can_cap('express.action.waybill_batch_delete') %}
+<form method="post" action="{{ url_for('main.express_waybill_batch_delete') }}" id="waybillBatchDeleteForm">
+    <input type="hidden" name="express_company_id" value="{{ express_company_id }}">
+    <input type="hidden" name="q" value="{{ keyword or '' }}">
+    <input type="hidden" name="page" value="{{ pagination.page }}">
+
+    <div class="table-responsive app-table-scroll mb-3">
+        <table class="table table-striped table-sm align-middle">
+            <thead>
+                <tr>
+                    <th class="text-center" style="width:64px;">
+                        <input type="checkbox" class="form-check-input" id="checkAll" title="全选当前页">
+                    </th>
+                    <th>快递单号</th>
+                    <th style="width:110px;">状态</th>
+                    <th style="width:170px;">录入时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for w in pagination.items %}
+                <tr>
+                    <td class="text-center">
+                        <input type="checkbox" class="form-check-input row-check" name="ids" value="{{ w.id }}">
+                    </td>
+                    <td style="white-space:nowrap;"><code>{{ w.waybill_no }}</code></td>
+                    <td>{{ w.status }}</td>
+                    <td class="text-nowrap small">{{ w.created_at.strftime('%Y-%m-%d %H:%M') if w.created_at else '—' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4">暂无可用单号</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-4">
+        <button type="submit" class="btn btn-danger btn-sm">批量删除</button>
+        <span class="text-muted small">已选择 <span id="checkedCount">0</span> 条</span>
+    </div>
+</form>
+
+<script>
+(function () {
+    var form = document.getElementById('waybillBatchDeleteForm');
+    if (!form) return;
+    var checkAll = document.getElementById('checkAll');
+    var checkboxes = document.querySelectorAll('.row-check');
+    var countEl = document.getElementById('checkedCount');
+    if (!countEl) return;
+
+    function updateCount() {
+        var n = 0;
+        checkboxes.forEach(function (cb) { if (cb.checked) n += 1; });
+        countEl.textContent = String(n);
+    }
+
+    if (checkAll) {
+        checkAll.addEventListener('change', function () {
+            checkboxes.forEach(function (cb) { cb.checked = checkAll.checked; });
+            updateCount();
+        });
+    }
+
+    checkboxes.forEach(function (cb) {
+        cb.addEventListener('change', updateCount);
+    });
+
+    updateCount();
+
+    form.addEventListener('submit', function (e) {
+        var n = parseInt(countEl.textContent || '0', 10);
+        if (!n) {
+            e.preventDefault();
+            alert('请先勾选要删除的单号。');
+            return false;
+        }
+        if (!confirm('确定删除选中的 ' + n + ' 条可用单号？删除不可恢复。')) {
+            e.preventDefault();
+            return false;
+        }
+        return true;
+    });
+})();
+</script>
+{% else %}
+<div class="table-responsive app-table-scroll mb-3">
+    <table class="table table-striped table-sm align-middle">
+        <thead>
+            <tr>
+                <th>快递单号</th>
+                <th style="width:110px;">状态</th>
+                <th style="width:170px;">录入时间</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for w in pagination.items %}
+            <tr>
+                <td style="white-space:nowrap;"><code>{{ w.waybill_no }}</code></td>
+                <td>{{ w.status }}</td>
+                <td class="text-nowrap small">{{ w.created_at.strftime('%Y-%m-%d %H:%M') if w.created_at else '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">暂无可用单号</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('main.express_waybill_list', express_company_id=express_company_id, q=keyword, page=pagination.prev_num) }}">上一页</a>
+        </li>
+        {% endif %}
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('main.express_waybill_list', express_company_id=express_company_id, q=keyword, page=pagination.next_num) }}">下一页</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<p class="text-muted">请选择快递公司并点击「查询」，查看当前公司可用单号池记录。</p>
+{% endif %}
+{% endblock %}
+

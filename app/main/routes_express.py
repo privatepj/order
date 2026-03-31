@@ -6,9 +6,10 @@ from sqlalchemy import func
 
 from app import db
 from app.auth.decorators import capability_required, menu_required
-from app.models import ExpressCompany, ExpressWaybill
+from app.models import Delivery, ExpressCompany, ExpressWaybill
 from app.utils.waybill_pool import apply_waybill_to_pool
 from app.utils.waybill_range import expand_waybill_range
+from app.utils.query import keyword_like_or
 
 _INVALID_SAMPLES_MAX = 20
 
@@ -331,4 +332,153 @@ def register_express_routes(bp):
             companies=companies,
             import_mode_hint=None,
             result=None,
+        )
+
+    @bp.route("/express-waybills", methods=["GET"])
+    @login_required
+    @menu_required("express")
+    def express_waybill_list():
+        companies = (
+            ExpressCompany.query.filter(ExpressCompany.is_active.is_(True))
+            .filter(ExpressCompany.code != "LEGACY")
+            .order_by(ExpressCompany.name)
+            .all()
+        )
+
+        express_company_id = request.args.get("express_company_id", type=int)
+        keyword = (request.args.get("q") or "").strip()
+        page = request.args.get("page", 1, type=int)
+
+        selected_company = None
+        pagination = None
+        if express_company_id:
+            selected_company = ExpressCompany.query.get(express_company_id)
+            if selected_company and selected_company.code != "LEGACY":
+                q = ExpressWaybill.query.filter(
+                    ExpressWaybill.status == "available",
+                    ExpressWaybill.express_company_id == express_company_id,
+                )
+                kw_cond = keyword_like_or(keyword, ExpressWaybill.waybill_no)
+                if kw_cond is not None:
+                    q = q.filter(kw_cond)
+                q = q.order_by(ExpressWaybill.id.desc())
+                pagination = q.paginate(page=page, per_page=20)
+
+        return render_template(
+            "express/waybill_list.html",
+            companies=companies,
+            express_company_id=express_company_id,
+            selected_company=selected_company,
+            keyword=keyword,
+            pagination=pagination,
+        )
+
+    @bp.route("/express-waybills/batch-delete", methods=["POST"])
+    @login_required
+    @menu_required("express")
+    @capability_required("express.action.waybill_batch_delete")
+    def express_waybill_batch_delete():
+        express_company_id = request.form.get("express_company_id", type=int)
+        keyword = (request.form.get("q") or "").strip()
+        page = request.form.get("page", type=int) or 1
+
+        if not express_company_id:
+            flash("请选择快递公司。", "danger")
+            return redirect(url_for("main.express_waybill_list"))
+
+        raw_ids = request.form.getlist("ids")
+        ids: list[int] = []
+        for rid in raw_ids:
+            try:
+                ids.append(int(rid))
+            except (TypeError, ValueError):
+                continue
+        requested_ids = list(dict.fromkeys(ids))  # 保序去重
+        if not requested_ids:
+            flash("请至少勾选一条可删除的单号。", "warning")
+            return redirect(
+                url_for(
+                    "main.express_waybill_list",
+                    express_company_id=express_company_id,
+                    q=keyword,
+                    page=page,
+                )
+            )
+
+        valid_ids = [
+            rid
+            for (rid,) in db.session.query(ExpressWaybill.id)
+            .filter(
+                ExpressWaybill.id.in_(requested_ids),
+                ExpressWaybill.status == "available",
+                ExpressWaybill.express_company_id == express_company_id,
+            )
+            .all()
+        ]
+
+        if not valid_ids:
+            flash("未找到可删除的单号（可能已被占用或不存在）。", "warning")
+            return redirect(
+                url_for(
+                    "main.express_waybill_list",
+                    express_company_id=express_company_id,
+                    q=keyword,
+                    page=page,
+                )
+            )
+
+        used_ids = set(
+            rid
+            for (rid,) in db.session.query(Delivery.express_waybill_id)
+            .filter(Delivery.express_waybill_id.isnot(None))
+            .filter(Delivery.express_waybill_id.in_(valid_ids))
+            .all()
+        )
+        delete_ids = [rid for rid in valid_ids if rid not in used_ids]
+
+        if not delete_ids:
+            flash("所选单号均已被占用，无法删除。", "warning")
+            return redirect(
+                url_for(
+                    "main.express_waybill_list",
+                    express_company_id=express_company_id,
+                    q=keyword,
+                    page=page,
+                )
+            )
+
+        try:
+            db.session.query(ExpressWaybill).filter(
+                ExpressWaybill.id.in_(delete_ids)
+            ).delete(synchronize_session=False)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            flash("删除失败，请重试。", "danger")
+            return redirect(
+                url_for(
+                    "main.express_waybill_list",
+                    express_company_id=express_company_id,
+                    q=keyword,
+                    page=page,
+                )
+            )
+
+        deleted = len(delete_ids)
+        skipped = len(requested_ids) - deleted
+        if skipped > 0:
+            flash(
+                f"已删除 {deleted} 条；其余 {skipped} 条未删除（可能已被占用或不存在）。",
+                "warning",
+            )
+        else:
+            flash(f"已删除 {deleted} 条快递单号。", "success")
+
+        return redirect(
+            url_for(
+                "main.express_waybill_list",
+                express_company_id=express_company_id,
+                q=keyword,
+                page=1,
+            )
         )

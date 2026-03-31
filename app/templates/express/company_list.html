@@ -9,6 +9,9 @@
     {% if user_can_cap('express.action.waybill_import') %}
     <a href="{{ url_for('main.express_waybill_import') }}" class="btn btn-success btn-sm">批量录入单号</a>
     {% endif %}
+    {% if user_can_menu('express') %}
+    <a href="{{ url_for('main.express_waybill_list') }}" class="btn btn-outline-secondary btn-sm" title="按快递公司查看可用单号，可批量删除录错的单号">单号池</a>
+    {% endif %}
 </p>
 <div class="table-responsive">
 <table class="table table-striped">
@@ -33,6 +36,9 @@
             <td>
                 {% if user_can_cap('express.action.company_edit') %}
                 <a href="{{ url_for('main.express_company_edit', cid=c.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_menu('express') %}
+                <a href="{{ url_for('main.express_waybill_list', express_company_id=c.id) }}" class="btn btn-sm btn-outline-secondary">单号池</a>
                 {% endif %}
             </td>
         </tr>

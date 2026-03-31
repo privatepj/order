@@ -55,7 +55,13 @@ class Role(db.Model):
 
         rows = RoleAllowedNav.query.filter_by(role_id=self.id).all()
         if rows:
-            return frozenset(r.nav_code for r in rows)
+            codes = {r.nav_code for r in rows}
+            # 迁移前仅有叶子 production；现为分组 + production_preplan / production_incident
+            if "production" in codes:
+                codes.discard("production")
+                codes.add("production_preplan")
+                codes.add("production_incident")
+            return frozenset(codes)
         raw = self.parsed_menu_key_set()
         if not raw:
             return frozenset()
@@ -67,6 +73,9 @@ class Role(db.Model):
             elif k == "report_export":
                 out.add("report_notes")
                 out.add("report_records")
+            elif k == "production":
+                out.add("production_preplan")
+                out.add("production_incident")
             else:
                 out.add(k)
         return frozenset(out)

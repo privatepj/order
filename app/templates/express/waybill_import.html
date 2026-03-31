@@ -57,6 +57,9 @@
     </div>
 
     <button type="submit" class="btn btn-primary">提交</button>
+    {% if user_can_menu('express') %}
+    <a href="{{ url_for('main.express_waybill_list') }}" class="btn btn-outline-secondary" title="查看/删除单号池中录错的可用单号">单号池</a>
+    {% endif %}
     <a href="{{ url_for('main.express_company_list') }}" class="btn btn-secondary">返回</a>
 </form>
 
