@@ -36,7 +36,8 @@ requires:
 
 ## 约定
 
-- **客户**：对话中用简称；`GET /customers?q=` 仅返回 `id` 与 `label`（简称），不展示完整企业名。
+- **客户**：对话中用简称；`GET .../api/openclaw/customers?q=` **必填**，`q` 至少 **2** 个字符（按简称/编码模糊匹配）；缺省、过短或仅空白时返回 **HTTP 400**（`{"ok":false,"error":"..."}`），**禁止**用空 `q` 拉列表。成功时仅返回 `id` 与 `label`（简称），不展示完整企业名。
+- **隐私**：OpenClaw **任意接口**的 JSON **响应**中均不包含客户联系人、联系人手机号；不要在总结中引用或编造这些字段。新建客户时若请求体包含 `contact`、`phone`，为落库用途，**成功响应仍只含** `ok`、`customer_id`、`customer_code`、`label`（简称），不回显联系方式。
 - **数量**：**K = 1000**（50K = 50000）。
 - **送货**：默认**今天**、默认**顺丰**；多单默认 **FIFO**；用户指定订单时用 `order_id` 约束（见送货接口）。
 - **能力**：用户令牌需在角色中勾选对应 `openclaw.*` 细项；缺能力会返回 HTTP 403。
@@ -53,7 +54,7 @@ requires:
 用户提出需求后：
 
 1. 用一段话列出拟执行步骤（见硬性规则 1）。
-2. `GET .../api/openclaw/customers?q=简称` 检索客户。
+2. `GET .../api/openclaw/customers?q=简称` 检索客户（`q` 至少 2 个字符，见「约定」）。
 
 **若客户不存在**（或用户要求新建）：
 
@@ -142,6 +143,12 @@ curl -s -H "X-API-Key: $SYDIXON_ORDER_API_KEY" "$SYDIXON_ORDER_URL/api/openclaw/
 curl -s -H "X-API-Key: $SYDIXON_ORDER_API_KEY" "$SYDIXON_ORDER_URL/api/openclaw/products?q=关键词&limit=50"
 ```
 
+**客户搜索（q 必填，至少 2 字符）**
+
+```bash
+curl -s -H "X-API-Key: $SYDIXON_ORDER_API_KEY" "$SYDIXON_ORDER_URL/api/openclaw/customers?q=简称&limit=20"
+```
+
 **新建客户（仅确认后）**
 
 ```bash
@@ -175,13 +182,13 @@ curl -s -X POST -H "Content-Type: application/json; charset=utf-8" -H "X-API-Key
   "$SYDIXON_ORDER_URL/api/openclaw/deliveries/preview"
 ```
 
-其余 `GET customers`、`GET customer-products`、`GET pending-items` 与旧版相同。
+其余 `GET customer-products`、`GET pending-items` 等与上文一致；`GET customers` 见上（`q` 必填）。
 
 ---
 
 ## 错误与限流
 
-- 业务校验失败：`{"ok":false,"error":"..."}`，HTTP **400**。
+- 业务校验失败（含客户搜索缺少/过短 `q`）：`{"ok":false,"error":"..."}`，HTTP **400**。
 - 未授权/无能力：**401** / **403**。
 - 频率限制：**429**（见部署说明 `OPENCLAW_RATE_LIMIT_PER_MINUTE`）。
 

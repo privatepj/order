@@ -4,14 +4,6 @@
 <h2 class="mb-4">工资录入</h2>
 <form method="get" class="row g-2 mb-3 align-items-end">
     <div class="col-auto">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-auto">
         <label class="form-label">账期 YYYY-MM</label>
         <input type="text" class="form-control form-control-sm" name="period" value="{{ period }}" pattern="\d{4}-\d{2}" placeholder="2026-03">
     </div>

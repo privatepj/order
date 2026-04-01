@@ -16,6 +16,7 @@ from app.services.delivery_svc import (
 )
 
 from app.openclaw import bp
+from app.utils.query import is_valid_customer_search_keyword
 
 
 def _openclaw_allow_price_fields() -> bool:
@@ -93,17 +94,27 @@ def products():
 def customers():
     """客户列表：仅返回 id 与简称（short_code/customer_code），供解析与选择。q= 搜索简称/编码。"""
     q_str = (request.args.get("q") or "").strip()
+    if not is_valid_customer_search_keyword(q_str):
+        return (
+            jsonify(
+                ok=False,
+                error="请提供客户搜索关键字 q（至少 2 个字符）。",
+            ),
+            400,
+        )
     limit = min(max(request.args.get("limit", 20, type=int), 1), 100)
-    q = Customer.query.order_by(Customer.customer_code)
-    if q_str:
-        like = f"%{q_str}%"
-        q = q.filter(
+    like = f"%{q_str}%"
+    rows = (
+        Customer.query.filter(
             db.or_(
                 Customer.short_code.like(like),
                 Customer.customer_code.like(like),
             )
         )
-    rows = q.limit(limit).all()
+        .order_by(Customer.customer_code)
+        .limit(limit)
+        .all()
+    )
     return jsonify({
         "items": [
             {"id": c.id, "label": _customer_display_label(c)}

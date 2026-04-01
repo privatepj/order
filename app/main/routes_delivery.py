@@ -22,7 +22,7 @@ from app.models import (
     CustomerProduct,
     Product,
 )
-from app.utils.query import keyword_like_or
+from app.utils.query import is_valid_customer_search_keyword, keyword_like_or
 from app.utils.delivery_note_excel import (
     build_delivery_notes_workbook,
     ADDRESS_LINE,
@@ -338,23 +338,24 @@ def register_delivery_routes(bp):
         if not current_user_can_cap("delivery.api.customers_search"):
             abort(403)
         qstr = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
 
-        q = Customer.query.options(joinedload(Customer.company)).order_by(
-            Customer.name
-        )
-        if qstr:
-            like = f"%{qstr}%"
-            q = (
-                q.outerjoin(Company, Customer.company_id == Company.id)
-                .filter(
-                    db.or_(
-                        Customer.name.like(like),
-                        Company.code.like(like),
-                    )
+        if not is_valid_customer_search_keyword(qstr):
+            return jsonify({"items": []})
+
+        like = f"%{qstr}%"
+        q = (
+            Customer.query.options(joinedload(Customer.company))
+            .outerjoin(Company, Customer.company_id == Company.id)
+            .filter(
+                db.or_(
+                    Customer.name.like(like),
+                    Company.code.like(like),
                 )
             )
+            .order_by(Customer.name)
+        )
 
         items = []
         for c in q.limit(limit).all():

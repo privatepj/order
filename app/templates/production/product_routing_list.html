@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}产品路由覆写 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">产品路由覆写</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-5">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="产品编号/名称关键词">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.production_process_template_list') }}" class="btn btn-outline-primary">工序模板</a>
+    </div>
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+            <tr>
+                <th>产品</th>
+                <th>工序模板</th>
+                <th style="width:200px;">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in products %}
+            {% set r = routing_map.get(p.id) %}
+            <tr>
+                <td class="text-nowrap">
+                    {{ p.product_code }} - {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}
+                </td>
+                <td class="text-nowrap">
+                    {% if r %}
+                        {% set tpl = template_map.get(r.template_id) %}
+                        {{ tpl.name if tpl else r.template_id }}{% if tpl and tpl.version %}（{{ tpl.version }}）{% endif %}
+                    {% else %}
+                        <span class="text-muted">未配置</span>
+                    {% endif %}
+                </td>
+                <td class="text-nowrap">
+                    {% if user_can_cap('production.process_routing.action.edit') %}
+                        <a href="{{ url_for('main.production_product_routing_edit', product_id=p.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                    {% else %}
+                        <span class="text-muted small">无权限</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="3" class="text-muted">暂无数据</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+

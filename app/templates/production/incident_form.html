@@ -29,8 +29,8 @@
         <div class="col-md-3">
             <label class="form-label">状态</label>
             <select class="form-select" name="status">
-                <option value="open" {% if not incident or incident.status == 'open' %}selected{% endif %}>open</option>
-                <option value="closed" {% if incident and incident.status == 'closed' %}selected{% endif %}>closed</option>
+                <option value="open" {% if not incident or incident.status == 'open' %}selected{% endif %}>{{ 'open'|status_zh('production_incident_status') }}</option>
+                <option value="closed" {% if incident and incident.status == 'closed' %}selected{% endif %}>{{ 'closed'|status_zh('production_incident_status') }}</option>
             </select>
         </div>
         <div class="col-12">

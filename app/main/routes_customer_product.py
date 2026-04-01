@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Customer, Company, Product, CustomerProduct
-from app.utils.query import keyword_like_or
+from app.utils.query import is_valid_customer_search_keyword, keyword_like_or
 from app.utils.visibility import is_admin, customer_product_view
 from io import BytesIO
 
@@ -166,15 +166,16 @@ def register_customer_product_routes(bp):
         ):
             abort(403)
         qstr = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
+        if not is_valid_customer_search_keyword(qstr):
+            return jsonify({"items": []})
+
+        like = f"%{qstr}%"
         q = (
             Customer.query.options(joinedload(Customer.company))
-            .order_by(Customer.customer_code)
-        )
-        if qstr:
-            like = f"%{qstr}%"
-            q = q.outerjoin(Company, Customer.company_id == Company.id).filter(
+            .outerjoin(Company, Customer.company_id == Company.id)
+            .filter(
                 db.or_(
                     Customer.name.like(like),
                     Customer.customer_code.like(like),
@@ -183,6 +184,8 @@ def register_customer_product_routes(bp):
                     Company.code.like(like),
                 )
             )
+            .order_by(Customer.customer_code)
+        )
         items = []
         for c in q.limit(limit).all():
             co = c.company
@@ -205,8 +208,8 @@ def register_customer_product_routes(bp):
         ):
             abort(403)
         qstr = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
         q = Product.query.order_by(Product.product_code)
         if qstr:
             like = f"%{qstr}%"

@@ -3,15 +3,8 @@
 {% block content %}
 <h2 class="mb-4">{{ '新增绩效考核' if not pr else '编辑绩效考核' }}</h2>
 <form method="post">
+    <input type="hidden" name="company_id" value="{{ pr.company_id if pr else default_company_id }}">
     {% if not pr %}
-    <div class="mb-3">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select" required>
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if default_company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
     <div class="mb-3">
         <label class="form-label">员工</label>
         <select name="employee_id" class="form-select" required>

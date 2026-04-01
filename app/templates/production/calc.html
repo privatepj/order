@@ -23,7 +23,7 @@
             <select class="form-select" name="preplan_id">
                 <option value="">— 不合并 —</option>
                 {% for p in preplans %}
-                <option value="{{ p.id }}">#{{ p.id }} / {{ p.plan_date.isoformat() if p.plan_date else '-' }} / {{ p.status }}</option>
+                <option value="{{ p.id }}">#{{ p.id }} / {{ p.plan_date.isoformat() if p.plan_date else '-' }} / {{ p.status|status_zh('production_preplan_status') }}</option>
                 {% endfor %}
             </select>
         </div>

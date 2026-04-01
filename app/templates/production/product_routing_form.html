@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}产品路由覆写 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">产品路由覆写：{{ product.product_code }} - {{ product.name }}</h2>
+
+<form method="post">
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <label class="form-label">绑定工序模板</label>
+            <select class="form-select" name="template_id" required onchange="window.location.href='{{ url_for('main.production_product_routing_edit', product_id=product.id) }}?template_id=' + this.value;">
+                {% for t in templates %}
+                    <option value="{{ t.id }}" {% if t.id == selected_template_id %}selected{% endif %}>
+                        {{ t.name }}（{{ t.version }}）
+                    </option>
+                {% endfor %}
+            </select>
+            <div class="form-text">切换模板后会基于新模板步骤重新展示覆写表。</div>
+        </div>
+        <div class="col-md-6">
+            <div class="alert alert-info mb-0 py-2">
+                继承含义：未填写覆写字段时，将使用工序模板步骤的标准资源与标准工时。
+            </div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+            <thead>
+                <tr>
+                    <th style="width:70px;">step_no</th>
+                    <th>默认工序</th>
+                    <th style="width:190px;">工序名覆写</th>
+                    <th style="width:170px;">资源维度覆写</th>
+                    <th style="width:240px;">机台种类覆写</th>
+                    <th style="width:240px;">HR 部门覆写</th>
+                    <th style="width:130px;" class="text-end">准备(分钟)</th>
+                    <th style="width:170px;" class="text-end">运行(分钟/单位)</th>
+                    <th style="width:160px;">备注</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for st in steps %}
+                {% set ov = overrides_map.get(st.step_no) %}
+                <tr>
+                    <td class="text-nowrap">
+                        <input type="number" name="template_step_no" readonly class="form-control form-control-sm" value="{{ st.step_no }}">
+                    </td>
+                    <td class="text-nowrap">
+                        <div class="fw-semibold">{{ st.step_name }}</div>
+                        <div class="small text-muted">
+                            {% if st.resource_kind == 'machine_type' %}
+                                资源：机台（id={{ st.machine_type_id }})
+                            {% elif st.resource_kind == 'hr_department' %}
+                                资源：部门（id={{ st.hr_department_id }})
+                            {% else %}
+                                资源：-
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <input class="form-control form-control-sm" name="step_name_override" maxlength="128" value="{{ ov.step_name_override if ov and ov.step_name_override is not none else '' }}">
+                    </td>
+                    <td>
+                        <select class="form-select form-select-sm" name="resource_kind_override">
+                            <option value="" {% if not ov or ov.resource_kind_override is none %}selected{% endif %}>继承</option>
+                            <option value="machine_type" {% if ov and ov.resource_kind_override == 'machine_type' %}selected{% endif %}>机台</option>
+                            <option value="hr_department" {% if ov and ov.resource_kind_override == 'hr_department' %}selected{% endif %}>班组/部门</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select class="form-select form-select-sm" name="machine_type_id_override">
+                            <option value="0">--</option>
+                            {% for mt in machine_types %}
+                                {% set sel = (ov.machine_type_id_override if ov and ov.machine_type_id_override is not none else st.machine_type_id) %}
+                                <option value="{{ mt.id }}" {% if sel == mt.id %}selected{% endif %}>{{ mt.code }} - {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td>
+                        <select class="form-select form-select-sm" name="hr_department_id_override">
+                            <option value="0">--</option>
+                            {% for d in hr_departments %}
+                                {% set sel = (ov.hr_department_id_override if ov and ov.hr_department_id_override is not none else st.hr_department_id) %}
+                                <option value="{{ d.id }}" {% if sel == d.id %}selected{% endif %}>{{ d.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td class="text-end">
+                        <input class="form-control form-control-sm text-end" name="setup_minutes_override" type="number" step="0.01" min="0"
+                               value="{{ ov.setup_minutes_override if ov and ov.setup_minutes_override is not none else '' }}">
+                    </td>
+                    <td class="text-end">
+                        <input class="form-control form-control-sm text-end" name="run_minutes_per_unit_override" type="number" step="0.0001" min="0"
+                               value="{{ ov.run_minutes_per_unit_override if ov and ov.run_minutes_per_unit_override is not none else '' }}">
+                    </td>
+                    <td>
+                        <input class="form-control form-control-sm" name="step_remark_override" maxlength="255" value="{{ ov.remark if ov and ov.remark is not none else '' }}">
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存覆写</button>
+        <a href="{{ url_for('main.production_product_routing_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+{% endblock %}
+

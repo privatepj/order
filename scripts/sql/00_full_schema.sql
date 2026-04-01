@@ -76,6 +76,7 @@ CREATE TABLE `company` (
   `order_no_prefix` varchar(32) DEFAULT NULL COMMENT '订单号前缀',
   `delivery_no_prefix` varchar(32) DEFAULT NULL COMMENT '送货单号前缀',
   `billing_cycle_day` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '转月日/月结日',
+  `is_default` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否默认主体',
   `phone` varchar(32) DEFAULT NULL COMMENT '电话',
   `fax` varchar(32) DEFAULT NULL COMMENT '传真',
   `address` varchar(255) DEFAULT NULL COMMENT '地址',
@@ -91,9 +92,9 @@ CREATE TABLE `company` (
   UNIQUE KEY `uk_company_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='经营主体';
 
-INSERT INTO `company` (`name`, `code`, `order_no_prefix`, `delivery_no_prefix`, `billing_cycle_day`) VALUES
-('经营主体A', 'A', 'A', 'A', 1),
-('经营主体B', 'B', 'B', 'B', 1);
+INSERT INTO `company` (`name`, `code`, `order_no_prefix`, `delivery_no_prefix`, `billing_cycle_day`, `is_default`) VALUES
+('经营主体A', 'A', 'A', 'A', 1, 1),
+('经营主体B', 'B', 'B', 'B', 1, 0);
 
 -- ----------------------------
 -- 客户表
@@ -202,6 +203,11 @@ DROP TABLE IF EXISTS `production_component_need`;
 DROP TABLE IF EXISTS `production_work_order`;
 DROP TABLE IF EXISTS `production_preplan_line`;
 DROP TABLE IF EXISTS `production_preplan`;
+DROP TABLE IF EXISTS `production_work_order_operation`;
+DROP TABLE IF EXISTS `production_product_routing_step`;
+DROP TABLE IF EXISTS `production_product_routing`;
+DROP TABLE IF EXISTS `production_process_template_step`;
+DROP TABLE IF EXISTS `production_process_template`;
 
 CREATE TABLE `production_preplan` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -310,6 +316,237 @@ CREATE TABLE `production_incident` (
   KEY `idx_production_incident_occurred` (`occurred_at`),
   KEY `idx_production_incident_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生产事故与 8D';
+
+-- ----------------------------
+-- 工序管理（模板 / 产品覆写 / 工作单工序快照）
+-- ----------------------------
+CREATE TABLE `production_process_template` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL COMMENT '模板名称',
+  `version` varchar(32) NOT NULL DEFAULT 'v1' COMMENT '模板版本',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_tpl_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工序模板头';
+
+CREATE TABLE `production_process_template_step` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `template_id` int unsigned NOT NULL,
+  `step_no` int unsigned NOT NULL DEFAULT 1 COMMENT '工序行号（从 1 开始，模板内唯一）',
+  `step_code` varchar(64) DEFAULT NULL COMMENT '工序编码（可选）',
+  `step_name` varchar(128) NOT NULL COMMENT '工序名称',
+  `resource_kind` varchar(16) NOT NULL DEFAULT 'machine_type' COMMENT '资源维度：machine_type 或 hr_department',
+  `machine_type_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=machine_type 时使用',
+  `hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=hr_department 时使用',
+  `setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '准备/换型时间（分钟）',
+  `run_minutes_per_unit` decimal(12,4) NOT NULL DEFAULT 0 COMMENT '单位运行时间（分钟/件）',
+  `remark` varchar(255) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用该步骤',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_tpl_step_no` (`template_id`,`step_no`),
+  KEY `idx_tpl_step_tpl` (`template_id`),
+  KEY `idx_tpl_step_resource` (`resource_kind`,`machine_type_id`,`hr_department_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工序模板步骤';
+
+CREATE TABLE `production_product_routing` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `product_id` int unsigned NOT NULL COMMENT '产品 product.id',
+  `template_id` int unsigned NOT NULL COMMENT '绑定的工序模板 template.id',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+  `override_mode` varchar(16) NOT NULL DEFAULT 'inherit' COMMENT 'inherit=模板继承（覆写表可选）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_prod_routing_product` (`product_id`),
+  KEY `idx_prod_routing_template` (`template_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品工序路由（模板绑定/覆写）';
+
+CREATE TABLE `production_product_routing_step` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `routing_id` int unsigned NOT NULL,
+  `template_step_no` int unsigned NOT NULL COMMENT '被覆写的模板 step_no',
+  `resource_kind_override` varchar(16) DEFAULT NULL COMMENT '可选覆写：资源维度',
+  `machine_type_id_override` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=machine_type 时使用',
+  `hr_department_id_override` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=hr_department 时使用',
+  `setup_minutes_override` decimal(12,2) DEFAULT NULL COMMENT '准备时间覆写（分钟）',
+  `run_minutes_per_unit_override` decimal(12,4) DEFAULT NULL COMMENT '单位运行时间覆写（分钟/件）',
+  `step_name_override` varchar(128) DEFAULT NULL COMMENT '工序名称覆写',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_routing_step` (`routing_id`,`template_step_no`),
+  KEY `idx_routing_step_routing` (`routing_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品路由工序覆写';
+
+CREATE TABLE `production_work_order_operation` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `work_order_id` int unsigned NOT NULL,
+  `step_no` int unsigned NOT NULL,
+  `step_code` varchar(64) DEFAULT NULL,
+  `step_name` varchar(128) NOT NULL,
+  `resource_kind` varchar(16) DEFAULT NULL,
+  `machine_type_id` int unsigned NOT NULL DEFAULT 0,
+  `hr_department_id` int unsigned NOT NULL DEFAULT 0,
+  `plan_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '用于计算的工序数量（快照）',
+  `setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '工序准备时间（快照）',
+  `run_minutes_per_unit` decimal(12,4) NOT NULL DEFAULT 0 COMMENT '工序运行时间/单位（快照）',
+  `estimated_setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '预计准备时间',
+  `estimated_run_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '预计运行时间',
+  `estimated_total_minutes` decimal(14,2) NOT NULL DEFAULT 0 COMMENT '预计总工时（分钟）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_wo_op` (`work_order_id`,`step_no`),
+  KEY `idx_wo_op_preplan` (`preplan_id`),
+  KEY `idx_wo_op_wo` (`work_order_id`),
+  KEY `idx_wo_op_seq` (`work_order_id`,`step_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作单工序快照';
+
+-- ----------------------------
+-- 工序多层级与依赖关系（DAG）
+-- ----------------------------
+CREATE TABLE `production_process_node` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `template_id` int unsigned NOT NULL COMMENT '关联 production_process_template.id（逻辑外键）',
+  `parent_node_id` int unsigned DEFAULT NULL COMMENT '父节点（用于工序组层级，可为空）',
+  `step_no` int unsigned DEFAULT NULL COMMENT '可选：对应模板步骤号，用于与现有 step 对齐',
+  `node_type` varchar(16) NOT NULL DEFAULT 'operation' COMMENT 'operation=基础工序 group=工序组',
+  `code` varchar(64) DEFAULT NULL COMMENT '节点编码',
+  `name` varchar(128) NOT NULL COMMENT '节点名称',
+  `resource_kind` varchar(16) DEFAULT NULL COMMENT '资源维度：machine_type/hr_department，允许为空表示继承',
+  `machine_type_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=machine_type 时使用',
+  `hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=hr_department 时使用',
+  `setup_minutes` decimal(12,2) DEFAULT NULL COMMENT '准备时间（可覆写）',
+  `run_minutes_per_unit` decimal(12,4) DEFAULT NULL COMMENT '单位运行时间（可覆写）',
+  `scrap_rate` decimal(8,4) DEFAULT NULL COMMENT '报废/损耗率（0-1，可选）',
+  `remark` varchar(255) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_proc_node_template` (`template_id`),
+  KEY `idx_proc_node_parent` (`parent_node_id`),
+  KEY `idx_proc_node_type` (`template_id`,`node_type`),
+  KEY `idx_proc_node_step` (`template_id`,`step_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工序图节点（支持多层级与工序组）';
+
+CREATE TABLE `production_process_edge` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `template_id` int unsigned NOT NULL COMMENT '所属模板（冗余便于查询）',
+  `from_node_id` int unsigned NOT NULL COMMENT '前置节点',
+  `to_node_id` int unsigned NOT NULL COMMENT '后继节点',
+  `edge_type` varchar(16) NOT NULL DEFAULT 'fs' COMMENT 'fs=Finish-Start ff=Finish-Finish ss=Start-Start',
+  `lag_minutes` int DEFAULT 0 COMMENT '时差（分钟，可正负，默认0）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_proc_edge` (`from_node_id`,`to_node_id`,`edge_type`),
+  KEY `idx_proc_edge_template` (`template_id`),
+  KEY `idx_proc_edge_to` (`to_node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工序依赖边（DAG）';
+
+CREATE TABLE `production_routing_node_override` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `routing_id` int unsigned NOT NULL COMMENT '关联 production_product_routing.id（逻辑外键）',
+  `process_node_id` int unsigned NOT NULL COMMENT '被覆写的工序节点',
+  `resource_kind_override` varchar(16) DEFAULT NULL COMMENT '资源维度覆写',
+  `machine_type_id_override` int unsigned NOT NULL DEFAULT 0,
+  `hr_department_id_override` int unsigned NOT NULL DEFAULT 0,
+  `setup_minutes_override` decimal(12,2) DEFAULT NULL,
+  `run_minutes_per_unit_override` decimal(12,4) DEFAULT NULL,
+  `scrap_rate_override` decimal(8,4) DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_routing_node` (`routing_id`,`process_node_id`),
+  KEY `idx_routing_node_routing` (`routing_id`),
+  KEY `idx_routing_node_proc` (`process_node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品级工序节点覆写（资源/工时/损耗）';
+
+-- ----------------------------
+-- 测算结果：排程 / 材料分摊 / 成本
+-- ----------------------------
+CREATE TABLE `production_work_order_operation_plan` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `work_order_id` int unsigned NOT NULL,
+  `operation_id` int unsigned NOT NULL COMMENT '关联 production_work_order_operation.id（逻辑外键）',
+  `process_node_id` int unsigned DEFAULT NULL COMMENT '可选：关联工序节点，用于追溯 DAG',
+  `plan_date` date NOT NULL COMMENT '计划日期（冗余）',
+  `es` datetime DEFAULT NULL COMMENT 'Earliest Start',
+  `ef` datetime DEFAULT NULL COMMENT 'Earliest Finish',
+  `ls` datetime DEFAULT NULL COMMENT 'Latest Start（预留）',
+  `lf` datetime DEFAULT NULL COMMENT 'Latest Finish（预留）',
+  `is_critical` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否关键路径',
+  `resource_kind` varchar(16) DEFAULT NULL COMMENT '资源维度快照',
+  `machine_type_id` int unsigned NOT NULL DEFAULT 0,
+  `hr_department_id` int unsigned NOT NULL DEFAULT 0,
+  `planned_minutes` decimal(14,2) NOT NULL DEFAULT 0 COMMENT '排程工时（分钟）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_wo_op_plan` (`operation_id`),
+  KEY `idx_wo_op_plan_preplan` (`preplan_id`),
+  KEY `idx_wo_op_plan_wo` (`work_order_id`),
+  KEY `idx_wo_op_plan_resource` (`resource_kind`,`machine_type_id`,`hr_department_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作单工序排程结果';
+
+CREATE TABLE `production_material_plan_detail` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `work_order_id` int unsigned NOT NULL,
+  `operation_id` int unsigned DEFAULT NULL COMMENT '可选：关联工序，用于按工序分摊材料',
+  `component_need_id` int unsigned DEFAULT NULL COMMENT '关联 production_component_need.id（逻辑外键）',
+  `child_kind` varchar(16) NOT NULL COMMENT 'semi/material',
+  `child_material_id` int unsigned NOT NULL DEFAULT 0,
+  `required_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '理论需求量',
+  `scrap_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '损耗/报废量',
+  `net_required_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '净需求量',
+  `stock_covered_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '库存覆盖量（重算后）',
+  `shortage_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '最终缺口',
+  `unit` varchar(16) DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_mat_plan_preplan` (`preplan_id`),
+  KEY `idx_mat_plan_wo` (`work_order_id`),
+  KEY `idx_mat_plan_material` (`child_kind`,`child_material_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='材料测算明细（按工序与缺料分摊）';
+
+CREATE TABLE `production_cost_plan_detail` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `work_order_id` int unsigned NOT NULL,
+  `operation_id` int unsigned DEFAULT NULL,
+  `cost_category` varchar(16) NOT NULL COMMENT 'material/labor/machine/overhead',
+  `amount` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '成本金额',
+  `currency` varchar(8) DEFAULT 'CNY',
+  `unit_cost` decimal(18,6) DEFAULT NULL COMMENT '单位成本（可选）',
+  `qty_basis` decimal(18,4) DEFAULT NULL COMMENT '成本计量数量（如工时/用量）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_cost_plan_preplan` (`preplan_id`),
+  KEY `idx_cost_plan_wo` (`work_order_id`),
+  KEY `idx_cost_plan_cat` (`cost_category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='成本测算分项明细';
 
 -- ----------------------------
 -- 客户产品表
@@ -869,7 +1106,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO `role` (`name`, `code`, `description`, `allowed_menu_keys`) VALUES
 ('管理员', 'admin', '系统管理员', NULL),
 ('销售', 'sales', '销售员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
-('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","semi_material","bom","production_preplan","production_incident","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
+('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","semi_material","bom","production_preplan","production_incident","production_process","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
 ('财务', 'finance', '财务人员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
 ('待分配', 'pending', '注册后等待管理员分配', CAST('[]' AS JSON));
 
@@ -892,6 +1129,7 @@ INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sor
 (21, NULL, 'production', '生产管理', NULL, 15, 1, 0, 0, NULL),
 (36, 21, 'production_preplan', '预生产计划', 'main.production_preplan_list', 10, 1, 0, 1, 87),
 (37, 21, 'production_incident', '生产事故', 'main.production_incident_list', 20, 1, 0, 1, 88),
+(38, 21, 'production_process', '工序管理', 'main.production_process_template_list', 30, 1, 0, 1, 89),
 (22, NULL, 'nav_hr', '人力资源', NULL, 17, 1, 0, 0, NULL),
 (23, 22, 'hr_department', '部门', 'main.hr_department_list', 10, 1, 0, 1, 92),
 (24, 22, 'hr_employee', '人员档案', 'main.hr_employee_list', 20, 1, 0, 1, 93),
@@ -1074,6 +1312,18 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('openclaw.customer_product.create', 'OpenClaw：新建客户产品绑定', 'customer_product', 'OpenClaw', 4),
 ('openclaw.order.preview', 'OpenClaw：订单创建预览', 'order', 'OpenClaw', 10),
 ('openclaw.delivery.preview', 'OpenClaw：送货单创建预览', 'delivery', 'OpenClaw', 11);
+
+-- 工序管理：新增能力键（与 run_40_production_process_module.sql 一致）
+INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `sort_order`) VALUES
+('production.process_template.action.create', '工序管理：工序模板新建', 'production_process', '工序管理', 10),
+('production.process_template.action.edit', '工序管理：工序模板编辑', 'production_process', '工序管理', 20),
+('production.process_template.action.delete', '工序管理：工序模板删除', 'production_process', '工序管理', 30),
+('production.process_routing.action.edit', '工序管理：产品路由覆写编辑', 'production_process', '工序管理', 40)
+ON DUPLICATE KEY UPDATE
+  `title`=VALUES(`title`),
+  `nav_item_code`=VALUES(`nav_item_code`),
+  `group_label`=VALUES(`group_label`),
+  `sort_order`=VALUES(`sort_order`);
 
 -- 将角色 JSON 菜单导入 role_allowed_nav（与 run_17_migrate_role_json_to_nav_cap.sql 一致）
 INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)

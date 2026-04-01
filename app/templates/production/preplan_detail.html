@@ -6,7 +6,7 @@
     <h2 class="mb-0">预生产计划 #{{ preplan.id }}</h2>
     <span class="text-muted small">日期：{{ preplan.plan_date.isoformat() if preplan.plan_date else '-' }}</span>
     <span class="text-muted small">来源：{{ preplan.source_type or '-' }}</span>
-    <span class="text-muted small">状态：{{ preplan.status or '-' }}</span>
+    <span class="text-muted small">状态：{{ preplan.status|status_zh('production_preplan_status') }}</span>
 </div>
 
 {% if user_can_cap('production.calc.action.run') %}
@@ -94,6 +94,36 @@
     </div>
 </div>
 
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body py-2">
+                <h5 class="mb-2">预计总工时（分钟）</h5>
+                <div class="fs-5 fw-semibold">{{ preplan_estimated_total_minutes|qty_plain }}</div>
+                <div class="text-muted small">来自“成品工单（finished）”的工序快照测算。</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body py-2">
+                <h5 class="mb-2">排程总工时（分钟）</h5>
+                <div class="fs-5 fw-semibold">{{ (preplan_planned_total_minutes or 0)|qty_plain }}</div>
+                <div class="text-muted small">基于工序顺排的计划工时（含并发资源预留扩展）。</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body py-2">
+                <h5 class="mb-2">测算总成本（元）</h5>
+                <div class="fs-5 fw-semibold">{{ (preplan_total_cost or 0)|qty_plain }}</div>
+                <div class="text-muted small">当前按机台/部门工时费率 + 制造费用比例估算。</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <h5 class="mb-2">工作单与缺料明细</h5>
 {% for wo in work_orders %}
 <div class="card mb-3">
@@ -127,6 +157,46 @@
         </div>
         {% if wo.remark %}
             <div class="alert alert-info py-2 mb-2">{{ wo.remark }}</div>
+        {% endif %}
+
+        {% if wo.operations and wo.operations|length > 0 %}
+            <div class="alert alert-secondary py-2 mb-2">
+                工序预计总工时：<span class="fw-semibold">{{ wo.estimated_total_minutes|qty_plain }}</span> 分钟
+            </div>
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:80px;">step_no</th>
+                            <th>工序</th>
+                            <th style="width:220px;">资源</th>
+                            <th style="width:150px;" class="text-end">准备(分钟)</th>
+                            <th style="width:180px;" class="text-end">运行(分钟)</th>
+                            <th style="width:180px;" class="text-end">总预计(分钟)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for op in wo.operations %}
+                        <tr>
+                            <td class="text-nowrap">{{ op.step_no }}</td>
+                            <td class="text-nowrap">{{ op.step_name }}</td>
+                            <td class="text-nowrap">
+                                {% if op.resource_kind == 'machine_type' %}
+                                    机台种类ID={{ op.machine_type_id }}
+                                {% elif op.resource_kind == 'hr_department' %}
+                                    部门ID={{ op.hr_department_id }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="text-end">{{ op.estimated_setup_minutes|qty_plain }}</td>
+                            <td class="text-end">{{ op.estimated_run_minutes|qty_plain }}</td>
+                            <td class="text-end fw-semibold">{{ op.estimated_total_minutes|qty_plain }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% endif %}
 
         <div class="table-responsive">

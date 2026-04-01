@@ -13,7 +13,7 @@
             <div class="col-md-3"><strong>机台名称：</strong>{{ row.name }}</div>
             <div class="col-md-3"><strong>机台种类：</strong>{{ row.machine_type.name if row.machine_type else '-' }}</div>
             <div class="col-md-3"><strong>标准产能：</strong>{{ row.capacity_per_hour }} 件/小时</div>
-            <div class="col-md-3"><strong>状态：</strong>{{ row.status }}</div>
+            <div class="col-md-3"><strong>状态：</strong>{{ row.status|status_zh('machine_status') }}</div>
             <div class="col-md-5"><strong>车间/产线：</strong>{{ row.location or '-' }}</div>
             <div class="col-md-4"><strong>责任人：</strong>{{ row.owner.name if row.owner else '-' }}</div>
             <div class="col-12"><strong>备注：</strong>{{ row.remark or '-' }}</div>
@@ -26,7 +26,7 @@
         <h5>当前运转情况</h5>
         {% if open_log %}
         <div class="alert alert-info mb-0">
-            状态：{{ open_log.runtime_status }}，开始时间：{{ open_log.started_at.strftime('%Y-%m-%d %H:%M') }}
+            状态：{{ open_log.runtime_status|status_zh('machine_runtime_status') }}，开始时间：{{ open_log.started_at.strftime('%Y-%m-%d %H:%M') }}
         </div>
         {% else %}
         <div class="text-muted">当前无进行中的运转记录。</div>
@@ -52,7 +52,7 @@
                     {% for r in latest_logs %}
                     <tr>
                         <td>{{ r.id }}</td>
-                        <td>{{ r.runtime_status }}</td>
+                        <td>{{ r.runtime_status|status_zh('machine_runtime_status') }}</td>
                         <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td>{{ r.ended_at.strftime('%Y-%m-%d %H:%M') if r.ended_at else '进行中' }}</td>
                         <td>{{ r.remark or '-' }}</td>

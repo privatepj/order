@@ -29,7 +29,7 @@
         <label class="form-label">机台状态</label>
         <select class="form-select" name="status">
             {% for s in machine_statuses %}
-            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'enabled') %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'enabled') %}selected{% endif %}>{{ s|status_zh('machine_status') }}</option>
             {% endfor %}
         </select>
     </div>

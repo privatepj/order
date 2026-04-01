@@ -38,6 +38,15 @@ class ProductionWorkOrder(db.Model):
         lazy="select",
     )
 
+    operations = db.relationship(
+        "ProductionWorkOrderOperation",
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="ProductionWorkOrderOperation.step_no",
+        primaryjoin="ProductionWorkOrder.id == foreign(ProductionWorkOrderOperation.work_order_id)",
+        lazy="select",
+    )
+
     parent_product = db.relationship(
         "Product",
         primaryjoin="foreign(ProductionWorkOrder.parent_product_id) == Product.id",

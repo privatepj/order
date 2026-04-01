@@ -28,7 +28,7 @@
 {% if selected_company %}
 <p class="text-muted small mb-3">
     当前公司：{{ selected_company.name }} ({{ selected_company.code }})
-    · 仅展示可用单号（`available`）
+    · 仅展示可用单号（可用）
 </p>
 {% endif %}
 
@@ -55,10 +55,10 @@
                 {% for w in pagination.items %}
                 <tr>
                     <td class="text-center">
-                        <input type="checkbox" class="form-check-input row-check" name="ids" value="{{ w.id }}">
+                        <input type="checkbox" class="form-check-input row-check" name="ids" value="{{ w.id }}" checked>
                     </td>
                     <td style="white-space:nowrap;"><code>{{ w.waybill_no }}</code></td>
-                    <td>{{ w.status }}</td>
+                    <td>{{ w.status|status_zh('express_waybill_status') }}</td>
                     <td class="text-nowrap small">{{ w.created_at.strftime('%Y-%m-%d %H:%M') if w.created_at else '—' }}</td>
                 </tr>
                 {% else %}
@@ -100,6 +100,7 @@
         cb.addEventListener('change', updateCount);
     });
 
+    if (checkAll) checkAll.checked = checkboxes.length > 0;
     updateCount();
 
     form.addEventListener('submit', function (e) {
@@ -131,7 +132,7 @@
             {% for w in pagination.items %}
             <tr>
                 <td style="white-space:nowrap;"><code>{{ w.waybill_no }}</code></td>
-                <td>{{ w.status }}</td>
+                <td>{{ w.status|status_zh('express_waybill_status') }}</td>
                 <td class="text-nowrap small">{{ w.created_at.strftime('%Y-%m-%d %H:%M') if w.created_at else '—' }}</td>
             </tr>
             {% else %}

@@ -11,7 +11,7 @@
         <div><strong>物料：</strong>{{ row.item_name }}{% if row.item_spec %} / {{ row.item_spec }}{% endif %}</div>
         <div><strong>数量：</strong>{{ row.qty }} {{ row.unit }}</div>
         <div><strong>单价/金额：</strong>{{ row.unit_price }} / {{ row.amount }}</div>
-        <div><strong>状态：</strong>{{ row.status }}</div>
+        <div><strong>状态：</strong>{{ row.status|status_zh('procurement_po_status') }}</div>
         <div><strong>期望到货：</strong>{{ row.expected_date or '-' }}</div>
         <div><strong>备注：</strong>{{ row.remark or '-' }}</div>
     </div>
@@ -34,7 +34,7 @@
             <td>{{ r.receipt_no }}</td>
             <td class="text-end">{{ r.received_qty }}</td>
             <td>{{ r.received_at }}</td>
-            <td>{{ r.status }}</td>
+            <td>{{ r.status|status_zh('procurement_receipt_status') }}</td>
         </tr>
         {% else %}
         <tr><td colspan="4" class="text-muted">暂无收货记录</td></tr>

@@ -71,13 +71,9 @@ def _companies():
 
 
 def _resolve_company_id():
+    # HR/采购前端不再允许选择主体：一律使用默认主体（无则兜底取最小 id）
     companies = _companies()
-    cid = request.args.get("company_id", type=int) or request.form.get("company_id", type=int)
-    if cid:
-        return cid, companies
-    if companies:
-        return companies[0].id, companies
-    return None, companies
+    return Company.get_default_id(), companies
 
 
 def _period_first_day(period: str) -> date | None:
@@ -123,15 +119,15 @@ def register_hr_routes(bp):
             flash("请先建立经营主体。", "danger")
             return redirect(url_for("main.hr_department_list"))
         if request.method == "POST":
-            company_id = request.form.get("company_id", type=int)
+            company_id = Company.get_default_id()
             name = (request.form.get("name") or "").strip()
             sort_order = request.form.get("sort_order", type=int) or 0
-            if not company_id or not Company.query.get(company_id):
-                flash("请选择有效经营主体。", "danger")
-                return render_template("hr/department_form.html", dept=None, companies=companies)
+            if not company_id:
+                flash("请先设置默认经营主体。", "danger")
+                return render_template("hr/department_form.html", dept=None, companies=companies, company_id=None)
             if not name:
                 flash("部门名称为必填。", "danger")
-                return render_template("hr/department_form.html", dept=None, companies=companies)
+                return render_template("hr/department_form.html", dept=None, companies=companies, company_id=company_id)
             d = HrDepartment(company_id=company_id, name=name, sort_order=sort_order)
             db.session.add(d)
             try:
@@ -139,10 +135,10 @@ def register_hr_routes(bp):
             except IntegrityError:
                 db.session.rollback()
                 flash("同一主体下部门名称已存在。", "danger")
-                return render_template("hr/department_form.html", dept=None, companies=companies)
+                return render_template("hr/department_form.html", dept=None, companies=companies, company_id=company_id)
             flash("部门已新增。", "success")
             return redirect(url_for("main.hr_department_list", company_id=company_id))
-        return render_template("hr/department_form.html", dept=None, companies=companies)
+        return render_template("hr/department_form.html", dept=None, companies=companies, company_id=Company.get_default_id())
 
     @bp.route("/hr-departments/<int:dept_id>/edit", methods=["GET", "POST"])
     @login_required
@@ -152,16 +148,12 @@ def register_hr_routes(bp):
         d = HrDepartment.query.get_or_404(dept_id)
         companies = _companies()
         if request.method == "POST":
-            company_id = request.form.get("company_id", type=int)
             name = (request.form.get("name") or "").strip()
             sort_order = request.form.get("sort_order", type=int) or 0
-            if not company_id or not Company.query.get(company_id):
-                flash("请选择有效经营主体。", "danger")
-                return render_template("hr/department_form.html", dept=d, companies=companies)
+            company_id = d.company_id
             if not name:
                 flash("部门名称为必填。", "danger")
-                return render_template("hr/department_form.html", dept=d, companies=companies)
-            d.company_id = company_id
+                return render_template("hr/department_form.html", dept=d, companies=companies, company_id=company_id)
             d.name = name
             d.sort_order = sort_order
             try:
@@ -169,10 +161,10 @@ def register_hr_routes(bp):
             except IntegrityError:
                 db.session.rollback()
                 flash("同一主体下部门名称已存在。", "danger")
-                return render_template("hr/department_form.html", dept=d, companies=companies)
+                return render_template("hr/department_form.html", dept=d, companies=companies, company_id=company_id)
             flash("已保存。", "success")
             return redirect(url_for("main.hr_department_list", company_id=company_id))
-        return render_template("hr/department_form.html", dept=d, companies=companies)
+        return render_template("hr/department_form.html", dept=d, companies=companies, company_id=d.company_id)
 
     @bp.route("/hr-departments/<int:dept_id>/delete", methods=["POST"])
     @login_required
@@ -387,7 +379,7 @@ def register_hr_routes(bp):
     def _hr_employee_form(emp, companies, users):
         sens = current_user_can_cap("hr_employee.view_sensitive")
         depts = []
-        cid = emp.company_id if emp else (companies[0].id if companies else None)
+        cid = emp.company_id if emp else Company.get_default_id()
         if cid:
             depts = HrDepartment.query.filter_by(company_id=cid).order_by(HrDepartment.sort_order).all()
         return render_template(
@@ -402,7 +394,7 @@ def register_hr_routes(bp):
         )
 
     def _hr_employee_save(emp, companies, users):
-        company_id = request.form.get("company_id", type=int)
+        company_id = emp.company_id if emp else Company.get_default_id()
         employee_no = (request.form.get("employee_no") or "").strip()
         name = (request.form.get("name") or "").strip()
         department_id = request.form.get("department_id", type=int) or None
@@ -417,8 +409,8 @@ def register_hr_routes(bp):
         hire_raw = (request.form.get("hire_date") or "").strip()
         leave_raw = (request.form.get("leave_date") or "").strip()
         remark = (request.form.get("remark") or "").strip() or None
-        if not company_id or not Company.query.get(company_id):
-            flash("请选择有效经营主体。", "danger")
+        if not company_id:
+            flash("请先设置默认经营主体。", "danger")
             return _hr_employee_form(emp, companies, users)
         if not employee_no or not name:
             flash("工号与姓名为必填。", "danger")
@@ -506,7 +498,6 @@ def register_hr_routes(bp):
         companies = _companies()
         company_id, _ = _resolve_company_id()
         if request.method == "POST":
-            company_id = request.form.get("company_id", type=int)
             employee_id = request.form.get("employee_id", type=int)
             period = (request.form.get("period") or "").strip()
             base = Decimal(request.form.get("base_salary") or "0")
@@ -666,7 +657,6 @@ def register_hr_routes(bp):
         companies = _companies()
         company_id, _ = _resolve_company_id()
         if request.method == "POST":
-            company_id = request.form.get("company_id", type=int)
             employee_id = request.form.get("employee_id", type=int)
             cycle = (request.form.get("cycle") or "").strip()
             score_raw = request.form.get("score")

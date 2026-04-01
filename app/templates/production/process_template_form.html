@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if mode == 'edit' else '新建' }}工序模板 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑' if mode == 'edit' else '新建' }}工序模板</h2>
+
+<form method="post">
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label class="form-label">模板名称 <span class="text-danger">*</span></label>
+            <input class="form-control" name="name" maxlength="128" required value="{{ row.name if row else '' }}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">版本</label>
+            <input class="form-control" name="version" maxlength="32" value="{{ row.version if row else 'v1' }}">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">启用</label>
+            <select class="form-select" name="is_active">
+                <option value="1" {% if not row or row.is_active %}selected{% endif %}>启用</option>
+                <option value="0" {% if row and not row.is_active %}selected{% endif %}>停用</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">备注</label>
+            <input class="form-control" name="remark" maxlength="255" value="{{ row.remark if row else '' }}">
+        </div>
+    </div>
+
+    <h5 class="mb-2">工序步骤（step_no 从 1 连续）</h5>
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+            <thead>
+                <tr>
+                    <th style="width:70px;">step_no</th>
+                    <th style="width:120px;">工序编码</th>
+                    <th>工序名称</th>
+                    <th style="width:140px;">资源维度</th>
+                    <th style="width:180px;">机台种类</th>
+                    <th style="width:190px;">HR 部门</th>
+                    <th style="width:130px;" class="text-end">准备(分钟)</th>
+                    <th style="width:160px;" class="text-end">运行(分钟/单位)</th>
+                    <th style="width:140px;">步骤备注</th>
+                </tr>
+            </thead>
+            <tbody id="stepsTbody">
+                {% if steps and steps|length>0 %}
+                    {% for st in steps %}
+                    <tr class="step-row">
+                        <td class="text-nowrap">
+                            <input class="form-control form-control-sm" type="number" name="step_no" readonly value="{{ st.step_no }}">
+                        </td>
+                        <td class="text-nowrap">
+                            <input class="form-control form-control-sm" name="step_code" maxlength="64" value="{{ st.step_code or '' }}">
+                        </td>
+                        <td>
+                            <input class="form-control form-control-sm" name="step_name" maxlength="128" value="{{ st.step_name or '' }}">
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm resource-kind" name="resource_kind">
+                                <option value="machine_type" {% if (st.resource_kind or 'machine_type')=='machine_type' %}selected{% endif %}>机台</option>
+                                <option value="hr_department" {% if (st.resource_kind or '')=='hr_department' %}selected{% endif %}>班组/部门</option>
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm machine-type-id" name="machine_type_id">
+                                <option value="0">--</option>
+                                {% for mt in machine_types %}
+                                    <option value="{{ mt.id }}" {% if (st.machine_type_id or 0)==mt.id %}selected{% endif %}>{{ mt.code }} - {{ mt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm hr-department-id" name="hr_department_id">
+                                <option value="0">--</option>
+                                {% for d in hr_departments %}
+                                    <option value="{{ d.id }}" {% if (st.hr_department_id or 0)==d.id %}selected{% endif %}>{{ d.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td class="text-end">
+                            <input class="form-control form-control-sm text-end" name="setup_minutes" type="number" step="0.01" min="0" value="{{ st.setup_minutes if st.setup_minutes is not none else '' }}">
+                        </td>
+                        <td class="text-end">
+                            <input class="form-control form-control-sm text-end" name="run_minutes_per_unit" type="number" step="0.0001" min="0" value="{{ st.run_minutes_per_unit if st.run_minutes_per_unit is not none else '' }}">
+                        </td>
+                        <td class="text-nowrap">
+                            <input class="form-control form-control-sm" name="step_remark" maxlength="255" value="{{ st.remark or '' }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr class="step-row">
+                        <td class="text-nowrap">
+                            <input class="form-control form-control-sm" type="number" name="step_no" readonly value="1">
+                        </td>
+                        <td class="text-nowrap">
+                            <input class="form-control form-control-sm" name="step_code" maxlength="64" value="">
+                        </td>
+                        <td>
+                            <input class="form-control form-control-sm" name="step_name" maxlength="128" value="">
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm resource-kind" name="resource_kind">
+                                <option value="machine_type" selected>机台</option>
+                                <option value="hr_department">班组/部门</option>
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm machine-type-id" name="machine_type_id">
+                                <option value="0">--</option>
+                                {% for mt in machine_types %}
+                                    <option value="{{ mt.id }}">{{ mt.code }} - {{ mt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-select form-select-sm hr-department-id" name="hr_department_id">
+                                <option value="0">--</option>
+                                {% for d in hr_departments %}
+                                    <option value="{{ d.id }}">{{ d.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td class="text-end">
+                            <input class="form-control form-control-sm text-end" name="setup_minutes" type="number" step="0.01" min="0" value="">
+                        </td>
+                        <td class="text-end">
+                            <input class="form-control form-control-sm text-end" name="run_minutes_per_unit" type="number" step="0.0001" min="0" value="">
+                        </td>
+                        <td class="text-nowrap">
+                            <input class="form-control form-control-sm" name="step_remark" maxlength="255" value="">
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex gap-2 mb-4">
+        <button type="button" id="btnAddStep" class="btn btn-outline-secondary btn-sm">添加工序行</button>
+        <span class="text-muted small">如中间行填写为空会导致 step_no 连续校验失败。</span>
+    </div>
+
+    <h5 class="mb-2">工序依赖（DAG）</h5>
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+            <thead>
+                <tr>
+                    <th style="width:140px;">前置 step_no</th>
+                    <th style="width:140px;">后置 step_no</th>
+                    <th style="width:100px;">依赖类型</th>
+                    <th style="width:140px;">lag(分钟)</th>
+                    <th>备注</th>
+                </tr>
+            </thead>
+            <tbody id="edgesTbody">
+                {% if edge_rows and edge_rows|length > 0 %}
+                    {% for e in edge_rows %}
+                    <tr class="edge-row">
+                        <td><input class="form-control form-control-sm" type="number" min="1" name="edge_from_step_no" value="{{ e.from_step_no }}"></td>
+                        <td><input class="form-control form-control-sm" type="number" min="1" name="edge_to_step_no" value="{{ e.to_step_no }}"></td>
+                        <td>
+                            <select class="form-select form-select-sm" name="edge_type">
+                                <option value="fs" {% if (e.edge_type or 'fs') == 'fs' %}selected{% endif %}>FS</option>
+                            </select>
+                        </td>
+                        <td><input class="form-control form-control-sm" type="number" name="edge_lag_minutes" value="{{ e.lag_minutes if e.lag_minutes is not none else 0 }}"></td>
+                        <td><input class="form-control form-control-sm" name="edge_remark" maxlength="255" value="{{ e.remark or '' }}"></td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr class="edge-row">
+                        <td><input class="form-control form-control-sm" type="number" min="1" name="edge_from_step_no" value=""></td>
+                        <td><input class="form-control form-control-sm" type="number" min="1" name="edge_to_step_no" value=""></td>
+                        <td>
+                            <select class="form-select form-select-sm" name="edge_type">
+                                <option value="fs" selected>FS</option>
+                            </select>
+                        </td>
+                        <td><input class="form-control form-control-sm" type="number" name="edge_lag_minutes" value="0"></td>
+                        <td><input class="form-control form-control-sm" name="edge_remark" maxlength="255" value=""></td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+    <div class="d-flex gap-2 mb-4">
+        <button type="button" id="btnAddEdge" class="btn btn-outline-secondary btn-sm">添加依赖行</button>
+        <span class="text-muted small">不填写依赖时，系统默认按 step_no 串行生成 FS 依赖。</span>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.production_process_template_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  function applyRowState(rowEl) {
+    var rk = rowEl.querySelector('select[name="resource_kind"]').value;
+    var mSel = rowEl.querySelector('select[name="machine_type_id"]');
+    var hSel = rowEl.querySelector('select[name="hr_department_id"]');
+    if (rk === 'machine_type') {
+      mSel.disabled = false;
+      hSel.disabled = false;
+      hSel.value = '0';
+    } else {
+      hSel.disabled = false;
+      mSel.disabled = false;
+      mSel.value = '0';
+    }
+  }
+
+  function initRow(rowEl) {
+    var rkSel = rowEl.querySelector('select[name="resource_kind"]');
+    rkSel.addEventListener('change', function () { applyRowState(rowEl); });
+    applyRowState(rowEl);
+  }
+
+  document.querySelectorAll('#stepsTbody tr.step-row').forEach(initRow);
+
+  var btn = document.getElementById('btnAddStep');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      var tbody = document.getElementById('stepsTbody');
+      var rows = tbody.querySelectorAll('tr.step-row');
+      var last = rows[rows.length - 1];
+      if (!last) return;
+      var newRow = last.cloneNode(true);
+      var nextNo = rows.length + 1;
+      newRow.querySelector('input[name="step_no"]').value = nextNo;
+      newRow.querySelector('input[name="step_code"]').value = '';
+      newRow.querySelector('input[name="step_name"]').value = '';
+      newRow.querySelector('input[name="setup_minutes"]').value = '';
+      newRow.querySelector('input[name="run_minutes_per_unit"]').value = '';
+      newRow.querySelector('input[name="step_remark"]').value = '';
+      newRow.querySelector('select[name="resource_kind"]').value = 'machine_type';
+      newRow.querySelector('select[name="machine_type_id"]').value = '0';
+      newRow.querySelector('select[name="hr_department_id"]').value = '0';
+      tbody.appendChild(newRow);
+      initRow(newRow);
+    });
+  }
+
+  var btnEdge = document.getElementById('btnAddEdge');
+  if (btnEdge) {
+    btnEdge.addEventListener('click', function () {
+      var tbody = document.getElementById('edgesTbody');
+      var rows = tbody.querySelectorAll('tr.edge-row');
+      var last = rows[rows.length - 1];
+      if (!last) return;
+      var newRow = last.cloneNode(true);
+      newRow.querySelector('input[name="edge_from_step_no"]').value = '';
+      newRow.querySelector('input[name="edge_to_step_no"]').value = '';
+      newRow.querySelector('select[name="edge_type"]').value = 'fs';
+      newRow.querySelector('input[name="edge_lag_minutes"]').value = '0';
+      newRow.querySelector('input[name="edge_remark"]').value = '';
+      tbody.appendChild(newRow);
+    });
+  }
+})();
+</script>
+{% endblock %}
+

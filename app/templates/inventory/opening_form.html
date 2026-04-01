@@ -117,9 +117,9 @@
         var kind = categorySel.value;
         var url = null;
         if (kind === 'finished') {
-            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20';
         } else {
-            url = semiSearchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50&kind=' + encodeURIComponent(kind);
+            url = semiSearchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20&kind=' + encodeURIComponent(kind);
         }
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })

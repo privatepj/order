@@ -169,10 +169,8 @@ def delivery_list_read_filters():
 
 
 def customer_list_read_filters():
-    keyword = (request.args.get("keyword") or "").strip()
-    if not current_user_can_cap("customer.filter.keyword"):
-        keyword = ""
-    return keyword
+    """关键词始终从 querystring 读取；`customer.filter.keyword` 仅控制列表页是否展示搜索框（见模板）。"""
+    return (request.args.get("keyword") or "").strip()
 
 
 def product_list_read_filters():

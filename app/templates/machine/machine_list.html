@@ -19,7 +19,7 @@
         <select class="form-select" name="status">
             <option value="">全部状态</option>
             {% for s in machine_statuses %}
-            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|status_zh('machine_status') }}</option>
             {% endfor %}
         </select>
     </div>
@@ -54,7 +54,7 @@
                 <td>{{ r.name }}</td>
                 <td>{{ r.machine_type.name if r.machine_type else '-' }}</td>
                 <td class="text-end">{{ r.capacity_per_hour }}</td>
-                <td>{{ r.status }}</td>
+                <td>{{ r.status|status_zh('machine_status') }}</td>
                 <td>{{ r.location or '-' }}</td>
                 <td>{{ r.owner.name if r.owner else '-' }}</td>
                 <td class="text-nowrap">

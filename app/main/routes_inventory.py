@@ -284,8 +284,8 @@ def register_inventory_routes(bp):
         if not current_user_can_cap("inventory_ops.api.products_search"):
             abort(403)
         qstr = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
         q = Product.query.order_by(Product.product_code)
         cond = keyword_like_or(
             qstr,
@@ -349,8 +349,8 @@ def register_inventory_routes(bp):
         kind = (request.args.get("kind") or request.args.get("category") or "").strip()
         if kind not in (inventory_svc.INV_SEMI, inventory_svc.INV_MATERIAL):
             kind = inventory_svc.INV_SEMI
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
 
         q = SemiMaterial.query.filter(SemiMaterial.kind == kind).order_by(SemiMaterial.code)
         cond = keyword_like_or(

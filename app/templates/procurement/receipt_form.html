@@ -3,14 +3,7 @@
 {% block content %}
 <h2 class="mb-4">{{ '新增收货' if not row else '编辑收货' }}</h2>
 <form method="post" class="row g-3">
-    <div class="col-md-4">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select" required>
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if row and row.company_id == c.id %}selected{% elif not row and companies and companies[0].id == c.id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
+    <input type="hidden" name="company_id" value="{{ company_id }}">
     <div class="col-md-8">
         <label class="form-label">采购单</label>
         <select name="purchase_order_id" class="form-select" required>
@@ -32,7 +25,7 @@
         <label class="form-label">状态</label>
         <select name="status" class="form-select">
             {% for s in receipt_statuses %}
-            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'draft') %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'draft') %}selected{% endif %}>{{ s|status_zh('procurement_receipt_status') }}</option>
             {% endfor %}
         </select>
     </div>
@@ -46,7 +39,7 @@
     </div>
     <div class="col-12">
         <button type="submit" class="btn btn-primary">保存</button>
-        <a href="{{ url_for('main.procurement_receipt_list', company_id=row.company_id if row else None) }}" class="btn btn-secondary">返回</a>
+        <a href="{{ url_for('main.procurement_receipt_list') }}" class="btn btn-secondary">返回</a>
     </div>
 </form>
 {% endblock %}

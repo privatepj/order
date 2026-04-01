@@ -1,7 +1,10 @@
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 
 from flask import render_template, request, redirect, url_for, flash, send_file
 from flask_login import login_required
+from sqlalchemy import false
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.capabilities import customer_list_read_filters
 from app.auth.decorators import capability_required, menu_required
@@ -9,10 +12,12 @@ from app.auth.decorators import capability_required, menu_required
 from app import db
 from app.models import Customer, Company
 from app.services.customer_svc import next_customer_code
-from app.utils.query import keyword_like_or, cast_str
+from app.utils.query import (
+    cast_str,
+    is_valid_customer_search_keyword,
+    keyword_like_or,
+)
 from app.utils.visibility import is_admin, customer_view
-from sqlalchemy.exc import IntegrityError
-from io import BytesIO
 
 
 def register_customer_routes(bp):
@@ -23,7 +28,10 @@ def register_customer_routes(bp):
         page = request.args.get("page", 1, type=int)
         keyword = customer_list_read_filters()
         q = Customer.query
-        if keyword:
+        if keyword and not is_valid_customer_search_keyword(keyword):
+            flash("请输入至少 1 个字符的搜索关键字。", "warning")
+            q = q.filter(false())
+        elif is_valid_customer_search_keyword(keyword):
             q = q.outerjoin(Company, Customer.company_id == Company.id)
             cond = keyword_like_or(
                 keyword,

@@ -31,7 +31,7 @@
             <td class="text-nowrap">#{{ p.id }}</td>
             <td class="text-nowrap">{{ p.plan_date.isoformat() if p.plan_date else '-' }}</td>
             <td class="text-nowrap">{{ p.source_type or '-' }}</td>
-            <td class="text-nowrap">{{ p.status or '-' }}</td>
+            <td class="text-nowrap">{{ p.status|status_zh('production_preplan_status') }}</td>
             <td class="text-nowrap">
                 <a href="{{ url_for('main.production_preplan_detail', preplan_id=p.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
                 {% if user_can_cap('production.calc.action.run') %}

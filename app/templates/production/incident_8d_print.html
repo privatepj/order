@@ -29,7 +29,7 @@
         <span class="k">发生时间</span><span>{{ incident.occurred_at.strftime('%Y-%m-%d %H:%M') if incident.occurred_at else '—' }}</span>
         <span class="k">车间/地点</span><span>{{ incident.workshop or '—' }}</span>
         <span class="k">严重程度</span><span>{{ incident.severity or '—' }}</span>
-        <span class="k">状态</span><span>{{ incident.status or '—' }}</span>
+        <span class="k">状态</span><span>{{ incident.status|status_zh('production_incident_status') if incident.status else '—' }}</span>
         <span class="k">登记人</span><span>{{ creator_name }}</span>
         <span class="k">备注/D0</span><span>{{ incident.remark or '—' }}</span>
     </div>

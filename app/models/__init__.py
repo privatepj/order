@@ -25,6 +25,17 @@ from app.models.production_preplan import ProductionPreplan
 from app.models.production_preplan_line import ProductionPreplanLine
 from app.models.production_work_order import ProductionWorkOrder
 from app.models.production_component_need import ProductionComponentNeed
+from app.models.production_process_template import ProductionProcessTemplate
+from app.models.production_process_template_step import ProductionProcessTemplateStep
+from app.models.production_product_routing import ProductionProductRouting
+from app.models.production_product_routing_step import ProductionProductRoutingStep
+from app.models.production_process_node import ProductionProcessNode
+from app.models.production_process_edge import ProductionProcessEdge
+from app.models.production_routing_node_override import ProductionRoutingNodeOverride
+from app.models.production_work_order_operation import ProductionWorkOrderOperation
+from app.models.production_work_order_operation_plan import ProductionWorkOrderOperationPlan
+from app.models.production_material_plan_detail import ProductionMaterialPlanDetail
+from app.models.production_cost_plan_detail import ProductionCostPlanDetail
 from app.models.production_incident import ProductionIncident
 from app.models.hr import HrDepartment, HrEmployee, HrPayrollLine, HrPerformanceReview
 from app.models.machine import MachineType, Machine, MachineRuntimeLog
@@ -66,6 +77,17 @@ __all__ = [
     "ProductionPreplanLine",
     "ProductionWorkOrder",
     "ProductionComponentNeed",
+    "ProductionProcessTemplate",
+    "ProductionProcessTemplateStep",
+    "ProductionProductRouting",
+    "ProductionProductRoutingStep",
+    "ProductionProcessNode",
+    "ProductionProcessEdge",
+    "ProductionRoutingNodeOverride",
+    "ProductionWorkOrderOperation",
+    "ProductionWorkOrderOperationPlan",
+    "ProductionMaterialPlanDetail",
+    "ProductionCostPlanDetail",
     "ProductionIncident",
     "HrDepartment",
     "HrEmployee",

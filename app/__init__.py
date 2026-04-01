@@ -46,6 +46,11 @@ def create_app(config_class=Config):
 
     app.jinja_env.filters["qty_plain"] = format_qty_plain
 
+    # 状态码 -> 中文展示（仅展示层，不改数据库值）
+    from app.utils.status_display import status_zh
+
+    app.jinja_env.filters["status_zh"] = status_zh
+
     @app.context_processor
     def inject_menu_permissions():
         from flask_login import current_user

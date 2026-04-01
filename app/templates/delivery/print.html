@@ -15,26 +15,27 @@
         table.delivery-table th { font-size: 10px; font-weight: normal; text-align: center; vertical-align: middle; }
         table.delivery-table td { font-size: 12px; vertical-align: middle; }
         table.delivery-table td.col-qty { text-align: right; }
+        table.delivery-table tr { page-break-inside: avoid; }
         .company-name { font-size: 20px; margin: 8px 0; }
         .address-tel { font-size: 12px; margin: 4px 0; }
         .title-main { font-size: 20px; font-weight: bold; margin: 10px 0; }
         .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0; font-size: 10px; }
         .info-row .label { font-weight: normal; }
-        .foot-notes { font-size: 12px; margin: 8px 0 4px; }
-        .sign-line { font-size: 12px; margin-top: 12px; }
+        .foot-notes { font-size: 12px; margin: 6px 0 2px; page-break-inside: avoid; }
+        .sign-line { font-size: 12px; margin-top: 8px; page-break-inside: avoid; }
         .no-print { display: none; }
         @media print {
             body { margin: 0; }
             .print-sheet { width: 100%; max-width: none; }
-            .company-name { font-size: 22px; }
-            .address-tel { font-size: 13px; }
-            .title-main { font-size: 22px; }
-            .info-row { font-size: 12px; }
-            table.delivery-table th, table.delivery-table td { padding: 8px 10px; min-height: 36px; }
-            table.delivery-table th { font-size: 13px; }
-            table.delivery-table td { font-size: 14px; }
-            .foot-notes { font-size: 13px; }
-            .sign-line { font-size: 13px; }
+            .company-name { font-size: 20px; margin: 6px 0; }
+            .address-tel { font-size: 12px; margin: 3px 0; }
+            .title-main { font-size: 20px; margin: 8px 0; }
+            .info-row { font-size: 10px; margin: 2px 0; }
+            table.delivery-table th, table.delivery-table td { padding: 4px 6px; }
+            table.delivery-table th { font-size: 10px; }
+            table.delivery-table td { font-size: 12px; }
+            .foot-notes { font-size: 12px; margin: 4px 0 2px; }
+            .sign-line { font-size: 12px; margin-top: 6px; }
         }
     </style>
 </head>
@@ -80,7 +81,8 @@
                     <td>{{ r.order_cell }}</td>
                 </tr>
                 {% endfor %}
-                {% for i in range(10 - rows|length) %}
+                {% set min_rows = 6 %}
+                {% for i in range((min_rows - rows|length) if rows|length < min_rows else 0) %}
                 <tr>
                     <td></td><td></td><td></td><td class="col-qty"></td><td class="col-qty"></td><td class="col-qty"></td><td></td><td></td>
                 </tr>

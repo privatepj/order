@@ -4,14 +4,6 @@
 <h2 class="mb-4">绩效管理</h2>
 <form method="get" class="row g-2 mb-3 align-items-end">
     <div class="col-auto">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-auto">
         <label class="form-label">考核周期</label>
         <input type="text" class="form-control form-control-sm" name="cycle" value="{{ cycle or '' }}" placeholder="如 2026-Q1">
     </div>

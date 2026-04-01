@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app import db
 
 
@@ -12,6 +14,8 @@ class Company(db.Model):
     delivery_no_prefix = db.Column(db.String(32), nullable=True)
     # 转月日/月结日：每月该日起为新业务月（1=自然月）
     billing_cycle_day = db.Column(db.SmallInteger, nullable=False, default=1)
+    # 是否默认主体：HR/采购前端不选择主体时使用该默认值
+    is_default = db.Column(db.SmallInteger, nullable=False, default=0)
     phone = db.Column(db.String(32))
     fax = db.Column(db.String(32))
     address = db.Column(db.String(255))
@@ -27,3 +31,12 @@ class Company(db.Model):
     customers = db.relationship(
         "Customer", primaryjoin="Company.id == foreign(Customer.company_id)", backref="company", lazy="dynamic"
     )
+
+    @classmethod
+    def get_default_id(cls) -> int | None:
+        """返回默认主体 id；若未配置则兜底取最小 id。"""
+        row = cls.query.filter(cls.is_default == 1).order_by(cls.id.asc()).first()
+        if row:
+            return int(row.id)
+        row = cls.query.order_by(cls.id.asc()).first()
+        return int(row.id) if row else None

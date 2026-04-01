@@ -227,13 +227,13 @@
         var url = null;
         if (kind === 'finished') {
             if (!searchUrl) return;
-            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20';
         } else {
             if (!semiSearchUrl) return;
             url =
                 semiSearchUrl
                 + '?q=' + encodeURIComponent(q || '')
-                + '&limit=50&kind=' + encodeURIComponent(kind);
+                + '&limit=20&kind=' + encodeURIComponent(kind);
         }
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })

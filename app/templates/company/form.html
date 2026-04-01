@@ -25,6 +25,19 @@
         <input type="number" class="form-control" name="billing_cycle_day" value="{{ company.billing_cycle_day if company else 1 }}" min="1" max="31" required>
         <div class="form-text">对账时：填 N 表示「上月 N 日至本月 N-1 日」为一个月结周期；填 1 表示按自然月。</div>
     </div>
+    <div class="mb-3">
+        <label class="form-label">
+            <input
+                type="checkbox"
+                name="is_default"
+                value="1"
+                class="form-check-input me-2"
+                {% if company and company.is_default %}checked{% endif %}
+            >
+            是否默认主体
+        </label>
+        <div class="form-text">HR 与采购管理新增数据时，将默认使用该主体。</div>
+    </div>
     <hr>
     <h5 class="mb-3">对账单展示（供应商信息）</h5>
     <div class="row">

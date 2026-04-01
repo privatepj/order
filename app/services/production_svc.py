@@ -13,8 +13,16 @@ from app.models import (
     ProductionPreplan,
     ProductionPreplanLine,
     ProductionWorkOrder,
+    ProductionWorkOrderOperation,
+    ProductionMaterialPlanDetail,
+    ProductionWorkOrderOperationPlan,
+    ProductionCostPlanDetail,
+    ProductionProcessTemplate,
+    ProductionProcessTemplateStep,
+    ProductionProductRouting,
+    ProductionProductRoutingStep,
 )
-from app.services import bom_svc
+from app.services import bom_svc, production_schedule_svc, production_cost_svc
 
 
 _INV_FINISHED = bom_svc.PARENT_FINISHED  # finished=成品
@@ -124,9 +132,10 @@ def measure_production_for_preplan(
     max_depth: int = 20,
 ) -> List[int]:
     """
-    基于 BOM 与库存，计算某个预生产计划的净需求：
-    - 先用库存覆盖父项需求
-    - 不足部分按 active BOM 展开；继续“库存覆盖 + 递归生产/缺料”
+    二期测算管道（calc_only）：
+    - Stage A/B：沿用一期逻辑，基于 BOM 与库存计算净需求 + 生成工作单与缺料；
+    - Stage C：基于工序快照进行简单排程，生成 operation_plan；
+    - Stage D：按工序工时估算人工/机台/制造费用，生成成本分项。
 
     返回：本次测算生成的 production_work_order.id 列表。
     """
@@ -141,6 +150,18 @@ def measure_production_for_preplan(
     db.session.query(ProductionWorkOrder).filter_by(preplan_id=preplan_id).delete(
         synchronize_session=False
     )
+    db.session.query(ProductionWorkOrderOperation).filter_by(preplan_id=preplan_id).delete(
+        synchronize_session=False
+    )
+    db.session.query(ProductionWorkOrderOperationPlan).filter_by(preplan_id=preplan_id).delete(
+        synchronize_session=False
+    )
+    db.session.query(ProductionMaterialPlanDetail).filter_by(preplan_id=preplan_id).delete(
+        synchronize_session=False
+    )
+    db.session.query(ProductionCostPlanDetail).filter_by(preplan_id=preplan_id).delete(
+        synchronize_session=False
+    )
     db.session.flush()
 
     root_lines = (
@@ -153,8 +174,87 @@ def measure_production_for_preplan(
 
     allocator = _StockAllocator()
     header_cache: Dict[Tuple[str, int], Optional[object]] = {}
+    process_cache: Dict[int, List[Dict[str, object]]] = {}
 
     produced_work_order_ids: List[int] = []
+
+    def _resolve_process_steps_for_product(product_id: int) -> List[Dict[str, object]]:
+        """
+        产品 -> 工序模板步骤（含产品路由覆写），用于测算时固化到工作单工序快照。
+        """
+        pid = int(product_id)
+        if pid in process_cache:
+            return process_cache[pid]
+
+        routing = (
+            ProductionProductRouting.query.filter_by(product_id=pid, is_active=True).first()
+        )
+        if not routing:
+            process_cache[pid] = []
+            return process_cache[pid]
+
+        tpl = (
+            ProductionProcessTemplate.query.filter_by(id=routing.template_id, is_active=True).first()
+        )
+        if not tpl:
+            process_cache[pid] = []
+            return process_cache[pid]
+
+        tpl_steps = (
+            ProductionProcessTemplateStep.query.filter_by(template_id=tpl.id, is_active=True)
+            .order_by(ProductionProcessTemplateStep.step_no.asc(), ProductionProcessTemplateStep.id.asc())
+            .all()
+        )
+        if not tpl_steps:
+            process_cache[pid] = []
+            return process_cache[pid]
+
+        overrides = ProductionProductRoutingStep.query.filter_by(routing_id=routing.id).all()
+        override_map = {x.template_step_no: x for x in overrides}
+
+        out: List[Dict[str, object]] = []
+        for st in tpl_steps:
+            ov = override_map.get(st.step_no)
+
+            final_step_name = ov.step_name_override if ov and ov.step_name_override is not None else st.step_name
+
+            final_resource_kind = (
+                ov.resource_kind_override if ov and ov.resource_kind_override is not None else st.resource_kind
+            )
+
+            setup_minutes = ov.setup_minutes_override if ov and ov.setup_minutes_override is not None else st.setup_minutes
+            run_minutes_per_unit = (
+                ov.run_minutes_per_unit_override
+                if ov and ov.run_minutes_per_unit_override is not None
+                else st.run_minutes_per_unit
+            )
+
+            if ov and ov.resource_kind_override is not None:
+                if final_resource_kind == "machine_type":
+                    machine_type_id = ov.machine_type_id_override or st.machine_type_id
+                    hr_department_id = 0
+                else:
+                    hr_department_id = ov.hr_department_id_override or st.hr_department_id
+                    machine_type_id = 0
+            else:
+                machine_type_id = st.machine_type_id
+                hr_department_id = st.hr_department_id
+
+            out.append(
+                {
+                    "step_no": st.step_no,
+                    "step_code": st.step_code,
+                    "step_name": final_step_name,
+                    "resource_kind": final_resource_kind,
+                    "machine_type_id": int(machine_type_id or 0),
+                    "hr_department_id": int(hr_department_id or 0),
+                    "setup_minutes": _d(setup_minutes),
+                    "run_minutes_per_unit": _d(run_minutes_per_unit),
+                }
+            )
+
+        process_cache[pid] = out
+        return out
 
     def alloc_node(
         *,
@@ -218,6 +318,39 @@ def measure_production_for_preplan(
         db.session.add(wo)
         db.session.flush()
         produced_work_order_ids.append(wo.id)
+
+        # 工序快照：只对“成品工单（parent_kind=finished）”生成工序与预计工时
+        if parent_kind == _INV_FINISHED and to_produce > 0:
+            process_steps = _resolve_process_steps_for_product(parent_id)
+            if process_steps:
+                plan_qty = _d(to_produce)
+                for st in process_steps:
+                    setup_minutes = _d(st["setup_minutes"])
+                    run_minutes_per_unit = _d(st["run_minutes_per_unit"])
+                    estimated_setup_minutes = setup_minutes
+                    estimated_run_minutes = run_minutes_per_unit * plan_qty
+                    estimated_total_minutes = estimated_setup_minutes + estimated_run_minutes
+
+                    db.session.add(
+                        ProductionWorkOrderOperation(
+                            preplan_id=preplan_id,
+                            work_order_id=wo.id,
+                            step_no=int(st["step_no"]),
+                            step_code=st["step_code"],
+                            step_name=str(st["step_name"]),
+                            resource_kind=st["resource_kind"],
+                            machine_type_id=int(st["machine_type_id"]),
+                            hr_department_id=int(st["hr_department_id"]),
+                            plan_qty=plan_qty,
+                            setup_minutes=setup_minutes,
+                            run_minutes_per_unit=run_minutes_per_unit,
+                            estimated_setup_minutes=estimated_setup_minutes,
+                            estimated_run_minutes=estimated_run_minutes,
+                            estimated_total_minutes=estimated_total_minutes,
+                            created_by=created_by,
+                            remark=None,
+                        )
+                    )
 
         if to_produce <= 0:
             path.remove(key)
@@ -292,9 +425,57 @@ def measure_production_for_preplan(
             path=set(),
         )
 
+    # Stage C：排程（基于工序快照）
+    production_schedule_svc.plan_operations_for_preplan(preplan_id=preplan_id)
+
+    # Stage B→C 之间：材料分摊（当前版本直接以 component_need 为基础做 1:1 映射，scrap 为 0）
+    _rebuild_material_plan_from_component_needs(preplan_id=preplan_id)
+
+    # Stage D：成本测算
+    production_cost_svc.build_cost_plan_for_preplan(preplan_id=preplan_id)
+
     preplan.status = "planned"
     db.session.add(preplan)
     db.session.commit()
 
     return produced_work_order_ids
+
+
+def _rebuild_material_plan_from_component_needs(*, preplan_id: int) -> None:
+    """
+    材料测算 v2.1：
+    - 以 component_need 为基础，将 required_qty 视为理论用量；
+    - scrap_qty 暂为 0，net_required_qty=required_qty；
+    - 未来可以按工序/损耗率拆分。
+    """
+    db.session.query(ProductionMaterialPlanDetail).filter_by(preplan_id=preplan_id).delete(
+        synchronize_session=False
+    )
+    db.session.flush()
+
+    needs = (
+        ProductionComponentNeed.query.filter_by(preplan_id=preplan_id)
+        .order_by(ProductionComponentNeed.id.asc())
+        .all()
+    )
+    for n in needs:
+        required = _d(n.required_qty)
+        scrap = Decimal(0)
+        net_required = required - scrap
+        row = ProductionMaterialPlanDetail(
+            preplan_id=n.preplan_id,
+            work_order_id=n.work_order_id,
+            operation_id=None,
+            component_need_id=n.id,
+            child_kind=n.child_kind,
+            child_material_id=n.child_material_id,
+            required_qty=required,
+            scrap_qty=scrap,
+            net_required_qty=net_required,
+            stock_covered_qty=_d(n.stock_covered_qty),
+            shortage_qty=_d(n.shortage_qty),
+            unit=n.unit,
+            remark=n.remark,
+        )
+        db.session.add(row)
 

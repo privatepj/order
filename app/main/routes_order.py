@@ -18,7 +18,7 @@ from app.models import (
     CustomerProduct,
     Product,
 )
-from app.utils.query import keyword_like_or
+from app.utils.query import is_valid_customer_search_keyword, keyword_like_or
 from app.utils.visibility import is_admin, order_item_view
 from app.utils.payment_type import normalize_payment_type, PAYMENT_TYPE_LABELS
 from app.services.order_svc import create_order_from_data
@@ -282,8 +282,8 @@ def register_order_routes(bp):
             abort(403)
         customer_id = request.args.get("customer_id", type=int)
         qstr = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
         if not customer_id:
             return jsonify({"items": []})
         q = (
@@ -327,16 +327,19 @@ def register_order_routes(bp):
         ):
             abort(403)
         qstr = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", 50, type=int)
-        limit = max(1, min(limit, 100))
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
 
-        q = Customer.query.options(joinedload(Customer.company)).order_by(Customer.name)
-        if qstr:
-            like = f"%{qstr}%"
-            q = (
-                q.outerjoin(Company, Customer.company_id == Company.id)
-                .filter(db.or_(Customer.name.like(like), Company.code.like(like)))
-            )
+        if not is_valid_customer_search_keyword(qstr):
+            return jsonify({"items": []})
+
+        like = f"%{qstr}%"
+        q = (
+            Customer.query.options(joinedload(Customer.company))
+            .outerjoin(Company, Customer.company_id == Company.id)
+            .filter(db.or_(Customer.name.like(like), Company.code.like(like)))
+            .order_by(Customer.name)
+        )
 
         items = []
         for c in q.limit(limit).all():

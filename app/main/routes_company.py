@@ -33,6 +33,11 @@ def register_company_routes(bp):
                 flash("短码已存在。", "danger")
                 return render_template("company/form.html", company=None)
             c = Company(name=name, code=code)
+            is_default = 1 if request.form.get("is_default") else 0
+            # 设为默认时：清空其他主体默认标记，确保只有一个默认
+            if is_default:
+                db.session.query(Company).update({Company.is_default: 0})
+            c.is_default = is_default
             prefix = (request.form.get("order_no_prefix") or "").strip()
             c.order_no_prefix = prefix or None
             dp = (request.form.get("delivery_no_prefix") or "").strip()
@@ -71,6 +76,11 @@ def register_company_routes(bp):
                     flash("短码已存在。", "danger")
                     return render_template("company/form.html", company=c)
                 c.code = code
+            is_default = 1 if request.form.get("is_default") else 0
+            if is_default:
+                # 设为默认时：清空其他主体默认标记，确保只有一个默认
+                db.session.query(Company).filter(Company.id != c.id).update({Company.is_default: 0})
+            c.is_default = is_default
             prefix = (request.form.get("order_no_prefix") or "").strip()
             c.order_no_prefix = prefix or None
             dp = (request.form.get("delivery_no_prefix") or "").strip()

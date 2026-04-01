@@ -38,7 +38,7 @@
             <td class="text-nowrap">{{ r.occurred_at.strftime('%Y-%m-%d %H:%M') if r.occurred_at else '-' }}</td>
             <td>{{ r.workshop or '-' }}</td>
             <td>{{ r.severity or '-' }}</td>
-            <td>{{ r.status or '-' }}</td>
+            <td>{{ r.status|status_zh('production_incident_status') }}</td>
             <td class="text-nowrap">
                 <a href="{{ url_for('main.production_incident_detail', incident_id=r.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
                 {% if user_can_cap('production_incident.report.8d') %}

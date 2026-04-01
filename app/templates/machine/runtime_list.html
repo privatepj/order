@@ -16,7 +16,7 @@
         <select class="form-select" name="runtime_status">
             <option value="">全部运转状态</option>
             {% for s in runtime_statuses %}
-            <option value="{{ s }}" {% if runtime_status == s %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if runtime_status == s %}selected{% endif %}>{{ s|status_zh('machine_runtime_status') }}</option>
             {% endfor %}
         </select>
     </div>
@@ -55,7 +55,7 @@
             <tr>
                 <td>{{ r.id }}</td>
                 <td>{{ r.machine.machine_no if r.machine else r.machine_id }}</td>
-                <td>{{ r.runtime_status }}</td>
+                <td>{{ r.runtime_status|status_zh('machine_runtime_status') }}</td>
                 <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
                 <td>{{ r.ended_at.strftime('%Y-%m-%d %H:%M') if r.ended_at else '进行中' }}</td>
                 <td>{{ r.creator.name if r.creator else r.created_by }}</td>

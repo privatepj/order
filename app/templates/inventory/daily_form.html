@@ -169,7 +169,7 @@
 
     function fetchProducts(q, cell, dd) {
         if (!searchUrl) return;
-        var url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50';
+        var url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20';
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })
             .then(function (data) {

@@ -4,14 +4,6 @@
 <h2 class="mb-4">采购请购</h2>
 
 <form method="get" class="row g-2 mb-3 align-items-end">
-    <div class="col-auto">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}（{{ c.code }}）</option>
-            {% endfor %}
-        </select>
-    </div>
     {% if user_can_cap('procurement_requisition.filter.keyword') %}
     <div class="col-auto">
         <label class="form-label">关键词</label>
@@ -23,7 +15,7 @@
         <select name="status" class="form-select form-select-sm">
             <option value="">全部</option>
             {% for s in requisition_statuses %}
-            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|status_zh('procurement_requisition_status') }}</option>
             {% endfor %}
         </select>
     </div>
@@ -58,7 +50,7 @@
             <td>{{ r.item_name }}{% if r.item_spec %} / {{ r.item_spec }}{% endif %}</td>
             <td class="text-end">{{ r.qty }} {{ r.unit }}</td>
             <td>{{ r.expected_date or '-' }}</td>
-            <td>{{ r.status }}</td>
+            <td>{{ r.status|status_zh('procurement_requisition_status') }}</td>
             <td class="text-nowrap">
                 {% if user_can_cap('procurement_requisition.action.edit') %}
                 <a href="{{ url_for('main.procurement_requisition_edit', req_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>

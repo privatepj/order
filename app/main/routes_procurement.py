@@ -30,13 +30,9 @@ def _companies():
 
 
 def _resolve_company_id():
+    # 采购前端不再允许选择主体：一律使用默认主体（无则兜底取最小 id）
     companies = _companies()
-    cid = request.args.get("company_id", type=int) or request.form.get("company_id", type=int)
-    if cid:
-        return cid, companies
-    if companies:
-        return companies[0].id, companies
-    return None, companies
+    return Company.get_default_id(), companies
 
 
 def _next_no(prefix: str, model, field_name: str) -> str:
@@ -111,6 +107,7 @@ def register_procurement_routes(bp):
             "procurement/requisition_form.html",
             row=None,
             companies=companies,
+            company_id=Company.get_default_id(),
             requisition_statuses=REQUISITION_STATUS,
         )
 
@@ -127,11 +124,12 @@ def register_procurement_routes(bp):
             "procurement/requisition_form.html",
             row=row,
             companies=companies,
+            company_id=row.company_id,
             requisition_statuses=REQUISITION_STATUS,
         )
 
     def _save_requisition(row, companies):
-        company_id = request.form.get("company_id", type=int)
+        company_id = row.company_id if row else Company.get_default_id()
         supplier_name = (request.form.get("supplier_name") or "").strip()
         item_name = (request.form.get("item_name") or "").strip()
         item_spec = (request.form.get("item_spec") or "").strip() or None
@@ -145,14 +143,16 @@ def register_procurement_routes(bp):
                 "procurement/requisition_form.html",
                 row=row,
                 companies=companies,
+                company_id=company_id,
                 requisition_statuses=REQUISITION_STATUS,
             )
-        if not company_id or not Company.query.get(company_id):
-            flash("请选择有效经营主体。", "danger")
+        if not company_id:
+            flash("请先设置默认经营主体。", "danger")
             return render_template(
                 "procurement/requisition_form.html",
                 row=row,
                 companies=companies,
+                company_id=company_id,
                 requisition_statuses=REQUISITION_STATUS,
             )
         if not supplier_name or not item_name or qty <= 0:
@@ -161,6 +161,7 @@ def register_procurement_routes(bp):
                 "procurement/requisition_form.html",
                 row=row,
                 companies=companies,
+                company_id=company_id,
                 requisition_statuses=REQUISITION_STATUS,
             )
         expected_date = None
@@ -173,6 +174,7 @@ def register_procurement_routes(bp):
                     "procurement/requisition_form.html",
                     row=row,
                     companies=companies,
+                    company_id=company_id,
                     requisition_statuses=REQUISITION_STATUS,
                 )
         if status not in REQUISITION_STATUS:
@@ -201,6 +203,7 @@ def register_procurement_routes(bp):
                 "procurement/requisition_form.html",
                 row=row,
                 companies=companies,
+                company_id=company_id,
                 requisition_statuses=REQUISITION_STATUS,
             )
         flash("请购单已保存。", "success")
@@ -258,12 +261,11 @@ def register_procurement_routes(bp):
     @capability_required("procurement_order.action.create")
     def procurement_order_new():
         companies = _companies()
-        reqs = (
-            PurchaseRequisition.query.filter(PurchaseRequisition.status != "cancelled")
-            .order_by(PurchaseRequisition.id.desc())
-            .limit(200)
-            .all()
-        )
+        company_id, _ = _resolve_company_id()
+        q = PurchaseRequisition.query.filter(PurchaseRequisition.status != "cancelled")
+        if company_id:
+            q = q.filter(PurchaseRequisition.company_id == company_id)
+        reqs = q.order_by(PurchaseRequisition.id.desc()).limit(200).all()
         if request.method == "POST":
             return _save_order(None, companies, reqs)
         return render_template(
@@ -271,6 +273,7 @@ def register_procurement_routes(bp):
             row=None,
             companies=companies,
             requisitions=reqs,
+            company_id=company_id,
             po_statuses=PO_STATUS,
         )
 
@@ -281,12 +284,11 @@ def register_procurement_routes(bp):
     def procurement_order_edit(po_id):
         row = PurchaseOrder.query.get_or_404(po_id)
         companies = _companies()
-        reqs = (
-            PurchaseRequisition.query.filter(PurchaseRequisition.status != "cancelled")
-            .order_by(PurchaseRequisition.id.desc())
-            .limit(200)
-            .all()
-        )
+        company_id = row.company_id
+        q = PurchaseRequisition.query.filter(PurchaseRequisition.status != "cancelled")
+        if company_id:
+            q = q.filter(PurchaseRequisition.company_id == company_id)
+        reqs = q.order_by(PurchaseRequisition.id.desc()).limit(200).all()
         if request.method == "POST":
             return _save_order(row, companies, reqs)
         return render_template(
@@ -294,11 +296,12 @@ def register_procurement_routes(bp):
             row=row,
             companies=companies,
             requisitions=reqs,
+            company_id=company_id,
             po_statuses=PO_STATUS,
         )
 
     def _save_order(row, companies, requisitions):
-        company_id = request.form.get("company_id", type=int)
+        company_id = row.company_id if row else Company.get_default_id()
         requisition_id = request.form.get("requisition_id", type=int) or None
         supplier_name = (request.form.get("supplier_name") or "").strip()
         item_name = (request.form.get("item_name") or "").strip()
@@ -315,15 +318,17 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 requisitions=requisitions,
+                company_id=company_id,
                 po_statuses=PO_STATUS,
             )
-        if not company_id or not Company.query.get(company_id):
-            flash("请选择有效经营主体。", "danger")
+        if not company_id:
+            flash("请先设置默认经营主体。", "danger")
             return render_template(
                 "procurement/order_form.html",
                 row=row,
                 companies=companies,
                 requisitions=requisitions,
+                company_id=company_id,
                 po_statuses=PO_STATUS,
             )
         req = None
@@ -336,6 +341,7 @@ def register_procurement_routes(bp):
                     row=row,
                     companies=companies,
                     requisitions=requisitions,
+                    company_id=company_id,
                     po_statuses=PO_STATUS,
                 )
         if not supplier_name or not item_name or qty <= 0:
@@ -345,6 +351,7 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 requisitions=requisitions,
+                company_id=company_id,
                 po_statuses=PO_STATUS,
             )
         expected_date = None
@@ -358,6 +365,7 @@ def register_procurement_routes(bp):
                     row=row,
                     companies=companies,
                     requisitions=requisitions,
+                    company_id=company_id,
                     po_statuses=PO_STATUS,
                 )
         if status not in PO_STATUS:
@@ -389,6 +397,7 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 requisitions=requisitions,
+                company_id=company_id,
                 po_statuses=PO_STATUS,
             )
         flash("采购单已保存。", "success")
@@ -454,12 +463,11 @@ def register_procurement_routes(bp):
     @capability_required("procurement_receipt.action.create")
     def procurement_receipt_new():
         companies = _companies()
-        orders = (
-            PurchaseOrder.query.filter(PurchaseOrder.status.in_(("ordered", "partially_received", "draft")))
-            .order_by(PurchaseOrder.id.desc())
-            .limit(200)
-            .all()
-        )
+        company_id, _ = _resolve_company_id()
+        q = PurchaseOrder.query.filter(PurchaseOrder.status.in_(("ordered", "partially_received", "draft")))
+        if company_id:
+            q = q.filter(PurchaseOrder.company_id == company_id)
+        orders = q.order_by(PurchaseOrder.id.desc()).limit(200).all()
         if request.method == "POST":
             return _save_receipt(None, companies, orders)
         return render_template(
@@ -467,6 +475,7 @@ def register_procurement_routes(bp):
             row=None,
             companies=companies,
             orders=orders,
+            company_id=company_id,
             receipt_statuses=RECEIPT_STATUS,
         )
 
@@ -477,12 +486,13 @@ def register_procurement_routes(bp):
     def procurement_receipt_edit(receipt_id):
         row = PurchaseReceipt.query.get_or_404(receipt_id)
         companies = _companies()
-        orders = (
-            PurchaseOrder.query.filter(PurchaseOrder.status.in_(("ordered", "partially_received", "draft", "received")))
-            .order_by(PurchaseOrder.id.desc())
-            .limit(200)
-            .all()
+        company_id = row.company_id
+        q = PurchaseOrder.query.filter(
+            PurchaseOrder.status.in_(("ordered", "partially_received", "draft", "received"))
         )
+        if company_id:
+            q = q.filter(PurchaseOrder.company_id == company_id)
+        orders = q.order_by(PurchaseOrder.id.desc()).limit(200).all()
         if request.method == "POST":
             return _save_receipt(row, companies, orders)
         return render_template(
@@ -490,6 +500,7 @@ def register_procurement_routes(bp):
             row=row,
             companies=companies,
             orders=orders,
+            company_id=company_id,
             receipt_statuses=RECEIPT_STATUS,
         )
 
@@ -507,7 +518,7 @@ def register_procurement_routes(bp):
             po.status = "ordered"
 
     def _save_receipt(row, companies, orders):
-        company_id = request.form.get("company_id", type=int)
+        company_id = row.company_id if row else Company.get_default_id()
         purchase_order_id = request.form.get("purchase_order_id", type=int)
         status = (request.form.get("status") or "draft").strip()
         received_at_raw = (request.form.get("received_at") or "").strip()
@@ -520,15 +531,17 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 orders=orders,
+                company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
-        if not company_id or not Company.query.get(company_id):
-            flash("请选择有效经营主体。", "danger")
+        if not company_id:
+            flash("请先设置默认经营主体。", "danger")
             return render_template(
                 "procurement/receipt_form.html",
                 row=row,
                 companies=companies,
                 orders=orders,
+                company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
         po = PurchaseOrder.query.get(purchase_order_id)
@@ -539,6 +552,7 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 orders=orders,
+                company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
         if received_qty <= 0:
@@ -548,6 +562,7 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 orders=orders,
+                company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
         if status not in RECEIPT_STATUS:
@@ -561,6 +576,7 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 orders=orders,
+                company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
         was_posted = False
@@ -602,6 +618,7 @@ def register_procurement_routes(bp):
                 row=row,
                 companies=companies,
                 orders=orders,
+                company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
         flash("收货单已保存。", "success")

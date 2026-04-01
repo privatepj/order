@@ -17,6 +17,7 @@
             <th>订单号前缀</th>
             <th>送货单前缀</th>
             <th>转月日</th>
+            <th>默认主体</th>
             <th>操作</th>
         </tr>
     </thead>
@@ -28,6 +29,7 @@
             <td>{{ c.order_no_prefix or c.code }}</td>
             <td>{{ c.delivery_no_prefix or c.code }}</td>
             <td>{{ c.billing_cycle_day }}{% if c.billing_cycle_day == 1 %}（自然月）{% endif %}</td>
+            <td>{{ '是' if c.is_default else '否' }}</td>
             <td class="d-flex gap-2">
                 {% if user_can_cap('company.action.edit') %}
                 <a href="{{ url_for('main.company_edit', company_id=c.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>

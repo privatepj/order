@@ -4,16 +4,6 @@
 <h2 class="mb-4">人员档案</h2>
 <p class="text-muted small">敏感列默认脱敏；具备「查看身份证/完整手机」能力后显示完整信息。</p>
 <form method="get" class="row g-2 mb-3 align-items-end">
-    {% if user_can_cap('hr_employee.filter.company') %}
-    <div class="col-auto">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}（{{ c.code }}）</option>
-            {% endfor %}
-        </select>
-    </div>
-    {% endif %}
     {% if user_can_cap('hr_employee.filter.keyword') %}
     <div class="col-auto">
         <label class="form-label">关键词</label>

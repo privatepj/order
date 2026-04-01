@@ -409,7 +409,7 @@
                 return;
             }
             customerFilterTimer = setTimeout(function(){
-                fetch(customerSearchApiUrl + '?q=' + encodeURIComponent(q) + '&limit=50')
+                fetch(customerSearchApiUrl + '?q=' + encodeURIComponent(q) + '&limit=20')
                     .then(function(r){ return r.json(); })
                     .then(function(d){ renderCustomerItems(d.items || []); });
             }, 250);
@@ -418,7 +418,7 @@
         customerSearch.addEventListener('focus', function(){
             var q = customerSearch.value.trim();
             if (!q) return;
-            fetch(customerSearchApiUrl + '?q=' + encodeURIComponent(q) + '&limit=50')
+            fetch(customerSearchApiUrl + '?q=' + encodeURIComponent(q) + '&limit=20')
                 .then(function(r){ return r.json(); })
                 .then(function(d){ renderCustomerItems(d.items || []); });
         });

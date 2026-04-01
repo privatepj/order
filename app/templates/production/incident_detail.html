@@ -31,7 +31,7 @@
     <dt class="col-sm-2">严重程度</dt>
     <dd class="col-sm-10">{{ incident.severity or '—' }}</dd>
     <dt class="col-sm-2">状态</dt>
-    <dd class="col-sm-10">{{ incident.status or '—' }}</dd>
+    <dd class="col-sm-10">{{ incident.status|status_zh('production_incident_status') if incident.status else '—' }}</dd>
     <dt class="col-sm-2">登记人</dt>
     <dd class="col-sm-10">{{ creator_name }}</dd>
     <dt class="col-sm-2">备注/D0</dt>

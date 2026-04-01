@@ -191,7 +191,7 @@
 
     function fetchCustomers(q) {
         if (!customerApiUrl) return;
-        fetch(customerApiUrl + '?q=' + encodeURIComponent(q || '') + '&limit=50')
+        fetch(customerApiUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20')
             .then(function(r){ return r.json(); })
             .then(function(data){ renderCustomerItems(data.items || []); });
     }
@@ -268,7 +268,7 @@
                     var tq = (typeof it.in_transit_qty === 'number') ? it.in_transit_qty : 0;
                     var tr = document.createElement('tr');
                     tr.innerHTML =
-                        '<td><input type="checkbox" class="form-check-input row-check" data-order-item-id="' + it.order_item_id + '" data-order-id="' + it.order_id + '" data-product-name="' + (it.product_name || '').replace(/"/g, '&quot;') + '" data-customer-material-no="' + (it.customer_material_no || '').replace(/"/g, '&quot;') + '" data-unit="' + (it.unit || '').replace(/"/g, '&quot;') + '" data-remaining="' + it.remaining_qty + '"></td>' +
+                        '<td><input type="checkbox" class="form-check-input row-check" checked data-order-item-id="' + it.order_item_id + '" data-order-id="' + it.order_id + '" data-product-name="' + (it.product_name || '').replace(/"/g, '&quot;') + '" data-customer-material-no="' + (it.customer_material_no || '').replace(/"/g, '&quot;') + '" data-unit="' + (it.unit || '').replace(/"/g, '&quot;') + '" data-remaining="' + it.remaining_qty + '"></td>' +
                         '<td>' + (it.order_no || '') + '</td>' +
                         '<td>' + (it.product_name || '') + '</td>' +
                         '<td>' + (it.product_spec || '') + '</td>' +

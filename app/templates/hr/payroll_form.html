@@ -3,15 +3,7 @@
 {% block content %}
 <h2 class="mb-4">{{ '新增工资' if not line else '编辑工资' }}</h2>
 <form method="post">
-    <div class="mb-3">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select" required {% if line %}disabled{% endif %}>
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if (line and line.company_id == c.id) or (not line and default_company_id == c.id) %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-        </select>
-        {% if line %}<input type="hidden" name="company_id" value="{{ line.company_id }}">{% endif %}
-    </div>
+    <input type="hidden" name="company_id" value="{{ line.company_id if line else default_company_id }}">
     {% if not line %}
     <div class="mb-3">
         <label class="form-label">账期（YYYY-MM）</label>

@@ -17,7 +17,7 @@
         <label class="form-label">运转状态 <span class="text-danger">*</span></label>
         <select class="form-select" name="runtime_status" required>
             {% for s in runtime_statuses %}
-            <option value="{{ s }}" {% if (row and row.runtime_status == s) or (not row and s == 'running') %}selected{% endif %}>{{ s }}</option>
+            <option value="{{ s }}" {% if (row and row.runtime_status == s) or (not row and s == 'running') %}selected{% endif %}>{{ s|status_zh('machine_runtime_status') }}</option>
             {% endfor %}
         </select>
     </div>

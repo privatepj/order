@@ -12,7 +12,7 @@
             {% if delivery.status == 'created' %}待发
             {% elif delivery.status == 'shipped' %}已发
             {% elif delivery.status == 'expired' %}失效
-            {% else %}{{ delivery.status }}
+            {% else %}{{ delivery.status|status_zh('delivery_status') }}
             {% endif %}
         </p>
         {% if delivery.driver or delivery.plate_no %}

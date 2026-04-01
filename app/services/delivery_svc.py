@@ -32,9 +32,9 @@ def effective_customer_material_no(oi: OrderItem) -> str:
 def _max_delivery_seq_suffix_for_company_period(
     company_id: int, prefix: str, ps: date, pe: date
 ) -> int:
-    """业务周期内，以前缀开头且末四位为数字的送货单号之最大尾号；无可解析则 0。"""
+    """业务周期内，以前缀开头且末三位为数字的送货单号之最大尾号；无可解析则 0。"""
     pl = len(prefix)
-    min_len = pl + 8 + 4
+    min_len = pl + 8 + 3
     rows = (
         db.session.query(Delivery.delivery_no)
         .join(Customer, Delivery.customer_id == Customer.id)
@@ -51,7 +51,7 @@ def _max_delivery_seq_suffix_for_company_period(
             continue
         if not dno.startswith(prefix):
             continue
-        tail = dno[-4:]
+        tail = dno[-3:]
         if not tail.isdigit():
             continue
         v = int(tail)
@@ -67,16 +67,20 @@ def _is_delivery_no_duplicate_integrity_error(exc: IntegrityError) -> bool:
 
 def _next_free_delivery_no(prefix: str, date_part: str, start_seq: int) -> str:
     """从 start_seq 起递增，直到库中无同名 delivery_no。"""
+    if start_seq > 999:
+        raise ValueError("当前业务周期送货单号已超出 3 位流水上限（999）。")
     seq = start_seq
     while True:
-        candidate = f"{prefix}{date_part}{seq:04d}"
+        if seq > 999:
+            raise ValueError("当前业务周期送货单号已超出 3 位流水上限（999）。")
+        candidate = f"{prefix}{date_part}{seq:03d}"
         if not Delivery.query.filter_by(delivery_no=candidate).first():
             return candidate
         seq += 1
 
 
 def _next_delivery_no_for_customer(customer_id: int, delivery_date: date) -> str:
-    """主体送货编号前缀 + YYYYMMDD + 业务周期内序号（4 位）；序号取周期内已有单号尾号 max+1。"""
+    """主体送货编号前缀 + YYYYMMDD + 业务周期内序号（3 位）；序号取周期内已有单号尾号 max+1。"""
     date_part = delivery_date.strftime("%Y%m%d")
     cust = db.session.get(Customer, customer_id)
     if not cust:
@@ -492,6 +496,10 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
     for attempt in range(max_commit_attempts):
         try:
             delivery_no = _next_delivery_no_for_customer(customer_id, delivery_date)
+        except ValueError as ex:
+            db.session.rollback()
+            return None, str(ex)
+        try:
             delivery = Delivery(
                 delivery_no=delivery_no,
                 delivery_date=delivery_date,

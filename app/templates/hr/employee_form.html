@@ -3,14 +3,7 @@
 {% block content %}
 <h2 class="mb-4">{{ '新增人员' if not emp else '编辑人员' }}</h2>
 <form method="post">
-    <div class="mb-3">
-        <label class="form-label">经营主体</label>
-        <select name="company_id" class="form-select" required>
-            {% for c in companies %}
-            <option value="{{ c.id }}" {% if emp and emp.company_id == c.id %}selected{% elif not emp and default_company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
+    <input type="hidden" name="company_id" value="{{ company_id }}">
     <div class="row">
         <div class="col-md-6 mb-3">
             <label class="form-label">工号</label>
@@ -81,6 +74,6 @@
         <textarea class="form-control" name="remark" rows="2" maxlength="500">{{ emp.remark if emp else '' }}</textarea>
     </div>
     <button type="submit" class="btn btn-primary">保存</button>
-    <a href="{{ url_for('main.hr_employee_list', company_id=emp.company_id if emp else (company_id or None)) }}" class="btn btn-secondary">返回</a>
+    <a href="{{ url_for('main.hr_employee_list') }}" class="btn btn-secondary">返回</a>
 </form>
 {% endblock %}
