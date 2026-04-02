@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from flask import flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
@@ -14,8 +14,15 @@ from sqlalchemy.orm import selectinload
 from app import db
 from app.auth.decorators import capability_required, menu_required
 from app.models import (
+    CustomerProduct,
     Customer,
     HrDepartment,
+    HrEmployee,
+    HrEmployeeCapability,
+    Machine,
+    MachineOperatorAllowlist,
+    MachineScheduleBooking,
+    MachineScheduleDispatchLog,
     MachineType,
     Product,
     ProductionComponentNeed,
@@ -30,9 +37,26 @@ from app.models import (
     ProductionProcessEdge,
     ProductionWorkOrder,
     ProductionWorkOrderOperation,
+    ProductionCostPlanDetail,
+    OrderItem,
+    SalesOrder,
     User,
 )
-from app.services import bom_svc, delivery_svc, production_svc
+from app.services import bom_svc, delivery_svc, production_svc, production_cost_svc
+from app.services.production_schedule_svc import (
+    compute_preplan_schedule_dashboard,
+    list_schedule_plan_rows_for_preplan,
+)
+from app.services import orchestrator_engine
+from app.services.orchestrator_contracts import EVENT_PRODUCTION_MEASURED
+from app.services.orchestrator_contracts import (
+    EVENT_MACHINE_ABNORMAL,
+    EVENT_MACHINE_RECOVERED,
+    EVENT_PRODUCTION_OPERATION_REPORTED,
+    EVENT_PRODUCTION_REPORTED,
+    EVENT_QUALITY_INSPECTION_STARTED,
+    EVENT_QUALITY_PASSED,
+)
 
 
 def _parse_decimal(val: Any, *, default: Optional[Decimal] = None) -> Optional[Decimal]:
@@ -494,6 +518,69 @@ def _raw_material_totals_from_work_orders(
     return rows
 
 
+def _company_id_from_preplan(preplan: ProductionPreplan) -> int:
+    cid = int(preplan.customer_id or 0)
+    if cid <= 0:
+        return 0
+    cust = Customer.query.get(cid)
+    return int(cust.company_id) if cust else 0
+
+
+def _budget_options_for_operations(
+    work_orders: List[ProductionWorkOrder], company_id: int
+) -> Dict[int, Dict[str, Any]]:
+    """预生产详情页：指定资源下拉选项（机台+白名单操作员；或部门能力员工）。"""
+    out: Dict[int, Dict[str, Any]] = {}
+    for wo in work_orders:
+        for op in wo.operations or []:
+            oid = int(op.id)
+            if op.resource_kind == "machine_type" and int(op.machine_type_id or 0) > 0:
+                machines = (
+                    Machine.query.filter_by(machine_type_id=int(op.machine_type_id), status="enabled")
+                    .order_by(Machine.machine_no.asc())
+                    .all()
+                )
+                pairs = []
+                for m in machines:
+                    for al in MachineOperatorAllowlist.query.filter_by(machine_id=m.id, is_active=True).all():
+                        emp = HrEmployee.query.get(int(al.employee_id))
+                        pairs.append(
+                            {
+                                "machine_id": m.id,
+                                "employee_id": int(al.employee_id),
+                                "label": f"{m.machine_no} + {(emp.name if emp else al.employee_id)}",
+                            }
+                        )
+                out[oid] = {"kind": "machine_type", "pairs": pairs, "machines": machines}
+            elif op.resource_kind == "hr_department" and int(op.hr_department_id or 0) > 0:
+                cap_ids = production_cost_svc.resolve_capability_dept_ids(
+                    company_id=company_id, process_hr_department_id=int(op.hr_department_id)
+                )
+                if not cap_ids:
+                    out[oid] = {"kind": "hr_department", "employees": []}
+                    continue
+                emp_rows = (
+                    db.session.query(HrEmployeeCapability.employee_id)
+                    .filter(
+                        HrEmployeeCapability.company_id == company_id,
+                        HrEmployeeCapability.hr_department_id.in_(cap_ids),
+                    )
+                    .distinct()
+                    .all()
+                )
+                eids = [int(r[0]) for r in emp_rows if r[0] is not None]
+                emps = (
+                    HrEmployee.query.filter(HrEmployee.id.in_(eids)).order_by(HrEmployee.id.asc()).all()
+                    if eids
+                    else []
+                )
+                out[oid] = {
+                    "kind": "hr_department",
+                    "employees": [{"id": e.id, "label": f"{e.employee_no} {e.name}"} for e in emps],
+                }
+    return out
+
+
 def _require_preplan_with_lines(preplan_id: int) -> ProductionPreplan:
     preplan = (
         ProductionPreplan.query.options(selectinload(ProductionPreplan.lines))
@@ -503,6 +590,66 @@ def _require_preplan_with_lines(preplan_id: int) -> ProductionPreplan:
     if not preplan:
         raise ValueError("预生产计划不存在。")
     return preplan
+
+
+def _resolve_order_id_by_work_order(wo: ProductionWorkOrder) -> Optional[int]:
+    if not wo:
+        return None
+    # 优先：根需求行直接回溯 source_order_item_id
+    if wo.root_preplan_line_id:
+        ln = db.session.get(ProductionPreplanLine, int(wo.root_preplan_line_id))
+        if ln and ln.source_order_item_id:
+            oi = db.session.get(OrderItem, int(ln.source_order_item_id))
+            if oi and oi.order_id:
+                orchestrator_engine.log_manual_audit(
+                    level="info",
+                    message="wo_order_mapping_hit_direct",
+                    detail={
+                        "work_order_id": int(wo.id),
+                        "order_id": int(oi.order_id),
+                        "mapping": "root_preplan_line->source_order_item",
+                    },
+                )
+                return int(oi.order_id)
+
+    # 兜底：按 preplan.customer_id + 工单成品 product_id 回推“最近待交付订单”
+    preplan = db.session.get(ProductionPreplan, int(wo.preplan_id or 0))
+    if not preplan or not preplan.customer_id or not wo.parent_product_id:
+        return None
+    row = (
+        db.session.query(SalesOrder.id)
+        .join(OrderItem, OrderItem.order_id == SalesOrder.id)
+        .join(CustomerProduct, CustomerProduct.id == OrderItem.customer_product_id)
+        .filter(
+            SalesOrder.customer_id == int(preplan.customer_id),
+            SalesOrder.status.in_(("pending", "partial")),
+            CustomerProduct.product_id == int(wo.parent_product_id),
+        )
+        .order_by(SalesOrder.required_date.asc(), SalesOrder.id.asc())
+        .first()
+    )
+    if not row:
+        orchestrator_engine.log_manual_audit(
+            level="warn",
+            message="wo_order_mapping_miss",
+            detail={
+                "work_order_id": int(wo.id),
+                "preplan_id": int(wo.preplan_id or 0),
+                "customer_id": int(preplan.customer_id or 0) if preplan else 0,
+                "parent_product_id": int(wo.parent_product_id or 0),
+            },
+        )
+        return None
+    orchestrator_engine.log_manual_audit(
+        level="info",
+        message="wo_order_mapping_hit_fallback",
+        detail={
+            "work_order_id": int(wo.id),
+            "order_id": int(row[0]),
+            "mapping": "customer+product+pending_order",
+        },
+    )
+    return int(row[0])
 
 
 def register_production_routes(bp):
@@ -812,6 +959,17 @@ def register_production_routes(bp):
                 production_svc.measure_production_for_preplan(
                     preplan_id=new_preplan.id, created_by=current_user.id
                 )
+                orchestrator_engine.emit_event(
+                    event_type=EVENT_PRODUCTION_MEASURED,
+                    biz_key=f"preplan:{new_preplan.id}",
+                    payload={
+                        "preplan_id": int(new_preplan.id),
+                        "source_id": int(new_preplan.id),
+                        "version": int(datetime.now().timestamp()),
+                        "source": "routes_production.production_calc",
+                    },
+                )
+                db.session.commit()
                 flash("生产测算已生成工作单与缺料明细。", "success")
                 return redirect(
                     url_for("main.production_preplan_detail", preplan_id=new_preplan.id)
@@ -858,23 +1016,74 @@ def register_production_routes(bp):
         preplan_estimated_total_minutes = sum((getattr(wo, "estimated_total_minutes", 0) or 0) for wo in work_orders)
         raw_material_totals = _raw_material_totals_from_work_orders(work_orders)
 
-        # 二期：产能与成本汇总（若尚未运行二期测算，这里会得到 0）
-        from app.models import (
-            ProductionWorkOrderOperationPlan,
-            ProductionCostPlanDetail,
-        )
+        sched_dash = compute_preplan_schedule_dashboard(preplan_id=preplan_id)
+        schedule_plan_rows = list_schedule_plan_rows_for_preplan(preplan_id=preplan_id)
+        total_planned_minutes = sched_dash.get("sum_planned_minutes") or 0
+        preplan_planned_es = sched_dash.get("preplan_planned_es")
+        preplan_planned_ef = sched_dash.get("preplan_planned_ef")
+        preplan_wall_minutes = sched_dash.get("preplan_wall_minutes")
+        wo_planned_span = sched_dash.get("wo_planned_span") or {}
+        for wo in work_orders:
+            sp = wo_planned_span.get(int(wo.id))
+            if sp:
+                wo.planned_es = sp.get("planned_es")
+                wo.planned_ef = sp.get("planned_ef")
+                wo.planned_wall_minutes = sp.get("wall_minutes")
+            else:
+                wo.planned_es = None
+                wo.planned_ef = None
+                wo.planned_wall_minutes = None
 
-        total_planned_minutes = (
-            db.session.query(db.func.coalesce(db.func.sum(ProductionWorkOrderOperationPlan.planned_minutes), 0))
-            .filter(ProductionWorkOrderOperationPlan.preplan_id == preplan_id)
-            .scalar()
-        )
-
-        total_cost = (
+        total_cost_opt = (
             db.session.query(db.func.coalesce(db.func.sum(ProductionCostPlanDetail.amount), 0))
-            .filter(ProductionCostPlanDetail.preplan_id == preplan_id)
+            .filter(
+                ProductionCostPlanDetail.preplan_id == preplan_id,
+                ProductionCostPlanDetail.scenario == "optimized",
+            )
             .scalar()
         )
+        total_cost_asg = (
+            db.session.query(db.func.coalesce(db.func.sum(ProductionCostPlanDetail.amount), 0))
+            .filter(
+                ProductionCostPlanDetail.preplan_id == preplan_id,
+                ProductionCostPlanDetail.scenario == "assigned",
+            )
+            .scalar()
+        )
+
+        company_id_ctx = _company_id_from_preplan(preplan)
+        budget_options_by_op = _budget_options_for_operations(work_orders, company_id_ctx)
+
+        # 机台排班时间窗（用于“报工”选择 booking）
+        start_dt = datetime.combine(preplan.plan_date, time.min)
+        end_dt = start_dt + timedelta(days=1)
+        bookings_by_wo_id: Dict[int, List[MachineScheduleBooking]] = {}
+        for wo in work_orders:
+            machine_type_ids = {
+                int(op.machine_type_id)
+                for op in (wo.operations or [])
+                if (getattr(op, "resource_kind", None) == "machine_type") and int(getattr(op, "machine_type_id", 0) or 0) > 0
+            }
+            if not machine_type_ids:
+                bookings_by_wo_id[int(wo.id)] = []
+                continue
+
+            bookings = (
+                MachineScheduleBooking.query.options(selectinload(MachineScheduleBooking.machine))
+                .join(Machine, Machine.id == MachineScheduleBooking.machine_id)
+                .filter(
+                    Machine.machine_type_id.in_(machine_type_ids),
+                    Machine.status == "enabled",
+                    MachineScheduleBooking.state == "available",
+                    MachineScheduleBooking.start_at < end_dt,
+                    MachineScheduleBooking.end_at > start_dt,
+                )
+                .order_by(MachineScheduleBooking.start_at.asc(), MachineScheduleBooking.id.asc())
+                .limit(2000)
+                .all()
+            )
+            bookings_by_wo_id[int(wo.id)] = bookings
+
         return render_template(
             "production/preplan_detail.html",
             preplan=preplan,
@@ -882,7 +1091,15 @@ def register_production_routes(bp):
             raw_material_totals=raw_material_totals,
             preplan_estimated_total_minutes=preplan_estimated_total_minutes,
             preplan_planned_total_minutes=total_planned_minutes,
-            preplan_total_cost=total_cost,
+            preplan_planned_es=preplan_planned_es,
+            preplan_planned_ef=preplan_planned_ef,
+            preplan_wall_minutes=preplan_wall_minutes,
+            schedule_plan_rows=schedule_plan_rows,
+            preplan_total_cost=total_cost_opt,
+            preplan_total_cost_optimized=total_cost_opt,
+            preplan_total_cost_assigned=total_cost_asg,
+            budget_options_by_op=budget_options_by_op,
+            bookings_by_wo_id=bookings_by_wo_id,
         )
 
     # ----------------------------
@@ -897,6 +1114,17 @@ def register_production_routes(bp):
             production_svc.measure_production_for_preplan(
                 preplan_id=preplan_id, created_by=current_user.id
             )
+            orchestrator_engine.emit_event(
+                event_type=EVENT_PRODUCTION_MEASURED,
+                biz_key=f"preplan:{preplan_id}",
+                payload={
+                    "preplan_id": int(preplan_id),
+                    "source_id": int(preplan_id),
+                    "version": int(datetime.now().timestamp()),
+                    "source": "routes_production.production_preplan_measure",
+                },
+            )
+            db.session.commit()
             flash("生产测算已完成。", "success")
         except Exception as e:
             db.session.rollback()
@@ -904,6 +1132,217 @@ def register_production_routes(bp):
         return redirect(
             url_for("main.production_preplan_detail", preplan_id=preplan_id)
         )
+
+    @bp.route("/production/preplans/<int:preplan_id>/budget-assign", methods=["POST"])
+    @login_required
+    @menu_required("production_preplan")
+    @capability_required("production.calc.action.run")
+    def production_preplan_budget_assign(preplan_id: int):
+        preplan = db.session.get(ProductionPreplan, preplan_id)
+        if not preplan:
+            flash("预生产计划不存在。", "warning")
+            return redirect(url_for("main.production_preplan_list"))
+        wos = ProductionWorkOrder.query.filter_by(preplan_id=preplan_id).all()
+        for wo in wos:
+            for op in ProductionWorkOrderOperation.query.filter_by(work_order_id=wo.id).all():
+                if op.resource_kind == "machine_type":
+                    raw = (request.form.get(f"budget_pair_{op.id}") or "").strip()
+                    if raw and ":" in raw:
+                        parts = raw.split(":", 1)
+                        try:
+                            mid = int(parts[0])
+                            eid = int(parts[1])
+                        except ValueError:
+                            mid, eid = 0, 0
+                        op.budget_machine_id = mid
+                        op.budget_operator_employee_id = eid
+                    else:
+                        op.budget_machine_id = 0
+                        op.budget_operator_employee_id = 0
+                elif op.resource_kind == "hr_department":
+                    op.budget_operator_employee_id = request.form.get(
+                        f"budget_emp_{op.id}", type=int
+                    ) or 0
+                    op.budget_machine_id = 0
+                db.session.add(op)
+        try:
+            production_cost_svc.build_cost_plan_for_preplan(preplan_id=preplan_id)
+            db.session.commit()
+            flash("预算指定已保存并重新计算成本。", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"保存失败：{e}", "danger")
+        return redirect(url_for("main.production_preplan_detail", preplan_id=preplan_id))
+
+    @bp.route("/production/work-orders/<int:work_order_id>/report", methods=["POST"])
+    @login_required
+    @menu_required("production_preplan")
+    @capability_required("production.calc.action.run")
+    def production_work_order_report(work_order_id: int):
+        wo = db.session.get(ProductionWorkOrder, work_order_id)
+        if not wo:
+            flash("工作单不存在。", "danger")
+            return redirect(url_for("main.production_preplan_list"))
+        if wo.status not in ("planned", "released", "in_progress"):
+            flash("当前状态不允许报工。", "warning")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+
+        # 报工关联机台排产 booking 与实际产量
+        booking_id = request.form.get("booking_id", type=int) or 0
+        actual_produced_qty = _parse_decimal_non_negative(
+            request.form.get("actual_produced_qty"), default=Decimal(0)
+        )
+        if booking_id <= 0:
+            flash("请先选择机台排班时间窗。", "danger")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+        if actual_produced_qty is None or actual_produced_qty < 0:
+            flash("本次实际产量填写不正确。", "danger")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+
+        booking = db.session.get(MachineScheduleBooking, booking_id)
+        if not booking:
+            flash("选择的时间窗不存在。", "danger")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+        if (booking.state or "").strip() != "available":
+            flash("选择的时间窗不是可用状态。", "danger")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+
+        # 校验 booking 的机台类型是否包含在该工作单的机台资源类型中
+        expected_machine_type_ids = {
+            int(r.machine_type_id)
+            for r in ProductionWorkOrderOperation.query.filter(
+                ProductionWorkOrderOperation.work_order_id == wo.id,
+                ProductionWorkOrderOperation.resource_kind == "machine_type",
+                ProductionWorkOrderOperation.machine_type_id > 0,
+            ).all()
+        }
+        machine = db.session.get(Machine, booking.machine_id)
+        if not machine or machine.status != "enabled":
+            flash("选择的机台不存在或不可用。", "danger")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+        if expected_machine_type_ids and int(machine.machine_type_id) not in expected_machine_type_ids:
+            flash("所选时间窗的机台不匹配该工作单的机台资源类型。", "danger")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+
+        # dispatch log：幂等保护
+        dispatch_log = MachineScheduleDispatchLog.query.filter_by(booking_id=booking_id).first()
+        if dispatch_log and (dispatch_log.state or "").strip() == "reported":
+            flash("该时间窗已报工，无法重复累计。", "warning")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+
+        duration_seconds = int((booking.end_at - booking.start_at).total_seconds())
+        runtime_hours = (Decimal(duration_seconds) / Decimal(3600)).quantize(Decimal("0.0001"))
+
+        if not dispatch_log:
+            dispatch_log = MachineScheduleDispatchLog(
+                machine_id=booking.machine_id,
+                booking_id=booking.id,
+                dispatch_start_at=booking.start_at,
+                dispatch_end_at=booking.end_at,
+                planned_runtime_hours=runtime_hours,
+                state="reported",
+                actual_produced_qty=actual_produced_qty,
+                actual_runtime_hours=runtime_hours,
+                work_order_id=wo.id,
+                reported_by=int(current_user.id),
+                reported_at=datetime.now(),
+            )
+            db.session.add(dispatch_log)
+        else:
+            dispatch_log.state = "reported"
+            dispatch_log.actual_produced_qty = actual_produced_qty
+            dispatch_log.actual_runtime_hours = runtime_hours
+            dispatch_log.work_order_id = wo.id
+            dispatch_log.reported_by = int(current_user.id)
+            dispatch_log.reported_at = datetime.now()
+
+        # 累计写回（只在 dispatch_log 未报工时执行）
+        machine.machine_accum_produced_qty = machine.machine_accum_produced_qty + actual_produced_qty
+        machine.machine_accum_runtime_hours = machine.machine_accum_runtime_hours + runtime_hours
+        db.session.add(machine)
+
+        wo.status = "in_progress"
+        db.session.add(wo)
+        order_id = _resolve_order_id_by_work_order(wo)
+        if order_id:
+            orchestrator_engine.emit_event(
+                event_type=EVENT_PRODUCTION_OPERATION_REPORTED,
+                biz_key=f"order:{order_id}",
+                payload={
+                    "order_id": order_id,
+                    "work_order_id": int(wo.id),
+                    "source_id": int(wo.id),
+                    "version": int(datetime.now().timestamp()),
+                    "source": "routes_production.production_work_order_report.operation",
+                },
+            )
+            evt = orchestrator_engine.emit_event(
+                event_type=EVENT_PRODUCTION_REPORTED,
+                biz_key=f"order:{order_id}",
+                payload={
+                    "order_id": order_id,
+                    "source_id": int(wo.id),
+                    "version": int(datetime.now().timestamp()),
+                    "source": "routes_production.production_work_order_report",
+                },
+            )
+            orchestrator_engine.process_event(int(evt.id), created_by=int(current_user.id))
+        else:
+            orchestrator_engine.log_manual_audit(
+                level="warn",
+                message="production_reported_without_order",
+                detail={"work_order_id": int(wo.id), "preplan_id": int(wo.preplan_id)},
+            )
+        db.session.commit()
+        flash("报工成功。", "success")
+        return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+
+    @bp.route("/production/work-orders/<int:work_order_id>/quality-pass", methods=["POST"])
+    @login_required
+    @menu_required("production_preplan")
+    @capability_required("production.calc.action.run")
+    def production_work_order_quality_pass(work_order_id: int):
+        wo = db.session.get(ProductionWorkOrder, work_order_id)
+        if not wo:
+            flash("工作单不存在。", "danger")
+            return redirect(url_for("main.production_preplan_list"))
+        if wo.status not in ("in_progress", "released", "planned"):
+            flash("当前状态不允许质检通过。", "warning")
+            return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
+        wo.status = "closed"
+        db.session.add(wo)
+        order_id = _resolve_order_id_by_work_order(wo)
+        if order_id:
+            orchestrator_engine.emit_event(
+                event_type=EVENT_QUALITY_INSPECTION_STARTED,
+                biz_key=f"order:{int(order_id)}",
+                payload={
+                    "order_id": int(order_id),
+                    "source_id": int(wo.id),
+                    "version": int(datetime.now().timestamp()),
+                    "source": "routes_production.production_work_order_quality_pass.started",
+                },
+            )
+            evt = orchestrator_engine.emit_event(
+                event_type=EVENT_QUALITY_PASSED,
+                biz_key=f"order:{order_id}",
+                payload={
+                    "order_id": order_id,
+                    "source_id": int(wo.id),
+                    "version": int(datetime.now().timestamp()),
+                    "source": "routes_production.production_work_order_quality_pass",
+                },
+            )
+            orchestrator_engine.process_event(int(evt.id), created_by=int(current_user.id))
+        else:
+            orchestrator_engine.log_manual_audit(
+                level="warn",
+                message="quality_passed_without_order",
+                detail={"work_order_id": int(wo.id), "preplan_id": int(wo.preplan_id)},
+            )
+        db.session.commit()
+        flash("质检通过已记录。", "success")
+        return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
 
     # ----------------------------
     # 生产事故
@@ -963,6 +1402,17 @@ def register_production_routes(bp):
                 db.session.flush()
                 if not inc.incident_no:
                     inc.incident_no = f"INC-{inc.id:05d}"
+                orchestrator_engine.emit_event(
+                    event_type=EVENT_MACHINE_ABNORMAL,
+                    biz_key=f"incident:{int(inc.id)}",
+                    payload={
+                        "incident_id": int(inc.id),
+                        "severity": (inc.severity or "M"),
+                        "source_id": int(inc.id),
+                        "version": int(datetime.now().timestamp()),
+                        "source": "routes_production.production_incident_new",
+                    },
+                )
                 db.session.commit()
                 flash("生产事故已保存。", "success")
                 return redirect(url_for("main.production_incident_detail", incident_id=inc.id))
@@ -1028,6 +1478,29 @@ def register_production_routes(bp):
                 db.session.flush()
                 if not inc.incident_no:
                     inc.incident_no = f"INC-{inc.id:05d}"
+                if inc.status == "closed":
+                    orchestrator_engine.emit_event(
+                        event_type=EVENT_MACHINE_RECOVERED,
+                        biz_key=f"incident:{int(inc.id)}",
+                        payload={
+                            "incident_id": int(inc.id),
+                            "source_id": int(inc.id),
+                            "version": int(datetime.now().timestamp()),
+                            "source": "routes_production.production_incident_edit",
+                        },
+                    )
+                elif inc.status in ("open", "in_progress"):
+                    orchestrator_engine.emit_event(
+                        event_type=EVENT_MACHINE_ABNORMAL,
+                        biz_key=f"incident:{int(inc.id)}",
+                        payload={
+                            "incident_id": int(inc.id),
+                            "severity": (inc.severity or "M"),
+                            "source_id": int(inc.id),
+                            "version": int(datetime.now().timestamp()),
+                            "source": "routes_production.production_incident_edit",
+                        },
+                    )
                 db.session.commit()
                 flash("已更新。", "success")
                 return redirect(url_for("main.production_incident_detail", incident_id=incident_id))
@@ -1348,7 +1821,7 @@ def register_production_routes(bp):
             q = q.filter(db.or_(Product.product_code.contains(keyword), Product.name.contains(keyword)))
 
         products = q.order_by(Product.product_code.asc()).limit(500).all()
-        routings = ProductionProductRouting.query.filter(ProductionProductRouting.is_active == True).all()
+        routings = ProductionProductRouting.query.filter(ProductionProductRouting.is_active).all()
         routing_map: Dict[int, ProductionProductRouting] = {r.product_id: r for r in routings}
         template_ids = sorted({r.template_id for r in routings})
         templates = ProductionProcessTemplate.query.filter(ProductionProcessTemplate.id.in_(template_ids)).all() if template_ids else []

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}机台排班时间窗 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">机台排班时间窗</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <select class="form-select" name="machine_id" required>
+            <option value="">请选择机台</option>
+            {% for m in machines %}
+            <option value="{{ m.id }}" {% if machine_id == m.id %}selected{% endif %}>{{ m.machine_no }} - {{ m.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-3">
+        <input type="date" class="form-control" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </div>
+
+    <div class="col-md-3">
+        <input type="date" class="form-control" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </div>
+
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">生成/查询</button>
+    </div>
+
+    {% if user_can_cap('machine_schedule_booking.action.create') and machine_id %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.machine_schedule_booking_new', machine_id=machine_id) }}" class="btn btn-primary">新建时间窗</a>
+    </div>
+    {% endif %}
+</form>
+
+{% if not machine_id %}
+<div class="text-muted">请选择机台以查看排班展开结果。</div>
+{% else %}
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>模板</th>
+            <th>状态</th>
+            <th>开始</th>
+            <th>结束</th>
+            <th>备注</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td class="text-nowrap">{{ r.template.name if r.template else r.template_id }}</td>
+            <td>{{ r.state|status_zh('machine_schedule_state') }}</td>
+            <td class="text-nowrap">{{ r.start_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="text-nowrap">{{ r.end_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>{{ r.remark or '-' }}</td>
+            <td class="text-nowrap">
+                {% if user_can_cap('machine_schedule_booking.action.edit') %}
+                <a href="{{ url_for('main.machine_schedule_booking_edit', booking_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('machine_schedule_booking.action.delete') %}
+                <form method="post" action="{{ url_for('main.machine_schedule_booking_delete', booking_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该时间窗？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-muted">暂无时间窗数据</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+

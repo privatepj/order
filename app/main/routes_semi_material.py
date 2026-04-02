@@ -3,7 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 
 from flask import flash, redirect, render_template, request, send_file, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 from app import db
@@ -146,6 +146,7 @@ def register_semi_material_routes(bp):
             spec = (request.form.get("spec") or "").strip() or None
             base_unit = (request.form.get("base_unit") or "").strip() or None
             remark = (request.form.get("remark") or "").strip() or None
+            is_admin = getattr(current_user, "role_code", None) == "admin"
             if not name:
                 flash("名称为必填。", "danger")
                 return render_template("semi_material/form.html", item=item, kind=item.kind)
@@ -153,6 +154,19 @@ def register_semi_material_routes(bp):
             item.spec = spec
             item.base_unit = base_unit
             item.remark = remark
+            if is_admin:
+                su_raw = (request.form.get("standard_unit_cost") or "").strip()
+                if su_raw == "":
+                    item.standard_unit_cost = None
+                else:
+                    try:
+                        v = float(su_raw)
+                        if v < 0:
+                            raise ValueError()
+                        item.standard_unit_cost = v
+                    except ValueError:
+                        flash("标准单位成本格式不正确。", "danger")
+                        return render_template("semi_material/form.html", item=item, kind=item.kind)
             db.session.add(item)
             try:
                 db.session.commit()

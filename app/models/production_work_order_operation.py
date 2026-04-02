@@ -29,6 +29,9 @@ class ProductionWorkOrderOperation(db.Model):
     estimated_run_minutes = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     estimated_total_minutes = db.Column(db.Numeric(14, 2), nullable=False, default=0)
 
+    budget_machine_id = db.Column(db.Integer, nullable=False, default=0)
+    budget_operator_employee_id = db.Column(db.Integer, nullable=False, default=0)
+
     remark = db.Column(db.String(255))
 
     created_by = db.Column(db.Integer, nullable=False)

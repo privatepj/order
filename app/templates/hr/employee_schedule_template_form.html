@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if row else '新建' }}人员排班模板 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑' if row else '新建' }}人员排班模板</h2>
+
+<form method="post" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">人员 <span class="text-danger">*</span></label>
+        <select class="form-select" name="employee_id" required>
+            <option value="">请选择</option>
+            {% for e in employees %}
+            <option value="{{ e.id }}" {% if row and row.employee_id == e.id %}selected{% endif %}>{{ e.employee_no }} - {{ e.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">模板名称 <span class="text-danger">*</span></label>
+        <input class="form-control" name="name" maxlength="64" required value="{{ row.name if row else '' }}">
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">重复类型 <span class="text-danger">*</span></label>
+        <select class="form-select" name="repeat_kind" required>
+            {% for k in repeat_kinds %}
+            <option value="{{ k }}" {% if row and row.repeat_kind == k %}selected{% elif not row and k == 'weekly' %}selected{% endif %}>{{ k }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    {% set selected_dows = (row.days_of_week.split(',') if row and row.days_of_week else []) %}
+    <div class="col-12">
+        <label class="form-label">星期 <span class="text-danger">*</span></label>
+        <div class="d-flex flex-wrap gap-3">
+            {% for d_code, d_label in dow_list %}
+            <label class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" name="days_of_week" value="{{ d_code }}" {% if d_code|string in selected_dows %}checked{% endif %}>
+                <span class="form-check-label">{{ d_label }}</span>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">有效起始日期 <span class="text-danger">*</span></label>
+        <input type="date" class="form-control" name="valid_from" required value="{{ row.valid_from.isoformat() if row and row.valid_from else '' }}">
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">有效结束日期</label>
+        <input type="date" class="form-control" name="valid_to" value="{{ row.valid_to.isoformat() if row and row.valid_to else '' }}">
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">每日开始时间 <span class="text-danger">*</span></label>
+        <input type="time" class="form-control" name="start_time" required value="{{ row.start_time.strftime('%H:%M') if row and row.start_time else '' }}">
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">每日结束时间 <span class="text-danger">*</span></label>
+        <input type="time" class="form-control" name="end_time" required value="{{ row.end_time.strftime('%H:%M') if row and row.end_time else '' }}">
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">排班状态 <span class="text-danger">*</span></label>
+        <select class="form-select" name="state" required>
+            {% for s in schedule_states %}
+            <option value="{{ s }}" {% if (row and row.state == s) or (not row and s == 'available') %}selected{% endif %}>{{ s|status_zh('machine_schedule_state') }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-8">
+        <label class="form-label">备注</label>
+        <input class="form-control" name="remark" maxlength="255" value="{{ row.remark if row and row.remark else '' }}">
+    </div>
+
+    <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        {% if row %}
+        <a href="{{ url_for('main.hr_employee_schedule_template_list', employee_id=row.employee_id) }}" class="btn btn-outline-secondary">返回列表</a>
+        {% else %}
+        <a href="{{ url_for('main.hr_employee_schedule_template_list') }}" class="btn btn-outline-secondary">返回列表</a>
+        {% endif %}
+    </div>
+</form>
+{% endblock %}
+

@@ -5,37 +5,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>送货单 - {{ delivery.delivery_no }}</title>
     <style>
-        body { font-family: "SimSun", "宋体", serif; font-size: 12px; color: #000; margin: 16px; }
+        :root { --delivery-print-scale: {{ print_font_scale }}; }
+        body { font-family: "SimSun", "宋体", serif; font-size: calc(12px * var(--delivery-print-scale)); color: #000; margin: 16px; }
         .print-sheet { max-width: 800px; margin: 0 auto; }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .row-full { grid-column: 1 / -1; }
         table.delivery-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         table.delivery-table th, table.delivery-table td { border: 1px solid #000; padding: 4px 6px; }
-        table.delivery-table th { font-size: 10px; font-weight: normal; text-align: center; vertical-align: middle; }
-        table.delivery-table td { font-size: 12px; vertical-align: middle; }
+        table.delivery-table th { font-size: calc(10px * var(--delivery-print-scale)); font-weight: normal; text-align: center; vertical-align: middle; }
+        table.delivery-table td { font-size: calc(12px * var(--delivery-print-scale)); vertical-align: middle; }
         table.delivery-table td.col-qty { text-align: right; }
         table.delivery-table tr { page-break-inside: avoid; }
-        .company-name { font-size: 20px; margin: 8px 0; }
-        .address-tel { font-size: 12px; margin: 4px 0; }
-        .title-main { font-size: 20px; font-weight: bold; margin: 10px 0; }
-        .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0; font-size: 10px; }
+        .company-name { font-size: calc(20px * var(--delivery-print-scale)); margin: 8px 0; }
+        .address-tel { font-size: calc(12px * var(--delivery-print-scale)); margin: 4px 0; }
+        .title-main { font-size: calc(20px * var(--delivery-print-scale)); font-weight: bold; margin: 10px 0; }
+        .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0; font-size: calc(10px * var(--delivery-print-scale)); }
         .info-row .label { font-weight: normal; }
-        .foot-notes { font-size: 12px; margin: 6px 0 2px; page-break-inside: avoid; }
-        .sign-line { font-size: 12px; margin-top: 8px; page-break-inside: avoid; }
+        .foot-notes { font-size: calc(12px * var(--delivery-print-scale)); margin: 6px 0 2px; page-break-inside: avoid; }
+        .sign-line { font-size: calc(12px * var(--delivery-print-scale)); margin-top: 8px; page-break-inside: avoid; }
         .no-print { display: none; }
         @media print {
             body { margin: 0; }
             .print-sheet { width: 100%; max-width: none; }
-            .company-name { font-size: 20px; margin: 6px 0; }
-            .address-tel { font-size: 12px; margin: 3px 0; }
-            .title-main { font-size: 20px; margin: 8px 0; }
-            .info-row { font-size: 10px; margin: 2px 0; }
+            .company-name { font-size: calc(20px * var(--delivery-print-scale)); margin: 6px 0; }
+            .address-tel { font-size: calc(12px * var(--delivery-print-scale)); margin: 3px 0; }
+            .title-main { font-size: calc(20px * var(--delivery-print-scale)); margin: 8px 0; }
+            .info-row { font-size: calc(10px * var(--delivery-print-scale)); margin: 2px 0; }
             table.delivery-table th, table.delivery-table td { padding: 4px 6px; }
-            table.delivery-table th { font-size: 10px; }
-            table.delivery-table td { font-size: 12px; }
-            .foot-notes { font-size: 12px; margin: 4px 0 2px; }
-            .sign-line { font-size: 12px; margin-top: 6px; }
+            table.delivery-table th { font-size: calc(10px * var(--delivery-print-scale)); }
+            table.delivery-table td { font-size: calc(12px * var(--delivery-print-scale)); }
+            .foot-notes { font-size: calc(12px * var(--delivery-print-scale)); margin: 4px 0 2px; }
+            .sign-line { font-size: calc(12px * var(--delivery-print-scale)); margin-top: 6px; }
         }
     </style>
 </head>

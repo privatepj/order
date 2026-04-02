@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}机台排班模板 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">机台排班模板</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <select class="form-select" name="machine_id">
+            <option value="">全部机台</option>
+            {% for m in machines %}
+            <option value="{{ m.id }}" {% if machine_id == m.id %}selected{% endif %}>{{ m.machine_no }} - {{ m.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+    {% if user_can_cap('machine_schedule_template.action.create') %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.machine_schedule_template_new') }}" class="btn btn-primary">新建模板</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>机台</th>
+            <th>模板名称</th>
+            <th>重复</th>
+            <th>星期</th>
+            <th>有效期</th>
+            <th style="width:180px;">每日时间窗</th>
+            <th>状态</th>
+            <th>备注</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.machine.machine_no if r.machine else r.machine_id }}</td>
+            <td>{{ r.name }}</td>
+            <td>{{ r.repeat_kind }}</td>
+            <td class="text-nowrap">{{ r.days_of_week }}</td>
+            <td class="text-nowrap">{{ r.valid_from.isoformat() if r.valid_from else '-' }} - {{ r.valid_to.isoformat() if r.valid_to else '长期' }}</td>
+            <td class="text-nowrap">{{ r.start_time.strftime('%H:%M') if r.start_time else '-' }} - {{ r.end_time.strftime('%H:%M') if r.end_time else '-' }}</td>
+            <td>{{ r.state|status_zh('machine_schedule_state') }}</td>
+            <td>{{ r.remark or '-' }}</td>
+            <td class="text-nowrap">
+                {% if user_can_cap('machine_schedule_template.action.edit') %}
+                <a href="{{ url_for('main.machine_schedule_template_edit', tpl_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('machine_schedule_template.action.delete') %}
+                <form method="post" action="{{ url_for('main.machine_schedule_template_delete', tpl_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该排班模板？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="text-muted">暂无数据</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+

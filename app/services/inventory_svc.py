@@ -21,6 +21,8 @@ from app.models import (
     Product,
     SemiMaterial,
 )
+from app.services import orchestrator_engine
+from app.services.orchestrator_contracts import EVENT_INVENTORY_CHANGED
 
 INV_FINISHED = "finished"
 INV_SEMI = "semi"
@@ -132,6 +134,18 @@ def create_delivery_outbound_movements(
             movement_batch_id=batch.id,
         )
         db.session.add(m)
+    related_order_ids = sorted({int(lp.delivery_item.order_id) for lp in lines if getattr(lp.delivery_item, "order_id", None)})
+    for oid in related_order_ids:
+        orchestrator_engine.emit_event(
+            event_type=EVENT_INVENTORY_CHANGED,
+            biz_key=f"order:{oid}",
+            payload={
+                "order_id": oid,
+                "source_id": int(delivery.id),
+                "version": int(delivery.updated_at.timestamp()) if getattr(delivery, "updated_at", None) else int(delivery.id),
+                "source": "inventory_svc.create_delivery_outbound_movements",
+            },
+        )
 
 
 def delete_delivery_sourced_movements(delivery_id: int) -> int:
@@ -635,6 +649,16 @@ def create_manual_movement(
         movement_batch_id=movement_batch_id,
     )
     db.session.add(m)
+    db.session.flush()
+    orchestrator_engine.emit_event(
+        event_type=EVENT_INVENTORY_CHANGED,
+        biz_key=f"inventory_movement:{m.id}",
+        payload={
+            "source_id": int(m.id),
+            "version": int(m.id),
+            "source": "inventory_svc.create_manual_movement",
+        },
+    )
     return m
 
 

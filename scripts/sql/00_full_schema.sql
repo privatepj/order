@@ -147,6 +147,7 @@ CREATE TABLE `semi_material` (
   `name` varchar(128) NOT NULL COMMENT '名称',
   `spec` varchar(128) DEFAULT NULL COMMENT '规格',
   `base_unit` varchar(16) DEFAULT NULL COMMENT '基础单位',
+  `standard_unit_cost` decimal(18,4) DEFAULT NULL COMMENT '标准单位成本（元/单位；预算用）',
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -403,6 +404,8 @@ CREATE TABLE `production_work_order_operation` (
   `estimated_setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '预计准备时间',
   `estimated_run_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '预计运行时间',
   `estimated_total_minutes` decimal(14,2) NOT NULL DEFAULT 0 COMMENT '预计总工时（分钟）',
+  `budget_machine_id` int unsigned NOT NULL DEFAULT 0 COMMENT '预算指定 machine.id（machine_type 工序）',
+  `budget_operator_employee_id` int unsigned NOT NULL DEFAULT 0 COMMENT '预算指定操作员 hr_employee.id',
   `remark` varchar(255) DEFAULT NULL,
   `created_by` int unsigned NOT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -532,6 +535,7 @@ CREATE TABLE `production_material_plan_detail` (
 CREATE TABLE `production_cost_plan_detail` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `preplan_id` int unsigned NOT NULL,
+  `scenario` varchar(16) NOT NULL DEFAULT 'optimized' COMMENT 'optimized=最小期望成本 assigned=指定资源',
   `work_order_id` int unsigned NOT NULL,
   `operation_id` int unsigned DEFAULT NULL,
   `cost_category` varchar(16) NOT NULL COMMENT 'material/labor/machine/overhead',
@@ -544,6 +548,7 @@ CREATE TABLE `production_cost_plan_detail` (
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_cost_plan_preplan` (`preplan_id`),
+  KEY `idx_cost_plan_preplan_scenario` (`preplan_id`,`scenario`),
   KEY `idx_cost_plan_wo` (`work_order_id`),
   KEY `idx_cost_plan_cat` (`cost_category`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='成本测算分项明细';
@@ -824,6 +829,7 @@ CREATE TABLE `audit_log` (
 -- ----------------------------
 -- 人力资源（部门 / 人员 / 工资 / 绩效；逻辑关联 company / user；无 DB 外键）
 -- ----------------------------
+DROP TABLE IF EXISTS `hr_department_capability_map`;
 DROP TABLE IF EXISTS `hr_performance_review`;
 DROP TABLE IF EXISTS `hr_payroll_line`;
 DROP TABLE IF EXISTS `hr_employee`;
@@ -868,6 +874,9 @@ CREATE TABLE `hr_payroll_line` (
   `company_id` int unsigned NOT NULL,
   `employee_id` int unsigned NOT NULL COMMENT 'hr_employee.id',
   `period` char(7) NOT NULL COMMENT '账期 YYYY-MM',
+  `wage_kind` varchar(16) NOT NULL DEFAULT 'monthly' COMMENT '月薪/时薪：monthly/hourly',
+  `work_hours` decimal(12,2) DEFAULT NULL COMMENT '换算时薪/产能成本所用工时（小时；月薪口径可填）',
+  `hourly_rate` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '时薪（元/小时；小时口径使用）',
   `base_salary` decimal(14,2) NOT NULL DEFAULT 0.00,
   `allowance` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '津贴',
   `deduction` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '扣款',
@@ -902,6 +911,7 @@ CREATE TABLE `hr_performance_review` (
 -- ----------------------------
 -- 机台管理（机台种类 / 机台台账 / 运转情况；逻辑关联 user；无 DB 外键）
 -- ----------------------------
+DROP TABLE IF EXISTS `machine_operator_allowlist`;
 DROP TABLE IF EXISTS `machine_runtime_log`;
 DROP TABLE IF EXISTS `machine`;
 DROP TABLE IF EXISTS `machine_type`;
@@ -911,6 +921,7 @@ CREATE TABLE `machine_type` (
   `name` varchar(64) NOT NULL COMMENT '机台种类名称',
   `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=启用 0=停用',
   `remark` varchar(255) DEFAULT NULL,
+  `default_capability_hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '该机种操作默认对应的能力工位(hr_department.id)；0=未配置',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -924,10 +935,15 @@ CREATE TABLE `machine` (
   `name` varchar(64) NOT NULL COMMENT '机台名称',
   `machine_type_id` int unsigned NOT NULL COMMENT '机台种类 machine_type.id',
   `capacity_per_hour` decimal(12,2) NOT NULL DEFAULT 0.00 COMMENT '标准产能（件/小时）',
+  `machine_cost_purchase_price` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '购入价格（管理员维护）',
+  `machine_accum_produced_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '机台累计生产个数',
+  `machine_accum_runtime_hours` decimal(14,4) NOT NULL DEFAULT 0.0000 COMMENT '机台累计运行时长（小时）',
+  `machine_single_run_cost` decimal(14,2) DEFAULT NULL COMMENT '机台单次运行成本（管理员维护）',
   `status` varchar(16) NOT NULL DEFAULT 'enabled' COMMENT 'enabled/disabled/maintenance/scrapped',
   `location` varchar(128) DEFAULT NULL COMMENT '车间/产线',
   `owner_user_id` int unsigned DEFAULT NULL COMMENT '责任人 user.id',
   `remark` varchar(255) DEFAULT NULL,
+  `default_capability_hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '覆盖机种默认；0=沿用机种',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -952,6 +968,193 @@ CREATE TABLE `machine_runtime_log` (
   KEY `idx_machine_runtime_started` (`started_at`),
   KEY `idx_machine_runtime_open` (`machine_id`,`ended_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台运转情况记录';
+
+-- ----------------------------
+-- 机台排班（机台排班模板 / 排班展开时间窗；无 DB 外键）
+-- ----------------------------
+DROP TABLE IF EXISTS `machine_schedule_booking`;
+DROP TABLE IF EXISTS `machine_schedule_template`;
+
+CREATE TABLE `machine_schedule_template` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `machine_id` int unsigned NOT NULL COMMENT '机台 machine.id',
+  `name` varchar(64) NOT NULL COMMENT '排班模板名称',
+  `repeat_kind` varchar(16) NOT NULL DEFAULT 'weekly' COMMENT '重复类型：weekly',
+  `days_of_week` varchar(32) NOT NULL COMMENT '星期列表（0=周日..6=周六），逗号分隔',
+  `valid_from` date NOT NULL COMMENT '有效起始日期',
+  `valid_to` date DEFAULT NULL COMMENT '有效结束日期，NULL=长期',
+  `start_time` time NOT NULL COMMENT '每天开始时间',
+  `end_time` time NOT NULL COMMENT '每天结束时间；若 <= start_time 则表示跨日',
+  `state` varchar(16) NOT NULL COMMENT 'available/unavailable',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL COMMENT '创建人 user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ms_tpl_machine` (`machine_id`),
+  KEY `idx_ms_tpl_valid` (`valid_from`,`valid_to`),
+  KEY `idx_ms_tpl_state` (`state`),
+  KEY `idx_ms_tpl_dow` (`days_of_week`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台排班模板（可重复）';
+
+CREATE TABLE `machine_schedule_booking` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `machine_id` int unsigned NOT NULL COMMENT '机台 machine.id',
+  `template_id` int unsigned NOT NULL COMMENT '机台排班模板 machine_schedule_template.id',
+  `state` varchar(16) NOT NULL COMMENT 'available/unavailable',
+  `start_at` datetime NOT NULL COMMENT '开始时间（分钟粒度）',
+  `end_at` datetime NOT NULL COMMENT '结束时间（分钟粒度）',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL COMMENT '创建人 user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ms_booking_template_start` (`template_id`,`start_at`),
+  KEY `idx_ms_booking_machine_start` (`machine_id`,`start_at`),
+  KEY `idx_ms_booking_machine_end` (`machine_id`,`end_at`),
+  KEY `idx_ms_booking_state_start` (`state`,`start_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台排班展开时间窗（可用/不可用）';
+
+-- ----------------------------
+-- 机台排产log（对应排班 booking 的排产与报工回写累计）
+-- ----------------------------
+CREATE TABLE `machine_schedule_dispatch_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `machine_id` int unsigned NOT NULL COMMENT '机台 machine.id',
+  `booking_id` int unsigned NOT NULL COMMENT '机台排班时间窗 machine_schedule_booking.id',
+  `dispatch_start_at` datetime DEFAULT NULL COMMENT '排产开始（冗余）',
+  `dispatch_end_at` datetime DEFAULT NULL COMMENT '排产结束（冗余）',
+  `planned_runtime_hours` decimal(14,4) NOT NULL DEFAULT 0.0000 COMMENT '计划运行时长（小时）',
+  `state` varchar(16) NOT NULL DEFAULT 'scheduled' COMMENT 'scheduled/reported',
+  `actual_produced_qty` decimal(18,4) DEFAULT NULL COMMENT '实际产量（个）',
+  `actual_runtime_hours` decimal(14,4) DEFAULT NULL COMMENT '实际运行时长（小时）',
+  `work_order_id` int unsigned DEFAULT NULL COMMENT '报工对应 work_order.id',
+  `reported_by` int unsigned DEFAULT NULL COMMENT '报工人 user.id',
+  `reported_at` datetime DEFAULT NULL COMMENT '报工时间',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ms_dispatch_booking` (`booking_id`),
+  KEY `idx_ms_dispatch_machine_start` (`machine_id`,`dispatch_start_at`),
+  KEY `idx_ms_dispatch_state` (`state`),
+  KEY `idx_ms_dispatch_work_order` (`work_order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台排产记录（booking -> dispatch log）';
+
+CREATE TABLE `machine_operator_allowlist` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `machine_id` int unsigned NOT NULL COMMENT 'machine.id',
+  `employee_id` int unsigned NOT NULL COMMENT 'hr_employee.id',
+  `capability_hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '能力表用工位；0=取该员工在能力表中的最优一条',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_machine_employee` (`machine_id`,`employee_id`),
+  KEY `idx_moa_machine` (`machine_id`),
+  KEY `idx_moa_employee` (`employee_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台操作员白名单';
+
+CREATE TABLE `hr_department_capability_map` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT 'company.id',
+  `process_hr_department_id` int unsigned NOT NULL COMMENT '路由/工序快照中的部门 id',
+  `capability_hr_department_id` int unsigned NOT NULL COMMENT 'hr_employee_capability.hr_department_id',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `remark` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dept_cap_map` (`company_id`,`process_hr_department_id`,`capability_hr_department_id`),
+  KEY `idx_dept_cap_company_process` (`company_id`,`process_hr_department_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工序部门与能力工位映射';
+
+-- ----------------------------
+-- 人员排产（人员排班模板 / 排产时间窗 + 工作log；无 DB 外键）
+-- ----------------------------
+DROP TABLE IF EXISTS `hr_employee_schedule_booking`;
+DROP TABLE IF EXISTS `hr_employee_schedule_template`;
+
+CREATE TABLE `hr_employee_schedule_template` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `employee_id` int unsigned NOT NULL COMMENT '人员 hr_employee.id',
+  `name` varchar(64) NOT NULL COMMENT '排班模板名称',
+  `repeat_kind` varchar(16) NOT NULL DEFAULT 'weekly' COMMENT '重复类型：weekly',
+  `days_of_week` varchar(32) NOT NULL COMMENT '星期列表（0=周日..6=周六），逗号分隔',
+  `valid_from` date NOT NULL COMMENT '有效起始日期',
+  `valid_to` date DEFAULT NULL COMMENT '有效结束日期，NULL=长期',
+  `start_time` time NOT NULL COMMENT '每天开始时间',
+  `end_time` time NOT NULL COMMENT '每天结束时间；若 <= start_time 则表示跨日',
+  `state` varchar(16) NOT NULL COMMENT 'available/unavailable',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL COMMENT '创建人 user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_hes_tpl_employee` (`employee_id`),
+  KEY `idx_hes_tpl_valid` (`valid_from`,`valid_to`),
+  KEY `idx_hes_tpl_state` (`state`),
+  KEY `idx_hes_tpl_dow` (`days_of_week`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人员排班模板（可重复）';
+
+CREATE TABLE `hr_employee_schedule_booking` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `employee_id` int unsigned NOT NULL COMMENT '人员 hr_employee.id',
+  `template_id` int unsigned NOT NULL COMMENT '人员排班模板 hr_employee_schedule_template.id',
+  `state` varchar(16) NOT NULL COMMENT 'available/unavailable',
+  `start_at` datetime NOT NULL COMMENT '开始时间（分钟粒度）',
+  `end_at` datetime NOT NULL COMMENT '结束时间（分钟粒度）',
+  `remark` varchar(255) DEFAULT NULL COMMENT '排产/工时/工单备注（应用层约定口径）',
+  `created_by` int unsigned NOT NULL COMMENT '创建人 user.id',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  -- 工作log（手工维护；应用层保证一致性）
+  `hr_department_id` int unsigned DEFAULT NULL COMMENT '工位 hr_department.id（应用层约定）',
+  `work_order_id` int unsigned DEFAULT NULL COMMENT '生产工单 production_work_order.id',
+  `product_id` int unsigned DEFAULT NULL COMMENT '成品 product.id（由 work_order_id 推导；成品才写入）',
+  `unit` varchar(16) DEFAULT NULL COMMENT '单位（由 product.base_unit 回填）',
+  `good_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '良品数量',
+  `bad_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '不良数量',
+  `produced_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '总产出（good+bad）',
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_hes_booking_template_start` (`template_id`,`start_at`),
+  KEY `idx_hes_booking_employee_start` (`employee_id`,`start_at`),
+  KEY `idx_hes_booking_employee_end` (`employee_id`,`end_at`),
+  KEY `idx_hes_booking_state_start` (`state`,`start_at`),
+  KEY `idx_hes_booking_department` (`hr_department_id`),
+  KEY `idx_hes_booking_work_order` (`work_order_id`),
+  KEY `idx_hes_booking_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人员排产时间窗（可用/不可用）与工作log';
+
+-- ----------------------------
+-- 人员能力表：按员工 + 工位（hr_department_id）累计统计（无 DB 外键）
+-- ----------------------------
+CREATE TABLE `hr_employee_capability` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
+  `employee_id` int unsigned NOT NULL COMMENT 'hr_employee.id',
+  `hr_department_id` int unsigned NOT NULL COMMENT 'hr_department.id（工种/工位维度）',
+
+  `good_qty_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计良品数量',
+  `bad_qty_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计不良数量',
+  `produced_qty_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计总产出（good+bad）',
+  `work_order_cnt_total` int unsigned NOT NULL DEFAULT 0 COMMENT '累计干过的工单数（基于 work_order_id distinct 统计）',
+  `worked_minutes_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计工时（分钟；用于小时产能/成本）',
+  `labor_cost_total` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT '累计劳动力成本（用于单件成本）',
+
+  `processed_to` datetime DEFAULT NULL COMMENT '能力表累计进度：已覆盖到的截止时间（用于按小时增量计算）',
+
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_hec_company_emp_dept` (`company_id`,`employee_id`,`hr_department_id`),
+  KEY `idx_hec_employee` (`employee_id`,`hr_department_id`),
+  KEY `idx_hec_processed_to` (`processed_to`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人员能力表（累计统计）';
 
 -- ----------------------------
 -- 采购管理（请购 / 采购单 / 收货 / 入库；逻辑关联 company / user；无 DB 外键）
@@ -1047,6 +1250,128 @@ CREATE TABLE `purchase_stock_in` (
   KEY `idx_purchase_stock_in_creator` (`created_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购入库记录';
 
+CREATE TABLE `orchestrator_event` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_type` varchar(64) NOT NULL COMMENT '事件类型',
+  `biz_key` varchar(128) NOT NULL COMMENT '业务键，如 order:123',
+  `trace_id` varchar(64) DEFAULT NULL COMMENT '链路跟踪',
+  `idempotency_key` varchar(128) NOT NULL COMMENT '幂等键',
+  `payload` json DEFAULT NULL,
+  `status` varchar(16) NOT NULL DEFAULT 'new' COMMENT 'new/processing/done/failed',
+  `error_message` varchar(500) DEFAULT NULL,
+  `attempts` int NOT NULL DEFAULT 0,
+  `occurred_at` datetime NOT NULL,
+  `processed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_orch_event_idempotency` (`idempotency_key`),
+  KEY `idx_orch_event_type` (`event_type`),
+  KEY `idx_orch_event_biz_key` (`biz_key`),
+  KEY `idx_orch_event_trace` (`trace_id`),
+  KEY `idx_orch_event_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='调度引擎事件';
+
+CREATE TABLE `orchestrator_action` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_id` bigint unsigned NOT NULL COMMENT '关联 orchestrator_event.id（逻辑外键）',
+  `action_type` varchar(64) NOT NULL COMMENT '动作类型',
+  `action_key` varchar(128) NOT NULL COMMENT '动作幂等键',
+  `payload` json DEFAULT NULL,
+  `status` varchar(16) NOT NULL DEFAULT 'pending' COMMENT 'pending/done/failed/dead',
+  `retry_count` int NOT NULL DEFAULT 0,
+  `next_retry_at` datetime DEFAULT NULL,
+  `error_message` varchar(500) DEFAULT NULL,
+  `executed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_orch_action_key` (`action_key`),
+  KEY `idx_orch_action_event` (`event_id`),
+  KEY `idx_orch_action_type` (`action_type`),
+  KEY `idx_orch_action_status` (`status`),
+  KEY `idx_orch_action_next_retry` (`next_retry_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='调度引擎动作';
+
+CREATE TABLE `orchestrator_audit_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_id` bigint unsigned DEFAULT NULL COMMENT '关联 orchestrator_event.id（逻辑外键）',
+  `action_id` bigint unsigned DEFAULT NULL COMMENT '关联 orchestrator_action.id（逻辑外键）',
+  `level` varchar(16) NOT NULL DEFAULT 'info',
+  `message` varchar(500) NOT NULL,
+  `detail` json DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_orch_audit_event` (`event_id`),
+  KEY `idx_orch_audit_action` (`action_id`),
+  KEY `idx_orch_audit_level` (`level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='调度引擎审计日志';
+
+CREATE TABLE `orchestrator_ai_advice` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_id` bigint unsigned NOT NULL COMMENT '关联 orchestrator_event.id（逻辑外键）',
+  `advice_type` varchar(64) NOT NULL COMMENT '建议类型',
+  `recommended_action` varchar(128) NOT NULL COMMENT '建议动作',
+  `confidence` decimal(5,4) DEFAULT NULL COMMENT '置信度 0-1',
+  `reason` varchar(1000) DEFAULT NULL COMMENT '建议理由',
+  `meta` json DEFAULT NULL,
+  `is_adopted` tinyint(1) NOT NULL DEFAULT 0,
+  `adopted_by` int unsigned DEFAULT NULL COMMENT '采纳人 user.id（逻辑外键）',
+  `adopted_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_orch_advice_event` (`event_id`),
+  KEY `idx_orch_advice_adopted` (`is_adopted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='调度引擎AI建议';
+
+CREATE TABLE `orchestrator_rule_profile` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `rule_code` varchar(64) NOT NULL,
+  `rule_name` varchar(128) NOT NULL,
+  `allow_alternative` tinyint(1) NOT NULL DEFAULT 0,
+  `allow_outsource` tinyint(1) NOT NULL DEFAULT 0,
+  `allow_secondary_supplier` tinyint(1) NOT NULL DEFAULT 0,
+  `priority` int NOT NULL DEFAULT 100,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `remark` varchar(255) DEFAULT NULL,
+  `extra_json` json DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_orch_rule_code` (`rule_code`),
+  KEY `idx_orch_rule_active_priority` (`is_active`, `priority`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Orchestrator规则画像';
+
+CREATE TABLE `orchestrator_replay_job` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_id` bigint unsigned NOT NULL COMMENT 'logic ref orchestrator_event.id',
+  `dry_run` tinyint(1) NOT NULL DEFAULT 0,
+  `allow_high_risk` tinyint(1) NOT NULL DEFAULT 0,
+  `selected_actions` json DEFAULT NULL,
+  `blocked_actions` json DEFAULT NULL,
+  `status` varchar(16) NOT NULL DEFAULT 'done',
+  `created_by` int unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_orch_replay_job_event` (`event_id`),
+  KEY `idx_orch_replay_job_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Orchestrator条件重放任务日志';
+
+CREATE TABLE `orchestrator_ai_advice_metric` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `advice_id` bigint unsigned NOT NULL COMMENT 'logic ref orchestrator_ai_advice.id',
+  `event_id` bigint unsigned NOT NULL COMMENT 'logic ref orchestrator_event.id',
+  `advice_type` varchar(64) NOT NULL,
+  `is_adopted` tinyint(1) NOT NULL DEFAULT 0,
+  `adopted_latency_seconds` int DEFAULT NULL,
+  `result_score` decimal(9,4) DEFAULT NULL,
+  `metric_note` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_orch_ai_metric_event` (`event_id`),
+  KEY `idx_orch_ai_metric_type_adopted` (`advice_type`, `is_adopted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Orchestrator AI建议采纳评估明细';
+
 -- ----------------------------
 -- 导航与细项能力（RBAC 库表，与 run_15/run_16 一致）
 -- ----------------------------
@@ -1106,7 +1431,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO `role` (`name`, `code`, `description`, `allowed_menu_keys`) VALUES
 ('管理员', 'admin', '系统管理员', NULL),
 ('销售', 'sales', '销售员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
-('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops","customer","product","semi_material","bom","production_preplan","production_incident","production_process","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
+('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops_finished","inventory_ops_semi","inventory_ops_material","customer","product","semi_material","bom","production_preplan","production_incident","production_process","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
 ('财务', 'finance', '财务人员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
 ('待分配', 'pending', '注册后等待管理员分配', CAST('[]' AS JSON));
 
@@ -1125,7 +1450,10 @@ INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sor
 (3, 2, 'delivery', '送货', 'main.delivery_list', 10, 1, 0, 1, 20),
 (4, 2, 'express', '快递', 'main.express_company_list', 20, 1, 0, 1, 80),
 (5, 2, 'inventory_query', '库存查询', 'main.inventory_stock_query', 30, 1, 0, 1, 85),
-(6, 2, 'inventory_ops', '库存录入', 'main.inventory_list', 40, 1, 0, 1, 86),
+(6, 2, 'inventory_ops', '库存录入', NULL, 40, 1, 0, 0, NULL),
+(39, 6, 'inventory_ops_finished', '成品录入', 'main.inventory_finished_entry', 10, 1, 0, 1, 86),
+(40, 6, 'inventory_ops_semi', '半成品录入', 'main.inventory_semi_entry', 20, 1, 0, 1, 87),
+(41, 6, 'inventory_ops_material', '材料录入', 'main.inventory_material_entry', 30, 1, 0, 1, 88),
 (21, NULL, 'production', '生产管理', NULL, 15, 1, 0, 0, NULL),
 (36, 21, 'production_preplan', '预生产计划', 'main.production_preplan_list', 10, 1, 0, 1, 87),
 (37, 21, 'production_incident', '生产事故', 'main.production_incident_list', 20, 1, 0, 1, 88),
@@ -1216,6 +1544,51 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('inventory_ops.daily.detail', '库存录入：日结详情', 'inventory_ops', '库存录入', 110),
 ('inventory_ops.daily.edit', '库存录入：编辑日结', 'inventory_ops', '库存录入', 120),
 ('inventory_ops.daily.delete', '库存录入：删除日结', 'inventory_ops', '库存录入', 130),
+('inventory_ops_finished.api.products_search', '成品录入：产品搜索接口', 'inventory_ops_finished', '成品录入', 10),
+('inventory_ops_finished.api.suggest_storage_area', '成品录入：仓储区建议接口', 'inventory_ops_finished', '成品录入', 20),
+('inventory_ops_finished.movement.list', '成品录入：库存批次列表', 'inventory_ops_finished', '成品录入', 25),
+('inventory_ops_finished.movement.create', '成品录入：手工出入库', 'inventory_ops_finished', '成品录入', 30),
+('inventory_ops_finished.movement.delete', '成品录入：删除进出明细', 'inventory_ops_finished', '成品录入', 40),
+('inventory_ops_finished.movement_batch.void', '成品录入：撤销手工/导入批次', 'inventory_ops_finished', '成品录入', 45),
+('inventory_ops_finished.opening.list', '成品录入：期初列表', 'inventory_ops_finished', '成品录入', 50),
+('inventory_ops_finished.opening.create', '成品录入：新建期初', 'inventory_ops_finished', '成品录入', 60),
+('inventory_ops_finished.opening.edit', '成品录入：编辑期初', 'inventory_ops_finished', '成品录入', 70),
+('inventory_ops_finished.opening.delete', '成品录入：删除期初', 'inventory_ops_finished', '成品录入', 80),
+('inventory_ops_finished.daily.list', '成品录入：日结列表', 'inventory_ops_finished', '成品录入', 90),
+('inventory_ops_finished.daily.create', '成品录入：新建日结', 'inventory_ops_finished', '成品录入', 100),
+('inventory_ops_finished.daily.detail', '成品录入：日结详情', 'inventory_ops_finished', '成品录入', 110),
+('inventory_ops_finished.daily.edit', '成品录入：编辑日结', 'inventory_ops_finished', '成品录入', 120),
+('inventory_ops_finished.daily.delete', '成品录入：删除日结', 'inventory_ops_finished', '成品录入', 130),
+('inventory_ops_semi.api.products_search', '半成品录入：产品搜索接口', 'inventory_ops_semi', '半成品录入', 10),
+('inventory_ops_semi.api.suggest_storage_area', '半成品录入：仓储区建议接口', 'inventory_ops_semi', '半成品录入', 20),
+('inventory_ops_semi.movement.list', '半成品录入：库存批次列表', 'inventory_ops_semi', '半成品录入', 25),
+('inventory_ops_semi.movement.create', '半成品录入：手工出入库', 'inventory_ops_semi', '半成品录入', 30),
+('inventory_ops_semi.movement.delete', '半成品录入：删除进出明细', 'inventory_ops_semi', '半成品录入', 40),
+('inventory_ops_semi.movement_batch.void', '半成品录入：撤销手工/导入批次', 'inventory_ops_semi', '半成品录入', 45),
+('inventory_ops_semi.opening.list', '半成品录入：期初列表', 'inventory_ops_semi', '半成品录入', 50),
+('inventory_ops_semi.opening.create', '半成品录入：新建期初', 'inventory_ops_semi', '半成品录入', 60),
+('inventory_ops_semi.opening.edit', '半成品录入：编辑期初', 'inventory_ops_semi', '半成品录入', 70),
+('inventory_ops_semi.opening.delete', '半成品录入：删除期初', 'inventory_ops_semi', '半成品录入', 80),
+('inventory_ops_semi.daily.list', '半成品录入：日结列表', 'inventory_ops_semi', '半成品录入', 90),
+('inventory_ops_semi.daily.create', '半成品录入：新建日结', 'inventory_ops_semi', '半成品录入', 100),
+('inventory_ops_semi.daily.detail', '半成品录入：日结详情', 'inventory_ops_semi', '半成品录入', 110),
+('inventory_ops_semi.daily.edit', '半成品录入：编辑日结', 'inventory_ops_semi', '半成品录入', 120),
+('inventory_ops_semi.daily.delete', '半成品录入：删除日结', 'inventory_ops_semi', '半成品录入', 130),
+('inventory_ops_material.api.products_search', '材料录入：产品搜索接口', 'inventory_ops_material', '材料录入', 10),
+('inventory_ops_material.api.suggest_storage_area', '材料录入：仓储区建议接口', 'inventory_ops_material', '材料录入', 20),
+('inventory_ops_material.movement.list', '材料录入：库存批次列表', 'inventory_ops_material', '材料录入', 25),
+('inventory_ops_material.movement.create', '材料录入：手工出入库', 'inventory_ops_material', '材料录入', 30),
+('inventory_ops_material.movement.delete', '材料录入：删除进出明细', 'inventory_ops_material', '材料录入', 40),
+('inventory_ops_material.movement_batch.void', '材料录入：撤销手工/导入批次', 'inventory_ops_material', '材料录入', 45),
+('inventory_ops_material.opening.list', '材料录入：期初列表', 'inventory_ops_material', '材料录入', 50),
+('inventory_ops_material.opening.create', '材料录入：新建期初', 'inventory_ops_material', '材料录入', 60),
+('inventory_ops_material.opening.edit', '材料录入：编辑期初', 'inventory_ops_material', '材料录入', 70),
+('inventory_ops_material.opening.delete', '材料录入：删除期初', 'inventory_ops_material', '材料录入', 80),
+('inventory_ops_material.daily.list', '材料录入：日结列表', 'inventory_ops_material', '材料录入', 90),
+('inventory_ops_material.daily.create', '材料录入：新建日结', 'inventory_ops_material', '材料录入', 100),
+('inventory_ops_material.daily.detail', '材料录入：日结详情', 'inventory_ops_material', '材料录入', 110),
+('inventory_ops_material.daily.edit', '材料录入：编辑日结', 'inventory_ops_material', '材料录入', 120),
+('inventory_ops_material.daily.delete', '材料录入：删除日结', 'inventory_ops_material', '材料录入', 130),
 ('customer.filter.keyword', '客户列表：关键词搜索', 'customer', '客户', 10),
 ('customer.action.create', '客户：新建', 'customer', '客户', 20),
 ('customer.action.edit', '客户：编辑', 'customer', '客户', 30),
@@ -1331,7 +1704,15 @@ SELECT r.`id`, 'inventory_query' FROM `role` r
 WHERE r.`allowed_menu_keys` IS NOT NULL AND JSON_CONTAINS(r.`allowed_menu_keys`, '"inventory"', '$');
 
 INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
-SELECT r.`id`, 'inventory_ops' FROM `role` r
+SELECT r.`id`, 'inventory_ops_finished' FROM `role` r
+WHERE r.`allowed_menu_keys` IS NOT NULL AND JSON_CONTAINS(r.`allowed_menu_keys`, '"inventory"', '$');
+
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'inventory_ops_semi' FROM `role` r
+WHERE r.`allowed_menu_keys` IS NOT NULL AND JSON_CONTAINS(r.`allowed_menu_keys`, '"inventory"', '$');
+
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'inventory_ops_material' FROM `role` r
 WHERE r.`allowed_menu_keys` IS NOT NULL AND JSON_CONTAINS(r.`allowed_menu_keys`, '"inventory"', '$');
 
 INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
@@ -1390,6 +1771,116 @@ WHERE r.`allowed_capability_keys` IS NOT NULL
 
 -- 与 run_22 一致：拥有「删除进出明细」的角色同步获得「撤销手工/导入批次」
 INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
-SELECT `role_id`, 'inventory_ops.movement_batch.void'
+SELECT `role_id`, 'inventory_ops_finished.movement_batch.void'
 FROM `role_allowed_capability`
-WHERE `cap_code` = 'inventory_ops.movement.delete';
+WHERE `cap_code` = 'inventory_ops_finished.movement.delete';
+
+INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
+SELECT `role_id`, 'inventory_ops_semi.movement_batch.void'
+FROM `role_allowed_capability`
+WHERE `cap_code` = 'inventory_ops_semi.movement.delete';
+
+INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
+SELECT `role_id`, 'inventory_ops_material.movement_batch.void'
+FROM `role_allowed_capability`
+WHERE `cap_code` = 'inventory_ops_material.movement.delete';
+
+-- ----------------------------
+-- 机台排班模块：RBAC 种子（machine_schedule + 能力键 + warehouse 可访问）
+-- ----------------------------
+SET @nav_machine_id = (SELECT `id` FROM `sys_nav_item` WHERE `code`='nav_machine' LIMIT 1);
+
+INSERT INTO `sys_nav_item` (
+  `parent_id`, `code`, `title`, `endpoint`, `sort_order`,
+  `is_active`, `admin_only`, `is_assignable`, `landing_priority`
+) VALUES
+  (@nav_machine_id, 'machine_schedule', '机台排班', 'main.machine_schedule_template_list', 40, 1, 0, 1, 99)
+ON DUPLICATE KEY UPDATE
+  `parent_id`=VALUES(`parent_id`),
+  `title`=VALUES(`title`),
+  `endpoint`=VALUES(`endpoint`),
+  `sort_order`=VALUES(`sort_order`),
+  `admin_only`=VALUES(`admin_only`),
+  `is_assignable`=VALUES(`is_assignable`),
+  `landing_priority`=VALUES(`landing_priority`);
+
+INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `sort_order`) VALUES
+('machine_schedule_template.action.create', '机台排班：模板新建', 'machine_schedule', '机台管理', 900),
+('machine_schedule_template.action.edit', '机台排班：模板编辑', 'machine_schedule', '机台管理', 910),
+('machine_schedule_template.action.delete', '机台排班：模板删除', 'machine_schedule', '机台管理', 920),
+('machine_schedule_booking.action.create', '机台排班：时间窗新建/生成', 'machine_schedule', '机台管理', 930),
+('machine_schedule_booking.action.edit', '机台排班：时间窗编辑', 'machine_schedule', '机台管理', 940),
+('machine_schedule_booking.action.delete', '机台排班：时间窗删除', 'machine_schedule', '机台管理', 950)
+ON DUPLICATE KEY UPDATE
+  `title`=VALUES(`title`),
+  `nav_item_code`=VALUES(`nav_item_code`),
+  `group_label`=VALUES(`group_label`),
+  `sort_order`=VALUES(`sort_order`);
+
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'machine_schedule' FROM `role` r WHERE r.`code`='warehouse';
+
+-- ----------------------------
+-- 人员排产模块：RBAC 种子（hr_employee_schedule + 能力键 + warehouse 可访问）
+-- ----------------------------
+SET @nav_hr_employee_schedule := (SELECT `id` FROM `sys_nav_item` WHERE `code`='nav_hr' LIMIT 1);
+
+INSERT INTO `sys_nav_item` (
+  `parent_id`, `code`, `title`, `endpoint`, `sort_order`,
+  `is_active`, `admin_only`, `is_assignable`, `landing_priority`
+) VALUES
+  (@nav_hr_employee_schedule, 'hr_employee_schedule', '人员排产', 'main.hr_employee_schedule_template_list', 55, 1, 0, 1, 95)
+ON DUPLICATE KEY UPDATE
+  `parent_id`=VALUES(`parent_id`),
+  `title`=VALUES(`title`),
+  `endpoint`=VALUES(`endpoint`),
+  `sort_order`=VALUES(`sort_order`),
+  `admin_only`=VALUES(`admin_only`),
+  `is_assignable`=VALUES(`is_assignable`),
+  `landing_priority`=VALUES(`landing_priority`);
+
+INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `sort_order`) VALUES
+('hr_employee_schedule_template.action.create', '人员排产：模板新建', 'hr_employee_schedule', '人力资源', 600),
+('hr_employee_schedule_template.action.edit', '人员排产：模板编辑', 'hr_employee_schedule', '人力资源', 610),
+('hr_employee_schedule_template.action.delete', '人员排产：模板删除', 'hr_employee_schedule', '人力资源', 620),
+('hr_employee_schedule_booking.action.create', '人员排产：时间窗新建/生成', 'hr_employee_schedule', '人力资源', 630),
+('hr_employee_schedule_booking.action.edit', '人员排产：时间窗编辑', 'hr_employee_schedule', '人力资源', 640),
+('hr_employee_schedule_booking.action.delete', '人员排产：时间窗删除', 'hr_employee_schedule', '人力资源', 650)
+ON DUPLICATE KEY UPDATE
+  `title`=VALUES(`title`),
+  `nav_item_code`=VALUES(`nav_item_code`),
+  `group_label`=VALUES(`group_label`),
+  `sort_order`=VALUES(`sort_order`);
+
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'hr_employee_schedule' FROM `role` r WHERE r.`code`='warehouse';
+
+-- ----------------------------
+-- 人员能力表模块：RBAC 种子（hr_employee_capability + 能力键 + warehouse 可访问）
+-- ----------------------------
+SET @nav_hr_employee_capability := (SELECT `id` FROM `sys_nav_item` WHERE `code`='nav_hr' LIMIT 1);
+
+INSERT INTO `sys_nav_item` (
+  `parent_id`, `code`, `title`, `endpoint`, `sort_order`,
+  `is_active`, `admin_only`, `is_assignable`, `landing_priority`
+) VALUES
+  (@nav_hr_employee_capability, 'hr_employee_capability', '人员能力表', 'main.hr_employee_capability_list', 56, 1, 0, 1, 96)
+ON DUPLICATE KEY UPDATE
+  `parent_id`=VALUES(`parent_id`),
+  `title`=VALUES(`title`),
+  `endpoint`=VALUES(`endpoint`),
+  `sort_order`=VALUES(`sort_order`),
+  `admin_only`=VALUES(`admin_only`),
+  `is_assignable`=VALUES(`is_assignable`),
+  `landing_priority`=VALUES(`landing_priority`);
+
+INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `sort_order`) VALUES
+('hr_employee_capability.view', '人员能力表：查看', 'hr_employee_capability', '人力资源', 660)
+ON DUPLICATE KEY UPDATE
+  `title`=VALUES(`title`),
+  `nav_item_code`=VALUES(`nav_item_code`),
+  `group_label`=VALUES(`group_label`),
+  `sort_order`=VALUES(`sort_order`);
+
+INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
+SELECT r.`id`, 'hr_employee_capability' FROM `role` r WHERE r.`code`='warehouse';

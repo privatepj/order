@@ -3,19 +3,19 @@
 {% block content %}
 <h2 class="mb-4">库存批次</h2>
 <p class="d-flex flex-wrap gap-2 align-items-center">
-    {% if user_can_cap('inventory_ops.movement.create') %}
+    {% if user_can_cap('inventory_ops_finished.movement.create') or user_can_cap('inventory_ops_semi.movement.create') or user_can_cap('inventory_ops_material.movement.create') %}
     <a href="{{ url_for('main.inventory_movement_new') }}" class="btn btn-success">新增录入</a>
     {% endif %}
     <a href="{{ url_for('main.inventory_stock_query') }}" class="btn btn-outline-primary">库存查询</a>
-    {% if user_can_cap('inventory_ops.opening.list') %}
+    {% if user_can_cap('inventory_ops_finished.opening.list') or user_can_cap('inventory_ops_semi.opening.list') or user_can_cap('inventory_ops_material.opening.list') %}
     <a href="{{ url_for('main.inventory_opening_list') }}" class="btn btn-outline-secondary">期初结存</a>
     {% endif %}
-    {% if user_can_cap('inventory_ops.daily.list') %}
+    {% if user_can_cap('inventory_ops_finished.daily.list') or user_can_cap('inventory_ops_semi.daily.list') or user_can_cap('inventory_ops_material.daily.list') %}
     <span class="text-muted small ms-1">旧版：</span>
     <a href="{{ url_for('main.inventory_daily_list') }}" class="btn btn-outline-secondary btn-sm">历史每日快照</a>
     {% endif %}
 </p>
-{% if user_can_cap('inventory_ops.movement.list') %}
+{% if user_can_cap('inventory_ops_finished.movement.list') or user_can_cap('inventory_ops_semi.movement.list') or user_can_cap('inventory_ops_material.movement.list') %}
 <div class="table-responsive app-table-scroll">
 <table class="table table-striped table-sm">
     <thead>
@@ -60,7 +60,7 @@
             <td class="text-nowrap small">{{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '—' }}</td>
             <td>
                 <a href="{{ url_for('main.inventory_batch_detail', batch_id=b.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
-                {% if b.source in ('form', 'excel') and user_can_cap('inventory_ops.movement_batch.void') %}
+                {% if b.source in ('form', 'excel') and (user_can_cap('inventory_ops_finished.movement_batch.void') or user_can_cap('inventory_ops_semi.movement_batch.void') or user_can_cap('inventory_ops_material.movement_batch.void')) %}
                 <form method="post" action="{{ url_for('main.inventory_batch_void', batch_id=b.id) }}" class="d-inline" onsubmit="return confirm('确定撤销本批次？将删除该批下全部 {{ b.line_count }} 条明细，且不可恢复。');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">撤销批次</button>
                 </form>

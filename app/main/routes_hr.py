@@ -17,6 +17,7 @@ from app.models import (
     AuditLog,
     Company,
     HrDepartment,
+    HrDepartmentCapabilityMap,
     HrEmployee,
     HrPayrollLine,
     HrPerformanceReview,
@@ -500,12 +501,18 @@ def register_hr_routes(bp):
         if request.method == "POST":
             employee_id = request.form.get("employee_id", type=int)
             period = (request.form.get("period") or "").strip()
+            wage_kind = (request.form.get("wage_kind") or "monthly").strip().lower()
+            work_hours_raw = (request.form.get("work_hours") or "").strip()
+            hourly_rate_raw = (request.form.get("hourly_rate") or "").strip()
             base = Decimal(request.form.get("base_salary") or "0")
             allowance = Decimal(request.form.get("allowance") or "0")
             deduction = Decimal(request.form.get("deduction") or "0")
             remark = (request.form.get("remark") or "").strip() or None
             if not company_id or not employee_id or len(period) != 7:
                 flash("请填写经营主体、员工与账期（YYYY-MM）。", "danger")
+                return _payroll_form(None, companies, default_company_id=company_id)
+            if wage_kind not in ("monthly", "hourly"):
+                flash("工资口径 wage_kind 非法。", "danger")
                 return _payroll_form(None, companies, default_company_id=company_id)
             emp = HrEmployee.query.get(employee_id)
             if not emp or emp.company_id != company_id:
@@ -516,11 +523,34 @@ def register_hr_routes(bp):
                 if pf and pf > emp.leave_date:
                     flash("该员工已离职，账期晚于离职日不可录入工资。", "danger")
                     return _payroll_form(None, companies, default_company_id=company_id)
-            net = base + allowance - deduction
+
+            try:
+                work_hours = Decimal(work_hours_raw or "0")
+            except Exception:
+                work_hours = Decimal("0")
+            try:
+                hourly_rate = Decimal(hourly_rate_raw or "0")
+            except Exception:
+                hourly_rate = Decimal("0")
+
+            if work_hours <= 0:
+                flash("请填写工时 work_hours（小时，>0）。", "danger")
+                return _payroll_form(None, companies, default_company_id=company_id)
+
+            if wage_kind == "hourly":
+                if hourly_rate <= 0:
+                    flash("时薪 hourly_rate 必须 > 0。", "danger")
+                    return _payroll_form(None, companies, default_company_id=company_id)
+                net = hourly_rate * work_hours
+            else:
+                net = base + allowance - deduction
             row = HrPayrollLine(
                 company_id=company_id,
                 employee_id=employee_id,
                 period=period,
+                wage_kind=wage_kind,
+                work_hours=work_hours,
+                hourly_rate=hourly_rate if wage_kind == "hourly" else Decimal("0"),
                 base_salary=base,
                 allowance=allowance,
                 deduction=deduction,
@@ -556,14 +586,43 @@ def register_hr_routes(bp):
         line = HrPayrollLine.query.get_or_404(line_id)
         companies = _companies()
         if request.method == "POST":
+            wage_kind = (request.form.get("wage_kind") or "monthly").strip().lower()
+            work_hours_raw = (request.form.get("work_hours") or "").strip()
+            hourly_rate_raw = (request.form.get("hourly_rate") or "").strip()
             base = Decimal(request.form.get("base_salary") or "0")
             allowance = Decimal(request.form.get("allowance") or "0")
             deduction = Decimal(request.form.get("deduction") or "0")
             remark = (request.form.get("remark") or "").strip() or None
+            if wage_kind not in ("monthly", "hourly"):
+                flash("工资口径 wage_kind 非法。", "danger")
+                return _payroll_form(line, companies)
+            try:
+                work_hours = Decimal(work_hours_raw or "0")
+            except Exception:
+                work_hours = Decimal("0")
+            try:
+                hourly_rate = Decimal(hourly_rate_raw or "0")
+            except Exception:
+                hourly_rate = Decimal("0")
+            if work_hours <= 0:
+                flash("请填写工时 work_hours（小时，>0）。", "danger")
+                return _payroll_form(line, companies)
+
+            if wage_kind == "hourly":
+                if hourly_rate <= 0:
+                    flash("时薪 hourly_rate 必须 > 0。", "danger")
+                    return _payroll_form(line, companies)
+                net = hourly_rate * work_hours
+            else:
+                net = base + allowance - deduction
+
+            line.wage_kind = wage_kind
+            line.work_hours = work_hours
+            line.hourly_rate = hourly_rate if wage_kind == "hourly" else Decimal("0")
             line.base_salary = base
             line.allowance = allowance
             line.deduction = deduction
-            line.net_pay = base + allowance - deduction
+            line.net_pay = net
             line.remark = remark
             db.session.commit()
             _hr_audit("payroll_edit", {"line_id": line_id, "period": line.period})
@@ -603,15 +662,20 @@ def register_hr_routes(bp):
         wb = Workbook()
         ws = wb.active
         ws.title = "工资"
-        ws.append(["账期", "主体ID", "工号", "姓名", "基本工资", "津贴", "扣款", "实发", "备注"])
+        ws.append(["账期", "主体ID", "工号", "姓名", "工资口径", "工时(小时)", "时薪", "基本工资", "津贴", "扣款", "实发", "备注"])
         for r in rows:
             emp = r.employee
+            wh = float(r.work_hours) if r.work_hours is not None else 0.0
+            hr = float(r.hourly_rate) if r.hourly_rate is not None else 0.0
             ws.append(
                 [
                     r.period,
                     r.company_id,
                     emp.employee_no if emp else "",
                     emp.name if emp else "",
+                    r.wage_kind,
+                    wh,
+                    hr,
                     float(r.base_salary),
                     float(r.allowance),
                     float(r.deduction),
@@ -768,6 +832,75 @@ def register_hr_routes(bp):
             employees=emps,
             default_company_id=cid,
         )
+
+    @bp.route("/hr/department-capability-map")
+    @login_required
+    @menu_required("hr_department_capability_map")
+    @capability_required("hr_department_capability_map.view")
+    def hr_department_capability_map_list():
+        company_id, companies = _resolve_company_id()
+        rows = (
+            HrDepartmentCapabilityMap.query.filter_by(company_id=company_id)
+            .order_by(HrDepartmentCapabilityMap.id.desc())
+            .all()
+        )
+        depts = (
+            HrDepartment.query.filter_by(company_id=company_id)
+            .order_by(HrDepartment.sort_order, HrDepartment.id)
+            .all()
+        )
+        return render_template(
+            "hr/dept_capability_map.html",
+            rows=rows,
+            depts=depts,
+            company_id=company_id,
+            companies=companies,
+        )
+
+    @bp.route("/hr/department-capability-map/add", methods=["POST"])
+    @login_required
+    @menu_required("hr_department_capability_map")
+    @capability_required("hr_department_capability_map.edit")
+    def hr_department_capability_map_add():
+        company_id, _ = _resolve_company_id()
+        pid = request.form.get("process_hr_department_id", type=int)
+        cid = request.form.get("capability_hr_department_id", type=int)
+        if not company_id or not pid or not cid:
+            flash("请选择工序部门与能力工位。", "danger")
+            return redirect(url_for("main.hr_department_capability_map_list"))
+        if pid == cid:
+            flash("两个部门不能相同。", "warning")
+            return redirect(url_for("main.hr_department_capability_map_list"))
+        db.session.add(
+            HrDepartmentCapabilityMap(
+                company_id=company_id,
+                process_hr_department_id=pid,
+                capability_hr_department_id=cid,
+                is_active=True,
+            )
+        )
+        try:
+            db.session.commit()
+            flash("映射已保存。", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("已存在相同映射。", "danger")
+        return redirect(url_for("main.hr_department_capability_map_list"))
+
+    @bp.route("/hr/department-capability-map/<int:row_id>/delete", methods=["POST"])
+    @login_required
+    @menu_required("hr_department_capability_map")
+    @capability_required("hr_department_capability_map.edit")
+    def hr_department_capability_map_delete(row_id: int):
+        row = HrDepartmentCapabilityMap.query.get_or_404(row_id)
+        company_id, _ = _resolve_company_id()
+        if int(row.company_id) != int(company_id or 0):
+            flash("无权删除。", "danger")
+            return redirect(url_for("main.hr_department_capability_map_list"))
+        db.session.delete(row)
+        db.session.commit()
+        flash("已删除。", "success")
+        return redirect(url_for("main.hr_department_capability_map_list"))
 
     @bp.route("/hr/api/departments-by-company", methods=["GET"])
     @login_required

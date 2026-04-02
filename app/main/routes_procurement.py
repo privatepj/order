@@ -19,6 +19,8 @@ from app.models import (
     PurchaseStockIn,
     User,
 )
+from app.services import orchestrator_engine
+from app.services.orchestrator_contracts import EVENT_PROCUREMENT_RECEIVED
 
 REQUISITION_STATUS = ("draft", "ordered", "cancelled")
 PO_STATUS = ("draft", "ordered", "partially_received", "received", "cancelled")
@@ -155,8 +157,8 @@ def register_procurement_routes(bp):
                 company_id=company_id,
                 requisition_statuses=REQUISITION_STATUS,
             )
-        if not supplier_name or not item_name or qty <= 0:
-            flash("供应商、物料名称、数量为必填且数量需大于 0。", "danger")
+        if not supplier_name or not item_name:
+            flash("供应商、物料名称、数量为必填。", "danger")
             return render_template(
                 "procurement/requisition_form.html",
                 row=row,
@@ -344,8 +346,8 @@ def register_procurement_routes(bp):
                     company_id=company_id,
                     po_statuses=PO_STATUS,
                 )
-        if not supplier_name or not item_name or qty <= 0:
-            flash("供应商、物料名称、数量为必填且数量需大于 0。", "danger")
+        if not supplier_name or not item_name:
+            flash("供应商、物料名称、数量为必填。", "danger")
             return render_template(
                 "procurement/order_form.html",
                 row=row,
@@ -555,16 +557,6 @@ def register_procurement_routes(bp):
                 company_id=company_id,
                 receipt_statuses=RECEIPT_STATUS,
             )
-        if received_qty <= 0:
-            flash("收货数量需大于 0。", "danger")
-            return render_template(
-                "procurement/receipt_form.html",
-                row=row,
-                companies=companies,
-                orders=orders,
-                company_id=company_id,
-                receipt_statuses=RECEIPT_STATUS,
-            )
         if status not in RECEIPT_STATUS:
             status = "draft"
         try:
@@ -607,6 +599,15 @@ def register_procurement_routes(bp):
                 remark=f"由收货单 {row.receipt_no or '(新建)'} 生成",
             )
             db.session.add(sin)
+            orchestrator_engine.emit_event(
+                event_type=EVENT_PROCUREMENT_RECEIVED,
+                biz_key=f"receipt:{row.id or 0}",
+                payload={
+                    "source_id": int(row.id or 0),
+                    "version": int(received_at.timestamp()),
+                    "source": "routes_procurement._save_receipt",
+                },
+            )
         _sync_po_status_from_receipts(po)
         try:
             db.session.commit()

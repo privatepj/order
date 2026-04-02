@@ -25,6 +25,41 @@ from app.models import (
 from app.services import inventory_svc
 from app.utils.query import keyword_like_or
 
+INVENTORY_OPS_MENU_CODES = (
+    "inventory_ops_finished",
+    "inventory_ops_semi",
+    "inventory_ops_material",
+)
+_INVENTORY_CAP_SUFFIXES = (
+    "api.products_search",
+    "api.suggest_storage_area",
+    "movement.list",
+    "movement.create",
+    "movement.delete",
+    "movement_batch.void",
+    "opening.list",
+    "opening.create",
+    "opening.edit",
+    "opening.delete",
+    "daily.list",
+    "daily.create",
+    "daily.detail",
+    "daily.edit",
+    "daily.delete",
+)
+INVENTORY_CAP_KEYS = {
+    suffix: tuple(f"{menu_code}.{suffix}" for menu_code in INVENTORY_OPS_MENU_CODES)
+    for suffix in _INVENTORY_CAP_SUFFIXES
+}
+
+
+def _menu_code_for_category(category: str) -> str:
+    if category == inventory_svc.INV_SEMI:
+        return "inventory_ops_semi"
+    if category == inventory_svc.INV_MATERIAL:
+        return "inventory_ops_material"
+    return "inventory_ops_finished"
+
 
 def _parse_line_rows():
     """从表单解析 (product_id, quantity, unit, note) 列表；非法时 raise ValueError。"""
@@ -276,12 +311,30 @@ def _dedupe_movement_import_parsed(parsed):
 
 
 def register_inventory_routes(bp):
+    @bp.route("/inventory/finished")
+    @login_required
+    @menu_required("inventory_ops_finished")
+    def inventory_finished_entry():
+        return redirect(url_for("main.inventory_movement_new", category=inventory_svc.INV_FINISHED))
+
+    @bp.route("/inventory/semi")
+    @login_required
+    @menu_required("inventory_ops_semi")
+    def inventory_semi_entry():
+        return redirect(url_for("main.inventory_movement_new", category=inventory_svc.INV_SEMI))
+
+    @bp.route("/inventory/material")
+    @login_required
+    @menu_required("inventory_ops_material")
+    def inventory_material_entry():
+        return redirect(url_for("main.inventory_movement_new", category=inventory_svc.INV_MATERIAL))
+
     # ----- API：产品搜索（库存录入用） -----
     @bp.route("/api/inventory/products-search", methods=["GET"])
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required("inventory_ops_finished")
     def inventory_products_search():
-        if not current_user_can_cap("inventory_ops.api.products_search"):
+        if not current_user_can_cap("inventory_ops_finished.api.products_search"):
             abort(403)
         qstr = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", 20, type=int)
@@ -315,7 +368,7 @@ def register_inventory_routes(bp):
 
     @bp.route("/api/inventory/suggest-storage-area", methods=["GET"])
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_suggest_storage_area():
         category = (request.args.get("category") or "").strip() or inventory_svc.INV_FINISHED
         item_id = request.args.get("item_id", type=int)
@@ -333,6 +386,9 @@ def register_inventory_routes(bp):
             inventory_svc.INV_MATERIAL,
         ):
             category = inventory_svc.INV_FINISHED
+        menu_code = _menu_code_for_category(category)
+        if not current_user_can_cap(f"{menu_code}.api.suggest_storage_area"):
+            abort(403)
 
         area = inventory_svc.suggest_storage_area_for_category_item(category, item_id)
         return jsonify({"storage_area": area})
@@ -340,15 +396,15 @@ def register_inventory_routes(bp):
     # ----- API：半成品/物料搜索（库存录入用） -----
     @bp.route("/api/inventory/semi-materials-search", methods=["GET"])
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required("inventory_ops_semi", "inventory_ops_material")
     def inventory_semi_materials_search():
-        # 复用现有能力键，避免未完成 RBAC 前无法使用
-        if not current_user_can_cap("inventory_ops.api.products_search"):
-            abort(403)
         qstr = (request.args.get("q") or "").strip()
         kind = (request.args.get("kind") or request.args.get("category") or "").strip()
         if kind not in (inventory_svc.INV_SEMI, inventory_svc.INV_MATERIAL):
             kind = inventory_svc.INV_SEMI
+        menu_code = _menu_code_for_category(kind)
+        if not current_user_can_cap(f"{menu_code}.api.products_search"):
+            abort(403)
         limit = request.args.get("limit", 20, type=int)
         limit = max(1, min(limit, 20))
 
@@ -410,8 +466,8 @@ def register_inventory_routes(bp):
     # ----- 库存录入（批量手工出入库） -----
     @bp.route("/inventory/movement/import-template", methods=["GET"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.movement.create")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["movement.create"])
     def inventory_movement_import_template():
         from openpyxl import Workbook
 
@@ -433,8 +489,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/movement/export-failed", methods=["POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.movement.create")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["movement.create"])
     def inventory_movement_export_failed():
         raw = (request.form.get("failed_rows_json") or "").strip()
         if not raw:
@@ -484,10 +540,11 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/movement/new", methods=["GET", "POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.movement.create")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["movement.create"])
     def inventory_movement_new():
         import_result = None
+        category_from_query = (request.args.get("category") or "").strip()
         if request.method == "POST":
             do_excel = request.form.get("do_excel_import") == "1"
             try:
@@ -498,6 +555,8 @@ def register_inventory_routes(bp):
                     inventory_svc.INV_MATERIAL,
                 ):
                     raise ValueError("请选择类别。")
+                if not current_user_can_cap(f"{_menu_code_for_category(cat)}.movement.create"):
+                    raise ValueError("您没有该类别库存录入权限。")
                 direction = (request.form.get("direction") or "").strip()
                 if direction not in ("in", "out"):
                     raise ValueError("请选择入库或出库。")
@@ -638,7 +697,7 @@ def register_inventory_routes(bp):
         return render_template(
             "inventory/movement_form.html",
             default_biz_date=bd,
-            form_category=request.form.get("category") if request.method == "POST" else None,
+            form_category=request.form.get("category") if request.method == "POST" else category_from_query or None,
             form_direction=request.form.get("direction") if request.method == "POST" else None,
             import_result=import_result,
         )
@@ -646,7 +705,7 @@ def register_inventory_routes(bp):
     # ----- 库存批次列表（主「库存」入口） -----
     @bp.route("/inventory")
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_list():
         page = request.args.get("page", 1, type=int)
         q = InventoryMovementBatch.query.options(
@@ -672,9 +731,9 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/batch/<int:batch_id>")
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_batch_detail(batch_id):
-        if not current_user_can_cap("inventory_ops.movement.list"):
+        if not any(current_user_can_cap(k) for k in INVENTORY_CAP_KEYS["movement.list"]):
             abort(403)
         batch = InventoryMovementBatch.query.options(
             selectinload(InventoryMovementBatch.delivery),
@@ -699,8 +758,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/batch/<int:batch_id>/void", methods=["POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.movement_batch.void")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["movement_batch.void"])
     def inventory_batch_void(batch_id):
         try:
             inventory_svc.void_movement_batch(batch_id)
@@ -713,8 +772,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/movement/<int:movement_id>/delete", methods=["POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.movement.delete")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["movement.delete"])
     def inventory_movement_delete(movement_id):
         m = InventoryMovement.query.get_or_404(movement_id)
         if m.source_type != inventory_svc.SOURCE_MANUAL:
@@ -731,8 +790,8 @@ def register_inventory_routes(bp):
     # ----- 期初结存维护 -----
     @bp.route("/inventory/opening")
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.opening.list")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["opening.list"])
     def inventory_opening_list():
         page = request.args.get("page", 1, type=int)
         q = InventoryOpeningBalance.query.options(
@@ -750,7 +809,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/opening/new", methods=["GET", "POST"])
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["opening.create"])
     def inventory_opening_new():
         if request.method == "POST":
             try:
@@ -819,8 +879,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/opening/<int:opening_id>/edit", methods=["GET", "POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.opening.edit")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["opening.edit"])
     def inventory_opening_edit(opening_id):
         row = InventoryOpeningBalance.query.options(
             selectinload(InventoryOpeningBalance.product),
@@ -842,8 +902,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/opening/<int:opening_id>/delete", methods=["POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.opening.delete")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["opening.delete"])
     def inventory_opening_delete(opening_id):
         row = InventoryOpeningBalance.query.get_or_404(opening_id)
         db.session.delete(row)
@@ -854,7 +914,7 @@ def register_inventory_routes(bp):
     # ----- 历史：每日库存快照（旧功能） -----
     @bp.route("/inventory/daily")
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_daily_list():
         page = request.args.get("page", 1, type=int)
         q = InventoryDailyRecord.query.options(
@@ -881,8 +941,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/daily/new", methods=["GET", "POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.daily.create")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["daily.create"])
     def inventory_daily_new():
         if request.method == "POST":
             try:
@@ -937,7 +997,7 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/daily/<int:record_id>")
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_daily_detail(record_id):
         record = InventoryDailyRecord.query.options(
             selectinload(InventoryDailyRecord.lines).selectinload(
@@ -956,7 +1016,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/daily/<int:record_id>/edit", methods=["GET", "POST"])
     @login_required
-    @menu_required("inventory_ops")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["daily.edit"])
     def inventory_daily_edit(record_id):
         record = InventoryDailyRecord.query.options(
             selectinload(InventoryDailyRecord.lines).selectinload(
@@ -1019,8 +1080,8 @@ def register_inventory_routes(bp):
 
     @bp.route("/inventory/daily/<int:record_id>/delete", methods=["POST"])
     @login_required
-    @menu_required("inventory_ops")
-    @capability_required("inventory_ops.daily.delete")
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["daily.delete"])
     def inventory_daily_delete(record_id):
         record = InventoryDailyRecord.query.get_or_404(record_id)
         db.session.delete(record)

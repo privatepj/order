@@ -43,6 +43,10 @@ from app.services.order_svc import (
     recompute_orders_status_for_order_ids,
 )
 from app.services import inventory_svc
+from app.utils.delivery_print_scale import (
+    get_delivery_print_font_scale,
+    set_delivery_print_font_scale,
+)
 
 
 def _express_companies_for_delivery():
@@ -141,6 +145,7 @@ def register_delivery_routes(bp):
             keyword=keyword,
             payment_type_labels=PAYMENT_TYPE_LABELS,
             export_today=date.today().isoformat(),
+            delivery_print_font_scale=get_delivery_print_font_scale(),
         )
 
     @bp.route("/deliveries/<int:delivery_id>/update-delivery-no", methods=["POST"])
@@ -481,7 +486,24 @@ def register_delivery_routes(bp):
             tel_line=TEL_LINE,
             foot_notes=FOOT_NOTES,
             sign_line=sign_line,
+            print_font_scale=get_delivery_print_font_scale(),
         )
+
+    @bp.route("/deliveries/print-font-scale", methods=["POST"])
+    @login_required
+    @menu_required("delivery")
+    @capability_required("delivery.action.print")
+    def delivery_print_font_scale():
+        raw = None
+        if request.is_json:
+            body = request.get_json(silent=True) or {}
+            raw = body.get("scale")
+        if raw is None:
+            raw = request.form.get("scale")
+        ok, msg = set_delivery_print_font_scale(raw if raw is not None else "")
+        if not ok:
+            return jsonify({"ok": False, "error": msg}), 400
+        return jsonify({"ok": True, "scale": get_delivery_print_font_scale()})
 
     @bp.route("/deliveries/<int:delivery_id>/delete", methods=["POST"])
     @login_required

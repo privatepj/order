@@ -25,6 +25,18 @@
         <label class="form-label">标准产能(件/小时)</label>
         <input class="form-control" type="number" min="0" step="0.01" name="capacity_per_hour" value="{{ row.capacity_per_hour if row else '0' }}">
     </div>
+
+    {% if current_user.role_code == 'admin' %}
+    <div class="col-md-3">
+        <label class="form-label">购入价格</label>
+        <input class="form-control" type="number" min="0" step="0.01" name="machine_cost_purchase_price" value="{{ row.machine_cost_purchase_price if row and row.machine_cost_purchase_price is not none else '0' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">单次运行成本</label>
+        <input class="form-control" type="number" min="0" step="0.01" name="machine_single_run_cost" value="{{ row.machine_single_run_cost if row and row.machine_single_run_cost is not none else '' }}">
+        <div class="form-text">留空表示未设置</div>
+    </div>
+    {% endif %}
     <div class="col-md-3">
         <label class="form-label">机台状态</label>
         <select class="form-select" name="status">
@@ -45,6 +57,16 @@
             <option value="{{ u.id }}" {% if row and row.owner_user_id == u.id %}selected{% endif %}>{{ u.username }}{% if u.name %} ({{ u.name }}){% endif %}</option>
             {% endfor %}
         </select>
+    </div>
+    <div class="col-md-8">
+        <label class="form-label">默认能力工位（覆盖机种；hr_department.id）</label>
+        <select name="default_capability_hr_department_id" class="form-select">
+            <option value="0" {% if not row or not row.default_capability_hr_department_id %}selected{% endif %}>沿用机种默认</option>
+            {% for d in hr_departments %}
+            <option value="{{ d.id }}" {% if row and row.default_capability_hr_department_id == d.id %}selected{% endif %}>{{ d.name }}（id={{ d.id }}）</option>
+            {% endfor %}
+        </select>
+        <div class="form-text">非 0 时优先于机种；预算白名单工位填 0 时用此工种匹配能力表。</div>
     </div>
     <div class="col-12">
         <label class="form-label">备注</label>

@@ -28,3 +28,14 @@ class Config:
     INVENTORY_DEFAULT_STORAGE_AREA = (
         os.environ.get("INVENTORY_DEFAULT_STORAGE_AREA") or ""
     ).strip()
+
+    ORCHESTRATOR_KILL_SWITCH = (os.environ.get("ORCHESTRATOR_KILL_SWITCH") or "0").strip() in ("1", "true", "True")
+    ORCHESTRATOR_COMPANY_WHITELIST = (os.environ.get("ORCHESTRATOR_COMPANY_WHITELIST") or "").strip()
+    ORCHESTRATOR_BIZ_KEY_WHITELIST = (os.environ.get("ORCHESTRATOR_BIZ_KEY_WHITELIST") or "").strip()
+    ORCHESTRATOR_REPLAY_ENABLED = (os.environ.get("ORCHESTRATOR_REPLAY_ENABLED") or "1").strip() in ("1", "true", "True")
+    ORCHESTRATOR_RETRY_ENABLED = (os.environ.get("ORCHESTRATOR_RETRY_ENABLED") or "1").strip() in ("1", "true", "True")
+    ORCHESTRATOR_OVERDUE_SCAN_ENABLED = (os.environ.get("ORCHESTRATOR_OVERDUE_SCAN_ENABLED") or "1").strip() in (
+        "1",
+        "true",
+        "True",
+    )

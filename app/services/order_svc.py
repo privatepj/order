@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.utils.billing_period import period_bounds_containing
 from app.utils.payment_type import normalize_payment_type, payment_type_label
+from app.services.orchestrator_contracts import EVENT_ORDER_CHANGED
 
 
 def _next_order_no_for_customer(customer_id: int) -> str:
@@ -331,6 +332,19 @@ def create_order_from_data(
     except Exception:
         db.session.rollback()
         return None, "保存失败，请重试（订单号可能冲突）。"
+    from app.services import orchestrator_engine
+
+    orchestrator_engine.emit_event(
+        event_type=EVENT_ORDER_CHANGED,
+        biz_key=f"order:{order.id}",
+        payload={
+            "order_id": int(order.id),
+            "source_id": int(order.id),
+            "version": int(order.updated_at.timestamp()) if order.updated_at else int(order.id),
+            "source": "order_svc.create_order_from_data",
+        },
+    )
+    db.session.commit()
     return order, None
 
 

@@ -49,7 +49,7 @@
     </tbody>
 </table>
 </div>
-{% if batch.source in ('form', 'excel') and user_can_cap('inventory_ops.movement_batch.void') %}
+{% if batch.source in ('form', 'excel') and (user_can_cap('inventory_ops_finished.movement_batch.void') or user_can_cap('inventory_ops_semi.movement_batch.void') or user_can_cap('inventory_ops_material.movement_batch.void')) %}
 <form method="post" action="{{ url_for('main.inventory_batch_void', batch_id=batch.id) }}" class="d-inline" onsubmit="return confirm('确定撤销本批次？将删除全部明细且不可恢复。');">
     <button type="submit" class="btn btn-danger">撤销整批</button>
 </form>

@@ -37,13 +37,39 @@ from app.models.production_work_order_operation_plan import ProductionWorkOrderO
 from app.models.production_material_plan_detail import ProductionMaterialPlanDetail
 from app.models.production_cost_plan_detail import ProductionCostPlanDetail
 from app.models.production_incident import ProductionIncident
-from app.models.hr import HrDepartment, HrEmployee, HrPayrollLine, HrPerformanceReview
-from app.models.machine import MachineType, Machine, MachineRuntimeLog
+from app.models.hr import (
+    HrDepartment,
+    HrEmployee,
+    HrEmployeeScheduleBooking,
+    HrEmployeeScheduleTemplate,
+    HrPayrollLine,
+    HrPerformanceReview,
+    HrEmployeeCapability,
+)
+from app.models.machine import (
+    MachineType,
+    Machine,
+    MachineRuntimeLog,
+    MachineScheduleTemplate,
+    MachineScheduleBooking,
+    MachineScheduleDispatchLog,
+)
+from app.models.machine_operator_allowlist import MachineOperatorAllowlist
+from app.models.hr_department_capability_map import HrDepartmentCapabilityMap
 from app.models.procurement import (
     PurchaseRequisition,
     PurchaseOrder,
     PurchaseReceipt,
     PurchaseStockIn,
+)
+from app.models.orchestrator import (
+    OrchestratorEvent,
+    OrchestratorAction,
+    OrchestratorAuditLog,
+    OrchestratorAiAdvice,
+    OrchestratorAiAdviceMetric,
+    OrchestratorRuleProfile,
+    OrchestratorReplayJob,
 )
 
 __all__ = [
@@ -93,11 +119,26 @@ __all__ = [
     "HrEmployee",
     "HrPayrollLine",
     "HrPerformanceReview",
+    "HrEmployeeCapability",
+    "HrEmployeeScheduleTemplate",
+    "HrEmployeeScheduleBooking",
     "MachineType",
     "Machine",
     "MachineRuntimeLog",
+    "MachineScheduleTemplate",
+    "MachineScheduleBooking",
+    "MachineScheduleDispatchLog",
+    "MachineOperatorAllowlist",
+    "HrDepartmentCapabilityMap",
     "PurchaseRequisition",
     "PurchaseOrder",
     "PurchaseReceipt",
     "PurchaseStockIn",
+    "OrchestratorEvent",
+    "OrchestratorAction",
+    "OrchestratorAuditLog",
+    "OrchestratorAiAdvice",
+    "OrchestratorAiAdviceMetric",
+    "OrchestratorRuleProfile",
+    "OrchestratorReplayJob",
 ]

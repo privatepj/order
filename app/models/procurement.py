@@ -32,6 +32,7 @@ class PurchaseRequisition(db.Model):
     purchase_orders = db.relationship(
         "PurchaseOrder",
         primaryjoin="PurchaseRequisition.id == foreign(PurchaseOrder.requisition_id)",
+        back_populates="requisition",
         lazy="dynamic",
     )
 
@@ -65,6 +66,7 @@ class PurchaseOrder(db.Model):
     requisition = db.relationship(
         "PurchaseRequisition",
         primaryjoin="foreign(PurchaseOrder.requisition_id) == PurchaseRequisition.id",
+        back_populates="purchase_orders",
         lazy=True,
     )
     buyer = db.relationship(
@@ -75,6 +77,7 @@ class PurchaseOrder(db.Model):
     receipts = db.relationship(
         "PurchaseReceipt",
         primaryjoin="PurchaseOrder.id == foreign(PurchaseReceipt.purchase_order_id)",
+        back_populates="purchase_order",
         lazy="dynamic",
     )
 
@@ -102,6 +105,7 @@ class PurchaseReceipt(db.Model):
     purchase_order = db.relationship(
         "PurchaseOrder",
         primaryjoin="foreign(PurchaseReceipt.purchase_order_id) == PurchaseOrder.id",
+        back_populates="receipts",
         lazy=True,
     )
     receiver = db.relationship(
@@ -112,6 +116,7 @@ class PurchaseReceipt(db.Model):
     stock_ins = db.relationship(
         "PurchaseStockIn",
         primaryjoin="PurchaseReceipt.id == foreign(PurchaseStockIn.receipt_id)",
+        back_populates="receipt",
         lazy="dynamic",
     )
 
@@ -139,6 +144,7 @@ class PurchaseStockIn(db.Model):
     receipt = db.relationship(
         "PurchaseReceipt",
         primaryjoin="foreign(PurchaseStockIn.receipt_id) == PurchaseReceipt.id",
+        back_populates="stock_ins",
         lazy=True,
     )
     creator = db.relationship(

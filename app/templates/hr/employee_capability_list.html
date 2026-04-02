@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}人员能力表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">人员能力表</h2>
+
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-md-4">
+        <label class="form-label">人员</label>
+        <select name="employee_id" class="form-select">
+            <option value="0">全部人员</option>
+            {% for e in employees %}
+                <option value="{{ e.id }}" {% if employee_id == e.id %}selected{% endif %}>{{ e.employee_no }} - {{ e.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">工种/工位</label>
+        <select name="hr_department_id" class="form-select">
+            <option value="0">全部工种</option>
+            {% for d in departments %}
+                <option value="{{ d.id }}" {% if hr_department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">查询</button>
+    </div>
+</form>
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>工号</th>
+            <th>姓名</th>
+            <th>工种/工位</th>
+            <th class="text-end">工单数</th>
+            <th class="text-end">良品数</th>
+            <th class="text-end">不良数</th>
+            <th class="text-end">不良率</th>
+            <th class="text-end">累计工时(小时)</th>
+            <th class="text-end">一个小时能做多少个</th>
+            <th class="text-end">单件生产成本</th>
+            <th>最后统计到</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+            <tr>
+                <td>{{ r.employee_no }}</td>
+                <td>{{ r.employee_name }}</td>
+                <td>{{ r.department_name }}</td>
+                <td class="text-end">{{ r.work_order_cnt_total }}</td>
+                <td class="text-end">{{ r.good_qty_total|qty_plain }}</td>
+                <td class="text-end">{{ r.bad_qty_total|qty_plain }}</td>
+                <td class="text-end">
+                    {% if r.bad_rate_pct is not none %}{{ r.bad_rate_pct|qty_plain }}%{% else %}-{% endif %}
+                </td>
+                <td class="text-end">{{ r.worked_hours_total|qty_plain }}</td>
+                <td class="text-end">
+                    {% if r.hourly_capacity is not none %}{{ r.hourly_capacity|qty_plain }}{% else %}-{% endif %}
+                </td>
+                <td class="text-end">
+                    {% if r.unit_cost is not none %}{{ r.unit_cost|qty_plain }}{% else %}-{% endif %}
+                </td>
+                <td class="text-nowrap">
+                    {% if r.processed_to %}{{ r.processed_to.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}
+                </td>
+            </tr>
+        {% else %}
+            <tr>
+                <td colspan="11" class="text-muted">暂无能力表数据</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+

@@ -3,7 +3,7 @@
 {% block content %}
 <h2 class="mb-4">历史每日库存录入</h2>
 <p>
-    {% if user_can_cap('inventory_ops.daily.create') %}
+    {% if user_can_cap('inventory_ops_finished.daily.create') or user_can_cap('inventory_ops_semi.daily.create') or user_can_cap('inventory_ops_material.daily.create') %}
     <a href="{{ url_for('main.inventory_daily_new') }}" class="btn btn-success">新增每日录入</a>
     {% endif %}
     <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回库存批次</a>
@@ -29,13 +29,13 @@
             <td>{{ creators.get(r.created_by, r.created_by) }}</td>
             <td>{{ r.updated_at.strftime('%Y-%m-%d %H:%M') if r.updated_at else '-' }}</td>
             <td>
-                {% if user_can_cap('inventory_ops.daily.detail') %}
+                {% if user_can_cap('inventory_ops_finished.daily.detail') or user_can_cap('inventory_ops_semi.daily.detail') or user_can_cap('inventory_ops_material.daily.detail') %}
                 <a href="{{ url_for('main.inventory_daily_detail', record_id=r.id) }}" class="btn btn-sm btn-outline-secondary">查看</a>
                 {% endif %}
-                {% if user_can_cap('inventory_ops.daily.edit') %}
+                {% if user_can_cap('inventory_ops_finished.daily.edit') or user_can_cap('inventory_ops_semi.daily.edit') or user_can_cap('inventory_ops_material.daily.edit') %}
                 <a href="{{ url_for('main.inventory_daily_edit', record_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
                 {% endif %}
-                {% if user_can_cap('inventory_ops.daily.delete') %}
+                {% if user_can_cap('inventory_ops_finished.daily.delete') or user_can_cap('inventory_ops_semi.daily.delete') or user_can_cap('inventory_ops_material.daily.delete') %}
                 <form method="post" action="{{ url_for('main.inventory_daily_delete', record_id=r.id) }}" class="d-inline" onsubmit="return confirm('确定删除该条录入？');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                 </form>

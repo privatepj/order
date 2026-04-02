@@ -69,7 +69,9 @@ class Role(db.Model):
         for k in raw:
             if k == "inventory":
                 out.add("inventory_query")
-                out.add("inventory_ops")
+                out.add("inventory_ops_finished")
+                out.add("inventory_ops_semi")
+                out.add("inventory_ops_material")
             elif k == "report_export":
                 out.add("report_notes")
                 out.add("report_records")

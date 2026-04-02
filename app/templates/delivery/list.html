@@ -32,6 +32,20 @@
         <button type="submit" class="btn btn-primary">筛选</button>
     </div>
 </form>
+{% if user_can_cap('delivery.action.print') %}
+<div class="mb-3 row g-2 align-items-end">
+    <div class="col-auto">
+        <label for="deliveryPrintFontScale" class="form-label mb-0">打印字号比例</label>
+        <div class="input-group">
+            <input type="number" class="form-control" id="deliveryPrintFontScale" min="0.5" max="2" step="0.01"
+                   value="{{ delivery_print_font_scale }}" style="max-width:7rem" autocomplete="off">
+            <button type="button" class="btn btn-outline-secondary" id="deliveryPrintFontScaleSave"
+                    data-save-url="{{ url_for('main.delivery_print_font_scale') }}">保存</button>
+        </div>
+        <div class="form-text">仅本进程内存，重启后恢复为 1；与默认相比约 12px 正文。</div>
+    </div>
+</div>
+{% endif %}
 <p>
     {% if user_can_cap('delivery.action.create') %}
     <a href="{{ url_for('main.delivery_new') }}" class="btn btn-success">新建送货单</a>
@@ -139,6 +153,38 @@
 {% endblock %}
 {% block extra_js %}
 <script>
+(function () {
+  var saveBtn = document.getElementById('deliveryPrintFontScaleSave');
+  var scaleInp = document.getElementById('deliveryPrintFontScale');
+  if (saveBtn && scaleInp) {
+    saveBtn.addEventListener('click', function () {
+      var url = saveBtn.getAttribute('data-save-url');
+      if (!url) return;
+      var v = parseFloat(scaleInp.value);
+      if (Number.isNaN(v)) {
+        alert('请输入有效数字。');
+        return;
+      }
+      saveBtn.disabled = true;
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ scale: v }),
+        credentials: 'same-origin'
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          if (x.ok && x.j && x.j.ok) {
+            if (typeof x.j.scale === 'number') scaleInp.value = x.j.scale;
+            alert('已保存。');
+          } else {
+            alert((x.j && x.j.error) ? x.j.error : '保存失败。');
+          }
+        })
+        .catch(function () { alert('网络错误。'); })
+        .finally(function () { saveBtn.disabled = false; });
+    });
+  }
+})();
 (function () {
   document.querySelectorAll('[data-inline-edit]').forEach(function (wrap) {
     var inp = wrap.querySelector('[data-inline-edit-input]');

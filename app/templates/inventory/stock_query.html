@@ -4,7 +4,7 @@
 <h2 class="mb-4">库存查询</h2>
 <p class="text-muted small mb-3">
     结存 = 期初 + 累计入库 − 累计出库。请先维护
-    {% if user_can_cap('inventory_ops.opening.list') %}
+    {% if user_can_cap('inventory_ops_finished.opening.list') or user_can_cap('inventory_ops_semi.opening.list') or user_can_cap('inventory_ops_material.opening.list') %}
     <a href="{{ url_for('main.inventory_opening_list') }}">期初结存</a>。
     {% else %}
     期初结存。

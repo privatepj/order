@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if row else '新建' }}机台排班时间窗 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑' if row else '新建' }}机台排班时间窗</h2>
+
+<form method="post" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">机台 <span class="text-danger">*</span></label>
+        <select class="form-select" name="machine_id" required>
+            <option value="">请选择</option>
+            {% for m in machines %}
+            <option value="{{ m.id }}" {% if (row and row.machine_id == m.id) or (not row and machine_id == m.id) %}selected{% endif %}>{{ m.machine_no }} - {{ m.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">模板 <span class="text-danger">*</span></label>
+        <select class="form-select" name="template_id" required>
+            <option value="">请选择</option>
+            {% for t in templates %}
+            <option value="{{ t.id }}" {% if row and row.template_id == t.id %}selected{% endif %}>{{ t.name }} ({{ t.start_time.strftime('%H:%M') }}-{{ t.end_time.strftime('%H:%M') }})</option>
+            {% endfor %}
+        </select>
+        {% if not templates %}
+        <div class="text-muted small mt-1">请先选择机台以加载模板。</div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">排班状态 <span class="text-danger">*</span></label>
+        <select class="form-select" name="state" required>
+            {% for s in schedule_states %}
+            <option value="{{ s }}" {% if row and row.state == s %}selected{% elif not row and s == 'available' %}selected{% endif %}>{{ s|status_zh('machine_schedule_state') }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">开始时间 <span class="text-danger">*</span></label>
+        <input type="datetime-local" class="form-control" name="start_at" required value="{{ row.start_at.strftime('%Y-%m-%dT%H:%M') if row and row.start_at else '' }}">
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">结束时间 <span class="text-danger">*</span></label>
+        <input type="datetime-local" class="form-control" name="end_at" required value="{{ row.end_at.strftime('%Y-%m-%dT%H:%M') if row and row.end_at else '' }}">
+    </div>
+
+    <div class="col-12">
+        <label class="form-label">备注</label>
+        <input class="form-control" name="remark" maxlength="255" value="{{ row.remark if row and row.remark else '' }}">
+    </div>
+
+    <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">保存</button>
+        {% if row %}
+        <a href="{{ url_for('main.machine_schedule_booking_list', machine_id=row.machine_id) }}" class="btn btn-outline-secondary">返回列表</a>
+        {% else %}
+        <a href="{{ url_for('main.machine_schedule_booking_list', machine_id=machine_id) }}" class="btn btn-outline-secondary">返回列表</a>
+        {% endif %}
+    </div>
+</form>
+{% endblock %}
+

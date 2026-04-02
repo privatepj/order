@@ -21,18 +21,35 @@
     {% else %}
     <div class="mb-2 text-muted">账期 {{ line.period }} · {{ line.employee.employee_no if line.employee else '' }} {{ line.employee.name if line.employee else '' }}</div>
     {% endif %}
+    <div class="mb-3">
+        <label class="form-label">工资口径</label>
+        <select name="wage_kind" class="form-select" required>
+            <option value="monthly" {% if (line.wage_kind if line else 'monthly') == 'monthly' %}selected{% endif %}>月薪（按基本工资/津贴/扣款）</option>
+            <option value="hourly" {% if (line.wage_kind if line else 'monthly') == 'hourly' %}selected{% endif %}>时薪（按时薪*工时）</option>
+        </select>
+    </div>
     <div class="row">
         <div class="col-md-4 mb-3">
             <label class="form-label">基本工资</label>
-            <input type="number" step="0.01" class="form-control" name="base_salary" value="{{ line.base_salary if line else '0' }}" required>
+            <input type="number" step="0.01" class="form-control" name="base_salary" value="{{ line.base_salary if line else '0' }}">
         </div>
         <div class="col-md-4 mb-3">
             <label class="form-label">津贴</label>
-            <input type="number" step="0.01" class="form-control" name="allowance" value="{{ line.allowance if line else '0' }}" required>
+            <input type="number" step="0.01" class="form-control" name="allowance" value="{{ line.allowance if line else '0' }}">
         </div>
         <div class="col-md-4 mb-3">
             <label class="form-label">扣款</label>
-            <input type="number" step="0.01" class="form-control" name="deduction" value="{{ line.deduction if line else '0' }}" required>
+            <input type="number" step="0.01" class="form-control" name="deduction" value="{{ line.deduction if line else '0' }}">
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">工时（小时）</label>
+            <input type="number" step="0.01" class="form-control" name="work_hours" value="{{ line.work_hours if line and line.work_hours is not none else '0' }}" required>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">时薪（元/小时）</label>
+            <input type="number" step="0.01" class="form-control" name="hourly_rate" value="{{ line.hourly_rate if line else '0' }}" required>
         </div>
     </div>
     <div class="mb-3">

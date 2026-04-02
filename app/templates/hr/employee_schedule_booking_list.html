@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}人员排产时间窗 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">人员排产时间窗</h2>
+
+<div class="mb-3">
+    <a href="{{ url_for('main.hr_employee_schedule_template_list') }}" class="btn btn-sm btn-outline-secondary">
+        返回排班模板
+    </a>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <select class="form-select" name="employee_id" required>
+            <option value="">请选择人员</option>
+            {% for e in employees %}
+            <option value="{{ e.id }}" {% if employee_id == e.id %}selected{% endif %}>{{ e.employee_no }} - {{ e.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-3">
+        <input type="date" class="form-control" name="date_from" value="{{ date_from.isoformat() }}" required>
+    </div>
+
+    <div class="col-md-3">
+        <input type="date" class="form-control" name="date_to" value="{{ date_to.isoformat() }}" required>
+    </div>
+
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">生成/查询</button>
+    </div>
+
+    {% if user_can_cap('hr_employee_schedule_booking.action.create') and employee_id %}
+    <div class="col-auto ms-auto">
+        <a href="{{ url_for('main.hr_employee_schedule_booking_new', employee_id=employee_id) }}" class="btn btn-primary">新建时间窗</a>
+    </div>
+    {% endif %}
+</form>
+
+{% if not employee_id %}
+<div class="text-muted">请选择人员以查看排班展开结果。</div>
+{% else %}
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>模板</th>
+            <th>状态</th>
+            <th>开始</th>
+            <th>结束</th>
+            <th>工位</th>
+            <th>工单</th>
+            <th>产品</th>
+            <th class="text-end">良品</th>
+            <th class="text-end">不良</th>
+            <th class="text-end">总产出</th>
+            <th>备注</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td class="text-nowrap">{{ r.template.name if r.template else r.template_id }}</td>
+            <td>{{ r.state|status_zh('machine_schedule_state') }}</td>
+            <td class="text-nowrap">{{ r.start_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="text-nowrap">{{ r.end_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="text-nowrap">{{ r.department.name if r.department else (r.hr_department_id or '-') }}</td>
+            <td class="text-nowrap">{{ r.work_order_id or '-' }}</td>
+            <td class="text-nowrap">
+                {% if r.product %}
+                    {{ r.product.product_code }}{% if r.product.name %} - {{ r.product.name }}{% endif %}
+                {% else %}
+                    {{ r.product_id or '-' }}
+                {% endif %}
+            </td>
+            <td class="text-end">{{ r.good_qty|qty_plain }}</td>
+            <td class="text-end">{{ r.bad_qty|qty_plain }}</td>
+            <td class="text-end fw-semibold">{{ r.produced_qty|qty_plain }}</td>
+            <td>{{ r.remark or '-' }}</td>
+            <td class="text-nowrap">
+                {% if user_can_cap('hr_employee_schedule_booking.action.edit') %}
+                <a href="{{ url_for('main.hr_employee_schedule_booking_edit', booking_id=r.id) }}" class="btn btn-sm btn-outline-secondary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('hr_employee_schedule_booking.action.delete') %}
+                <form method="post" action="{{ url_for('main.hr_employee_schedule_booking_delete', booking_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该时间窗？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="13" class="text-muted">暂无时间窗数据</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+

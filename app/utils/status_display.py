@@ -17,6 +17,10 @@ _DOMAIN_TO_MAP: Dict[str, Mapping[str, str]] = {
         "idle": "空闲",
         "fault": "故障",
     },
+    "machine_schedule_state": {
+        "available": "可用",
+        "unavailable": "不可用",
+    },
 
     # 快递单号池
     "express_waybill_status": {

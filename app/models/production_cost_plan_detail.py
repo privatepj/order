@@ -9,6 +9,7 @@ class ProductionCostPlanDetail(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
 
     preplan_id = db.Column(db.Integer, nullable=False, index=True)
+    scenario = db.Column(db.String(16), nullable=False, default="optimized", index=True)
     work_order_id = db.Column(db.Integer, nullable=False, index=True)
     operation_id = db.Column(db.Integer)
 
