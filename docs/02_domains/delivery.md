@@ -27,7 +27,7 @@
 
 1. 新建送货单：选择订单行、数量；快递场景可占用单号池（逻辑在 `delivery_svc`）。
 2. 打印/导出：独立能力 `delivery.action.print`。
-3. **发运**后可触发库存出库（见 [inventory.md](inventory.md)）及编排事件（若有订阅）。
+3. **发运**（标记已发）后可触发库存出库（见 [inventory.md](inventory.md)）及编排事件（若有订阅）；POST 结束后统一 **重定向到送货列表**，不要求具备 `delivery.action.detail`。
 
 ## 权限（摘录）
 

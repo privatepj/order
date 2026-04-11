@@ -578,18 +578,18 @@ def register_delivery_routes(bp):
         delivery = Delivery.query.get_or_404(delivery_id)
         if delivery.status != "created":
             flash("该送货单不是待发状态。", "warning")
-            return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+            return redirect(url_for("main.delivery_list"))
         lines, inv_err = inventory_svc.delivery_lines_with_products(delivery_id)
         if inv_err:
             flash(inv_err, "danger")
-            return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+            return redirect(url_for("main.delivery_list"))
         area = inventory_svc.default_storage_area_for_delivery()
         if not area:
             flash(
                 "无法自动出库：请在环境变量 INVENTORY_DEFAULT_STORAGE_AREA 中配置默认仓储区。",
                 "danger",
             )
-            return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+            return redirect(url_for("main.delivery_list"))
         try:
             delivery.status = "shipped"
             db.session.add(delivery)
@@ -602,7 +602,7 @@ def register_delivery_routes(bp):
         except IntegrityError:
             db.session.rollback()
             flash("出库记录写入失败（可能已存在），请刷新后重试。", "danger")
-        return redirect(url_for("main.delivery_detail", delivery_id=delivery.id))
+        return redirect(url_for("main.delivery_list"))
 
     @bp.route("/deliveries/<int:delivery_id>/mark-created", methods=["POST"])
     @login_required
