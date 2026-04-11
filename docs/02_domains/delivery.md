@@ -17,6 +17,11 @@
 - **订单已发/待发占用**的计算依赖送货单状态与明细；与 `order_svc` 回算一致。
 - 状态流转能力：如 `delivery.action.mark_shipped`、`mark_created`、`mark_expired` 等（见路由装饰器）。
 
+## 送货列表筛选
+
+- 具备 `delivery.filter.status` 时，打开送货列表（查询串**不含** `status` 参数）默认按 **待发**（`created`）筛选；在列表上选择「全部状态」并提交后仍可查全部状态。
+- 不具备 `delivery.filter.status` 时，不按状态过滤（与列表页不展示状态下拉一致）。
+
 ## 典型流程
 
 1. 新建送货单：选择订单行、数量；快递场景可占用单号池（逻辑在 `delivery_svc`）。

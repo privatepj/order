@@ -163,6 +163,8 @@ def delivery_list_read_filters():
         customer_id = None
     if not current_user_can_cap("delivery.filter.status"):
         status = ""
+    elif "status" not in request.args:
+        status = "created"
     if not current_user_can_cap("delivery.filter.keyword"):
         keyword = ""
     return page, customer_id, status, keyword

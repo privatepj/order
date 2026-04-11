@@ -235,3 +235,38 @@ def test_openclaw_create_delivery_returns_pickup_method(app_ctx, app, monkeypatc
     payload = response.get_json()
     assert payload["ok"] is True
     assert payload["delivery_method"] == "pickup"
+
+
+def test_delivery_list_defaults_to_created_without_status_param(app, admin_client):
+    with app.app_context():
+        seeded = _seed_order(with_sf_waybill=False)
+        cid = seeded["customer"].id
+        db.session.add_all(
+            [
+                Delivery(
+                    delivery_no="DL-PEND-DEFAULT",
+                    delivery_date=date(2026, 4, 7),
+                    customer_id=cid,
+                    status="created",
+                ),
+                Delivery(
+                    delivery_no="DL-SHIPPED-DEFAULT",
+                    delivery_date=date(2026, 4, 7),
+                    customer_id=cid,
+                    status="shipped",
+                ),
+            ]
+        )
+        db.session.commit()
+
+    r = admin_client.get("/deliveries")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "DL-PEND-DEFAULT" in body
+    assert "DL-SHIPPED-DEFAULT" not in body
+
+    r_all = admin_client.get("/deliveries?status=")
+    assert r_all.status_code == 200
+    body_all = r_all.get_data(as_text=True)
+    assert "DL-PEND-DEFAULT" in body_all
+    assert "DL-SHIPPED-DEFAULT" in body_all
