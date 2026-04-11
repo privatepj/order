@@ -42,7 +42,7 @@
     <tbody>
         {% for row in rows %}
         <tr>
-            <td>{{ row.item.product_name }}</td>
+            <td>{{ row.item.display_product_name or row.item.product_name }}</td>
             <td>{{ row.item.product_spec or '-' }}</td>
             <td>{{ row.item.customer_material_no or '-' }}</td>
             <td>{{ row.item.material_no or '-' }}</td>

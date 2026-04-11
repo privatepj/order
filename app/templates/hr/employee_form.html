@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ '新增人员' if not emp else '编辑人员' }} - 工厂订单系统{% endblock %}
+{% block title %}{{ "新增人员" if not emp else "编辑人员" }} - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '新增人员' if not emp else '编辑人员' }}</h2>
+<h2 class="mb-4">{{ "新增人员" if not emp else "编辑人员" }}</h2>
 <form method="post">
     <input type="hidden" name="company_id" value="{{ company_id }}">
     <div class="row">
@@ -14,23 +14,25 @@
             <input type="text" class="form-control" name="name" value="{{ emp.name if emp else '' }}" required maxlength="64">
         </div>
     </div>
-    <div class="mb-3">
-        <label class="form-label">部门</label>
-        <select name="department_id" class="form-select">
-            <option value="">—</option>
-            {% for d in departments %}
-            <option value="{{ d.id }}" {% if emp and emp.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="mb-3">
-        <label class="form-label">关联登录用户（可选）</label>
-        <select name="user_id" class="form-select">
-            <option value="">—</option>
-            {% for u in users %}
-            <option value="{{ u.id }}" {% if emp and emp.user_id == u.id %}selected{% endif %}>{{ u.username }}（{{ u.name or '' }}）</option>
-            {% endfor %}
-        </select>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">部门</label>
+            <select name="department_id" class="form-select">
+                <option value="">未设置</option>
+                {% for d in departments %}
+                <option value="{{ d.id }}" {% if emp and emp.department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">关联登录用户</label>
+            <select name="user_id" class="form-select">
+                <option value="">未关联</option>
+                {% for u in users %}
+                <option value="{{ u.id }}" {% if emp and emp.user_id == u.id %}selected{% endif %}>{{ u.username }}{% if u.name %} ({{ u.name }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
     </div>
     {% if show_sensitive %}
     <div class="row">
@@ -44,12 +46,19 @@
         </div>
     </div>
     {% else %}
-    <p class="text-muted small">当前角色无「查看身份证/完整手机」权限，保存时不会修改手机与身份证字段。</p>
+    <p class="text-muted small">当前账号没有敏感字段查看/编辑权限，保存时会保留原有手机和身份证信息。</p>
     {% endif %}
     <div class="row">
         <div class="col-md-6 mb-3">
-            <label class="form-label">岗位</label>
-            <input type="text" class="form-control" name="job_title" value="{{ emp.job_title if emp else '' }}" maxlength="64">
+            <label class="form-label">主工种</label>
+            <select name="main_work_type_id" class="form-select">
+                <option value="">未设置</option>
+                {% for wt in work_types %}
+                <option value="{{ wt.id }}" {% if emp and emp.main_work_type_id == wt.id %}selected{% endif %}>
+                    {{ wt.name }}{% if not wt.is_active %}（停用）{% endif %}
+                </option>
+                {% endfor %}
+            </select>
         </div>
         <div class="col-md-6 mb-3">
             <label class="form-label">状态</label>
@@ -59,6 +68,23 @@
             </select>
         </div>
     </div>
+    <div class="mb-3">
+        <label class="form-label">辅工种</label>
+        <select name="secondary_work_type_ids" class="form-select" multiple size="6">
+            {% for wt in work_types %}
+            {% set selected = wt.id in selected_secondary_work_type_ids %}
+            <option value="{{ wt.id }}" {% if selected %}selected{% endif %}>
+                {{ wt.name }}{% if not wt.is_active %}（停用）{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <div class="form-text">可多选。主工种不需要在这里重复选择。</div>
+    </div>
+    {% if emp and emp.job_title %}
+    <div class="alert alert-secondary py-2">
+        兼容字段 `job_title` 历史值：{{ emp.job_title }}
+    </div>
+    {% endif %}
     <div class="row">
         <div class="col-md-6 mb-3">
             <label class="form-label">入职日期</label>

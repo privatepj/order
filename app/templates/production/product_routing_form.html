@@ -1,13 +1,15 @@
 {% extends "base.html" %}
-{% block title %}产品路由覆写 - 工厂订单系统{% endblock %}
+{% block title %}工序路由覆写 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">产品路由覆写：{{ product.product_code }} - {{ product.name }}</h2>
+<h2 class="mb-4">{{ target_label }}路由覆写：{{ target_code }} - {{ target_name }}{% if target_spec %}（{{ target_spec }}）{% endif %}</h2>
 
 <form method="post">
+    <input type="hidden" name="target_kind" value="{{ target_kind }}">
+    <input type="hidden" name="target_id" value="{{ target_id }}">
     <div class="row g-3 mb-3">
         <div class="col-md-6">
             <label class="form-label">绑定工序模板</label>
-            <select class="form-select" name="template_id" required onchange="window.location.href='{{ url_for('main.production_product_routing_edit', product_id=product.id) }}?template_id=' + this.value;">
+            <select class="form-select" name="template_id" required onchange="window.location.href='{{ url_for('main.production_product_routing_edit', target_kind=target_kind, target_id=target_id) }}&template_id=' + this.value;">
                 {% for t in templates %}
                     <option value="{{ t.id }}" {% if t.id == selected_template_id %}selected{% endif %}>
                         {{ t.name }}（{{ t.version }}）
@@ -32,7 +34,7 @@
                     <th style="width:190px;">工序名覆写</th>
                     <th style="width:170px;">资源维度覆写</th>
                     <th style="width:240px;">机台种类覆写</th>
-                    <th style="width:240px;">HR 部门覆写</th>
+                    <th style="width:240px;">工种覆写</th>
                     <th style="width:130px;" class="text-end">准备(分钟)</th>
                     <th style="width:170px;" class="text-end">运行(分钟/单位)</th>
                     <th style="width:160px;">备注</th>
@@ -50,8 +52,8 @@
                         <div class="small text-muted">
                             {% if st.resource_kind == 'machine_type' %}
                                 资源：机台（id={{ st.machine_type_id }})
-                            {% elif st.resource_kind == 'hr_department' %}
-                                资源：部门（id={{ st.hr_department_id }})
+                            {% elif st.resource_kind in ['hr_department', 'hr_work_type'] %}
+                                资源：工种（id={{ st.effective_work_type_id }})
                             {% else %}
                                 资源：-
                             {% endif %}
@@ -64,7 +66,7 @@
                         <select class="form-select form-select-sm" name="resource_kind_override">
                             <option value="" {% if not ov or ov.resource_kind_override is none %}selected{% endif %}>继承</option>
                             <option value="machine_type" {% if ov and ov.resource_kind_override == 'machine_type' %}selected{% endif %}>机台</option>
-                            <option value="hr_department" {% if ov and ov.resource_kind_override == 'hr_department' %}selected{% endif %}>班组/部门</option>
+                            <option value="hr_work_type" {% if ov and ov.resource_kind_override in ['hr_department', 'hr_work_type'] %}selected{% endif %}>工种</option>
                         </select>
                     </td>
                     <td>
@@ -77,20 +79,20 @@
                         </select>
                     </td>
                     <td>
-                        <select class="form-select form-select-sm" name="hr_department_id_override">
+                        <select class="form-select form-select-sm" name="work_type_id_override">
                             <option value="0">--</option>
-                            {% for d in hr_departments %}
-                                {% set sel = (ov.hr_department_id_override if ov and ov.hr_department_id_override is not none else st.hr_department_id) %}
-                                <option value="{{ d.id }}" {% if sel == d.id %}selected{% endif %}>{{ d.name }}</option>
+                            {% for wt in work_types %}
+                                {% set sel = (ov.hr_work_type_id_override if ov and ov.hr_work_type_id_override is not none else st.effective_work_type_id) %}
+                                <option value="{{ wt.id }}" {% if sel == wt.id %}selected{% endif %}>{{ wt.name }}{% if wt.company %}（{{ wt.company.name }}）{% endif %}</option>
                             {% endfor %}
                         </select>
                     </td>
                     <td class="text-end">
-                        <input class="form-control form-control-sm text-end" name="setup_minutes_override" type="number" step="0.01" min="0"
+                        <input class="form-control form-control-sm text-end" name="setup_minutes_override" type="number" step="0.00000001" min="0"
                                value="{{ ov.setup_minutes_override if ov and ov.setup_minutes_override is not none else '' }}">
                     </td>
                     <td class="text-end">
-                        <input class="form-control form-control-sm text-end" name="run_minutes_per_unit_override" type="number" step="0.0001" min="0"
+                        <input class="form-control form-control-sm text-end" name="run_minutes_per_unit_override" type="number" step="0.00000001" min="0"
                                value="{{ ov.run_minutes_per_unit_override if ov and ov.run_minutes_per_unit_override is not none else '' }}">
                     </td>
                     <td>
@@ -104,7 +106,7 @@
 
     <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">保存覆写</button>
-        <a href="{{ url_for('main.production_product_routing_list') }}" class="btn btn-outline-secondary">返回</a>
+        <a href="{{ url_for('main.production_product_routing_list', target_kind=target_kind) }}" class="btn btn-outline-secondary">返回</a>
     </div>
 </form>
 {% endblock %}

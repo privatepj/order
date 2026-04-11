@@ -17,7 +17,7 @@ class SemiMaterial(db.Model):
     name = db.Column(db.String(128), nullable=False)
     spec = db.Column(db.String(128))
     base_unit = db.Column(db.String(16))
-    standard_unit_cost = db.Column(db.Numeric(18, 4), nullable=True)
+    standard_unit_cost = db.Column(db.Numeric(26, 8), nullable=True)
     remark = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())

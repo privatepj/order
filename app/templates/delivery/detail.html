@@ -5,8 +5,10 @@
 <div class="card mb-4">
     <div class="card-body">
         <p><strong>客户：</strong>{{ delivery.customer.customer_code }} - {{ delivery.customer.name }}</p>
-        <p><strong>快递公司：</strong>{% if delivery.express_company_id %}{{ delivery.express_company.name if delivery.express_company else '-' }}{% else %}自配送{% endif %}</p>
+        <p><strong>配送方式：</strong>{{ delivery.delivery_method_display }}</p>
+        {% if delivery.is_express_delivery %}
         <p><strong>快递单号：</strong>{{ delivery.waybill_no or '-' }}</p>
+        {% endif %}
         <p><strong>送货日期：</strong>{{ delivery.delivery_date }}</p>
         <p><strong>状态：</strong>
             {% if delivery.status == 'created' %}待发
@@ -63,7 +65,7 @@
         {% for di in delivery_items %}
         <tr>
             <td>{{ di.order_item.order.order_no if di.order_item else '-' }}</td>
-            <td>{{ di.product_name or '-' }}</td>
+            <td>{{ di.product_name or (di.order_item.display_product_name if di.order_item else '-') or '-' }}</td>
             <td>{{ di.order_item.product_spec if di.order_item else '-' }}</td>
             <td>{{ line_customer_material[di.id] }}</td>
             <td>{{ di.quantity }}</td>

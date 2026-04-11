@@ -51,6 +51,12 @@
 
 详见 [项目整体部署.md](项目整体部署.md)，包含环境要求、数据库初始化、环境变量、gunicorn 运行、Nginx 与 systemd 可选配置，以及首次登录说明。
 
+## 文档与项目 Skill
+
+- **文档总入口**：[docs/index.md](docs/index.md)（架构、按业务域说明、编排器索引、AI 协作约定）
+- **项目 Skill（改代码前先读）**：[docs/04_ai/project-skill/SKILL.md](docs/04_ai/project-skill/SKILL.md)
+- **发布/增量部署快照归档**：[docs/05_releases/index.md](docs/05_releases/index.md)（亦见根目录 [RELEASES.md](RELEASES.md)）
+
 ## 项目结构
 
 ```

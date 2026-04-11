@@ -12,6 +12,7 @@ class MachineType(db.Model):
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     remark = db.Column(db.String(255), nullable=True)
     default_capability_hr_department_id = db.Column(db.Integer, nullable=False, default=0)
+    default_capability_work_type_id = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
@@ -22,6 +23,14 @@ class MachineType(db.Model):
         lazy="dynamic",
     )
 
+    @property
+    def effective_default_capability_work_type_id(self) -> int:
+        return int(
+            self.default_capability_work_type_id
+            or self.default_capability_hr_department_id
+            or 0
+        )
+
 
 class Machine(db.Model):
     __tablename__ = "machine"
@@ -30,22 +39,23 @@ class Machine(db.Model):
     machine_no = db.Column(db.String(32), nullable=False, unique=True)
     name = db.Column(db.String(64), nullable=False)
     machine_type_id = db.Column(db.Integer, nullable=False, index=True)
-    capacity_per_hour = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    capacity_per_hour = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     machine_cost_purchase_price = db.Column(
-        db.Numeric(14, 2), nullable=False, default=Decimal("0.00")
+        db.Numeric(26, 8), nullable=False, default=Decimal("0.00")
     )
     machine_accum_produced_qty = db.Column(
-        db.Numeric(18, 4), nullable=False, default=Decimal("0.0000")
+        db.Numeric(26, 8), nullable=False, default=Decimal("0.0000")
     )
     machine_accum_runtime_hours = db.Column(
-        db.Numeric(14, 4), nullable=False, default=Decimal("0.0000")
+        db.Numeric(26, 8), nullable=False, default=Decimal("0.0000")
     )
-    machine_single_run_cost = db.Column(db.Numeric(14, 2), nullable=True, default=None)
+    machine_single_run_cost = db.Column(db.Numeric(26, 8), nullable=True, default=None)
     status = db.Column(db.String(16), nullable=False, default="enabled")
     location = db.Column(db.String(128), nullable=True)
     owner_user_id = db.Column(db.Integer, nullable=True, index=True)
     remark = db.Column(db.String(255), nullable=True)
     default_capability_hr_department_id = db.Column(db.Integer, nullable=False, default=0)
+    default_capability_work_type_id = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
@@ -80,6 +90,14 @@ class Machine(db.Model):
         back_populates="machine",
         lazy="dynamic",
     )
+
+    @property
+    def effective_default_capability_work_type_id(self) -> int:
+        return int(
+            self.default_capability_work_type_id
+            or self.default_capability_hr_department_id
+            or 0
+        )
 
 
 class MachineRuntimeLog(db.Model):
@@ -188,12 +206,12 @@ class MachineScheduleDispatchLog(db.Model):
 
     dispatch_start_at = db.Column(db.DateTime, nullable=True)
     dispatch_end_at = db.Column(db.DateTime, nullable=True)
-    planned_runtime_hours = db.Column(db.Numeric(14, 4), nullable=False, default=Decimal("0.0000"))
+    planned_runtime_hours = db.Column(db.Numeric(26, 8), nullable=False, default=Decimal("0.0000"))
 
     state = db.Column(db.String(16), nullable=False, default="scheduled")
 
-    actual_produced_qty = db.Column(db.Numeric(18, 4), nullable=True)
-    actual_runtime_hours = db.Column(db.Numeric(14, 4), nullable=True)
+    actual_produced_qty = db.Column(db.Numeric(26, 8), nullable=True)
+    actual_runtime_hours = db.Column(db.Numeric(26, 8), nullable=True)
 
     work_order_id = db.Column(db.Integer, nullable=True, index=True)
     reported_by = db.Column(db.Integer, nullable=True, index=True)

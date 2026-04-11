@@ -15,8 +15,11 @@ from sqlalchemy.orm import joinedload
 from app import db
 from app.models import Customer, Delivery, DeliveryItem, OrderItem, SalesOrder
 from app.models.product import CustomerProduct
+from app.utils.delivery_method import delivery_method_waybill_display
 from app.utils.payment_type import normalize_payment_type, payment_type_label
 from app.services.delivery_svc import effective_customer_material_no
+from app.utils.decimal_scale import quantize_decimal
+from app.utils.qty_display import format_qty_plain
 
 thin = Side(style="thin")
 all_border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -45,10 +48,8 @@ def _safe_sheet_title(name: str, used: set) -> str:
 def _qty_str(q) -> str:
     if q is None:
         return ""
-    d = Decimal(str(q))
-    if d == d.to_integral_value():
-        return str(int(d))
-    return format(float(d), ".4f").rstrip("0").rstrip(".")
+    s = format_qty_plain(q)
+    return "" if s == "-" else s
 
 
 def _payment_type_sort_key(pt: str) -> Tuple[int, str]:
@@ -56,7 +57,7 @@ def _payment_type_sort_key(pt: str) -> Tuple[int, str]:
 
 
 def _name_spec(oi: OrderItem, di: DeliveryItem) -> str:
-    n = (di.product_name or oi.product_name or "") or ""
+    n = (di.product_name or oi.display_product_name or oi.product_name or "") or ""
     sp = oi.product_spec or ""
     return " ".join(x for x in (n, sp) if x).strip() or n
 
@@ -147,6 +148,7 @@ def _write_records_sheet(
         "客户",
         "送货日期",
         "送货单号",
+        "配送方式/单号",
         "料号",
         "公司料号",
         "物料编号",
@@ -192,13 +194,19 @@ def _write_records_sheet(
         remaining_qty = remaining_after.get(di.id, Decimal("0"))
 
         is_sample = bool(getattr(oi, "is_sample", False))
-        price = Decimal(str(oi.price or 0)) if not is_sample else Decimal("0")
-        amount = (price * delivery_qty).quantize(Decimal("0.01"))
+        is_spare = bool(getattr(oi, "is_spare", False))
+        price = Decimal(str(oi.price or 0)) if not (is_sample or is_spare) else Decimal("0")
+        amount = quantize_decimal(price * delivery_qty)
 
         vals = (
             cust.name or "",
             delivery_date_s,
             dlv.delivery_no or "",
+            delivery_method_waybill_display(
+                dlv.delivery_method,
+                waybill_no=dlv.waybill_no,
+                express_company_id=dlv.express_company_id,
+            ),
             customer_liao,
             company_liao,
             material_no,
@@ -208,7 +216,7 @@ def _write_records_sheet(
             _qty_str(remaining_qty),
             di.unit or oi.unit or "",
             _qty_str(price),
-            float(amount),
+            quantize_decimal(amount),
             remark,
         )
 
@@ -216,11 +224,11 @@ def _write_records_sheet(
             cell = ws.cell(r, col, val)
             cell.border = all_border
             # 文字字段靠左，其它居中；金额居右（更像报表）
-            if col == 13:
+            if col == 14:
                 cell.alignment = Alignment(
                     horizontal="right", vertical="center", wrap_text=True
                 )
-            elif col in (4, 5, 6, 7, 14):
+            elif col in (4, 5, 6, 7, 8, 15):
                 cell.alignment = Alignment(
                     horizontal="left", vertical="center", wrap_text=True
                 )
@@ -236,17 +244,18 @@ def _write_records_sheet(
         1: 20,  # 客户
         2: 10,  # 送货日期
         3: 14,  # 送货单号
-        4: 14,  # 料号
-        5: 14,  # 公司料号
-        6: 14,  # 物料编号
-        7: 24,  # 品名规格
-        8: 12,  # 订单数量
-        9: 12,  # 此次出货数量
-        10: 12,  # 未交数量
-        11: 10,  # 单位
-        12: 10,  # 单价
-        13: 16,  # 金额
-        14: 18,  # 备注
+        4: 16,  # 配送方式/单号
+        5: 14,  # 料号
+        6: 14,  # 公司料号
+        7: 14,  # 物料编号
+        8: 24,  # 品名规格
+        9: 12,  # 订单数量
+        10: 12,  # 此次出货数量
+        11: 12,  # 未交数量
+        12: 10,  # 单位
+        13: 10,  # 单价
+        14: 16,  # 金额
+        15: 18,  # 备注
     }
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(col)].width = widths.get(col, 12)

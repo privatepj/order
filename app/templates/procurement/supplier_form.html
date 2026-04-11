@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}{{ '新增供应商' if not row else '编辑供应商' }}{% endblock %}
+{% block extra_css %}
+<style>
+.map-cell { position: relative; min-width: 220px; }
+.map-dd {
+    position: fixed;
+    z-index: 1050;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+}
+</style>
+{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ '新增供应商' if not row else '编辑供应商' }}</h2>
+
+<form method="post" id="supplierForm">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label">名称</label>
+            <input type="text" class="form-control" name="name" value="{{ row.name if row else '' }}" maxlength="128" required>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">联系人</label>
+            <input type="text" class="form-control" name="contact_name" value="{{ row.contact_name if row else '' }}" maxlength="64">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">电话</label>
+            <input type="text" class="form-control" name="phone" value="{{ row.phone if row else '' }}" maxlength="32">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">状态</label>
+            <select class="form-select" name="is_active">
+                <option value="1" {% if not row or row.is_active %}selected{% endif %}>启用</option>
+                <option value="0" {% if row and not row.is_active %}selected{% endif %}>停用</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label">地址</label>
+            <input type="text" class="form-control" name="address" value="{{ row.address if row else '' }}" maxlength="255">
+        </div>
+        <div class="col-12">
+            <label class="form-label">备注</label>
+            <textarea class="form-control" name="remark" rows="3" maxlength="500">{{ row.remark if row else '' }}</textarea>
+        </div>
+    </div>
+
+    <div class="alert alert-light border mt-4 mb-2 py-2">
+        供应物料只能从物料表选择；这里仅维护“供应商-物料-最近单价”。默认供应商请到采购物料页设置。
+    </div>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <h5 class="mb-0">供应物料关联</h5>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="addMapRow">新增物料</button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle" id="mapTable">
+            <thead>
+                <tr>
+                    <th style="min-width:240px;">物料</th>
+                    <th style="width:120px;">最近单价</th>
+                    <th>备注</th>
+                    <th style="width:72px;"></th>
+                </tr>
+            </thead>
+            <tbody id="mapBody">
+                {% for item in map_rows %}
+                <tr class="map-row">
+                    <td class="map-cell">
+                        <input type="hidden" name="map_material_id" class="map-material-id" value="{{ item.material_id }}">
+                        <input type="text" class="form-control form-control-sm map-material-search" value="{{ item.material.name if item.material else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+                        <div class="map-dd list-group d-none"></div>
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value="{{ item.last_unit_price if item.last_unit_price is not none else '' }}"></td>
+                    <td><input type="text" class="form-control form-control-sm" name="map_remark" value="{{ item.remark or '' }}" maxlength="500"></td>
+                    <td><button type="button" class="btn btn-outline-danger btn-sm btn-remove-map">删除</button></td>
+                </tr>
+                {% endfor %}
+                {% if not map_rows %}
+                <tr class="map-row">
+                    <td class="map-cell">
+                        <input type="hidden" name="map_material_id" class="map-material-id" value="">
+                        <input type="text" class="form-control form-control-sm map-material-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+                        <div class="map-dd list-group d-none"></div>
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value=""></td>
+                    <td><input type="text" class="form-control form-control-sm" name="map_remark" value="" maxlength="500"></td>
+                    <td><button type="button" class="btn btn-outline-danger btn-sm btn-remove-map">删除</button></td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-3">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('main.procurement_supplier_list') }}" class="btn btn-outline-secondary">返回</a>
+    </div>
+</form>
+
+<template id="mapRowTpl">
+    <tr class="map-row">
+        <td class="map-cell">
+            <input type="hidden" name="map_material_id" class="map-material-id" value="">
+            <input type="text" class="form-control form-control-sm map-material-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+            <div class="map-dd list-group d-none"></div>
+        </td>
+        <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value=""></td>
+        <td><input type="text" class="form-control form-control-sm" name="map_remark" value="" maxlength="500"></td>
+        <td><button type="button" class="btn btn-outline-danger btn-sm btn-remove-map">删除</button></td>
+    </tr>
+</template>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var searchUrl = {{ material_search_url|tojson }};
+    var body = document.getElementById('mapBody');
+    var tpl = document.getElementById('mapRowTpl');
+
+    function hideAll() {
+        document.querySelectorAll('.map-dd').forEach(function (el) {
+            el.classList.add('d-none');
+            el.innerHTML = '';
+        });
+    }
+
+    function place(dd, input) {
+        var rect = input.getBoundingClientRect();
+        dd.style.left = rect.left + 'px';
+        dd.style.top = rect.bottom + 'px';
+        dd.style.width = Math.max(rect.width, 220) + 'px';
+    }
+
+    function render(dd, input, items) {
+        dd.innerHTML = '';
+        place(dd, input);
+        if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted';
+            empty.textContent = '无匹配项';
+            dd.appendChild(empty);
+            dd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function (item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = item.label || '';
+            btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            btn.addEventListener('click', function () {
+                var row = dd.closest('.map-row');
+                row.querySelector('.map-material-id').value = item.material_id || item.id || '';
+                row.querySelector('.map-material-search').value = item.label || '';
+                hideAll();
+            });
+            dd.appendChild(btn);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    function bindRow(row) {
+        if (row.getAttribute('data-bound') === '1') return;
+        row.setAttribute('data-bound', '1');
+        var input = row.querySelector('.map-material-search');
+        var hidden = row.querySelector('.map-material-id');
+        var dd = row.querySelector('.map-dd');
+        var timer = null;
+        if (!input || !dd) return;
+        input.addEventListener('input', function () {
+            hidden.value = '';
+            if (timer) window.clearTimeout(timer);
+            timer = window.setTimeout(function () {
+                fetch(searchUrl + '?q=' + encodeURIComponent(input.value || ''), {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { render(dd, input, data.items || []); })
+                    .catch(function () { render(dd, input, []); });
+            }, 200);
+        });
+        input.addEventListener('focus', function () {
+            if ((input.value || '').trim()) {
+                input.dispatchEvent(new Event('input'));
+            }
+        });
+    }
+
+    body.querySelectorAll('.map-row').forEach(bindRow);
+
+    document.getElementById('addMapRow').addEventListener('click', function () {
+        body.appendChild(tpl.content.cloneNode(true));
+        bindRow(body.querySelectorAll('.map-row')[body.querySelectorAll('.map-row').length - 1]);
+    });
+
+    body.addEventListener('click', function (e) {
+        if (e.target.classList.contains('btn-remove-map')) {
+            var rows = body.querySelectorAll('.map-row');
+            if (rows.length <= 1) return;
+            e.target.closest('.map-row').remove();
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.map-cell')) hideAll();
+    });
+})();
+</script>
+{% endblock %}

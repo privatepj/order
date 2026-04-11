@@ -3,19 +3,23 @@
 {% block content %}
 <h2 class="mb-4">新建送货单</h2>
 {% if not express_companies %}
-<div class="alert alert-info">未维护快递公司时，请使用「自配送」。选择「快递」时需添加快递公司；留空单号自动分配依赖单号池，也可直接手写单号（含未入池）。</div>
+<div class="alert alert-info">未维护快递公司时，请使用「自配送」或「自提」。选择「快递」时需添加快递公司；留空单号自动分配依赖单号池，也可直接手写单号（含未入池）。</div>
 {% endif %}
 <form method="post" id="deliveryForm">
     <div class="mb-3">
         <label class="form-label">配送方式</label>
         <div>
             <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="self_delivery" id="dmExpress" value="0" {{ 'checked' if express_companies else '' }} {{ 'disabled' if not express_companies else '' }}>
+                <input class="form-check-input" type="radio" name="delivery_method" id="dmExpress" value="express" {{ 'checked' if express_companies else '' }} {{ 'disabled' if not express_companies else '' }}>
                 <label class="form-check-label" for="dmExpress">快递</label>
             </div>
             <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="self_delivery" id="dmSelf" value="1" {{ 'checked' if not express_companies else '' }}>
+                <input class="form-check-input" type="radio" name="delivery_method" id="dmSelf" value="self_delivery" {{ 'checked' if not express_companies else '' }}>
                 <label class="form-check-label" for="dmSelf">自配送</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="delivery_method" id="dmPickup" value="pickup">
+                <label class="form-check-label" for="dmPickup">自提</label>
             </div>
         </div>
     </div>
@@ -82,7 +86,7 @@
             </tr>
         </thead>
         <tbody id="pendingBody">
-            <tr><td colspan="11" class="text-muted">请先选择客户并点击「加载该客户待送订单行」</td></tr>
+            <tr><td colspan="11" class="text-muted">请先选择客户并点击「加载该客户待送订单行」。</td></tr>
         </tbody>
     </table>
     </div>
@@ -120,27 +124,34 @@
     var expressFieldsRow = document.getElementById('expressFieldsRow');
     var dmExpress = document.getElementById('dmExpress');
     var dmSelf = document.getElementById('dmSelf');
+    var dmPickup = document.getElementById('dmPickup');
     var loadBtn = document.getElementById('loadPending');
     var tbody = document.getElementById('pendingBody');
     var waybillPreview = document.getElementById('waybillPreview');
     var waybillHint = document.getElementById('waybillHint');
-    var submitBtn = document.getElementById('submitDelivery');
     var today = new Date().toISOString().slice(0, 10);
     var deliveryDate = document.querySelector('input[name="delivery_date"]');
     if (deliveryDate && !deliveryDate.value) deliveryDate.value = today;
 
-    function isSelfDelivery() {
-        return dmSelf && dmSelf.checked;
+    function selectedDeliveryMethod() {
+        if (dmPickup && dmPickup.checked) return 'pickup';
+        if (dmSelf && dmSelf.checked) return 'self_delivery';
+        return 'express';
+    }
+
+    function isExpressDelivery() {
+        return selectedDeliveryMethod() === 'express';
     }
 
     function syncFulfillmentUI() {
-        var self = isSelfDelivery();
-        if (expressFieldsRow) expressFieldsRow.style.display = self ? 'none' : '';
+        var isExpress = isExpressDelivery();
+        if (expressFieldsRow) expressFieldsRow.style.display = isExpress ? '' : 'none';
         if (expressSelect) {
             var noCompanies = expressSelect.querySelectorAll('option').length <= 1;
-            expressSelect.disabled = self || noCompanies;
+            expressSelect.disabled = !isExpress || noCompanies;
         }
-        if (self) {
+        if (!isExpress) {
+            if (expressSelect) expressSelect.value = '';
             if (waybillPreview) waybillPreview.value = '';
             if (waybillHint) waybillHint.textContent = '';
         } else if (expressSelect && expressSelect.value) {
@@ -150,6 +161,7 @@
 
     if (dmExpress) dmExpress.addEventListener('change', syncFulfillmentUI);
     if (dmSelf) dmSelf.addEventListener('change', syncFulfillmentUI);
+    if (dmPickup) dmPickup.addEventListener('change', syncFulfillmentUI);
 
     var customerFilterTimer = null;
     var customerApiUrl = {{ url_for("main.delivery_customers_search")|tojson }};
@@ -158,10 +170,6 @@
         if (!customerDropdown) return;
         customerDropdown.classList.add('d-none');
         customerDropdown.innerHTML = '';
-    }
-
-    function escText(s) {
-        return (s === null || s === undefined) ? '' : String(s);
     }
 
     function renderCustomerItems(items) {
@@ -230,7 +238,7 @@
     }
 
     function refreshWaybill() {
-        if (isSelfDelivery()) return;
+        if (!isExpressDelivery()) return;
         var eid = expressSelect ? expressSelect.value : '';
         if (waybillPreview) waybillPreview.value = '';
         if (waybillHint) waybillHint.textContent = '';
@@ -240,7 +248,7 @@
             .then(function(data){
                 if (data.waybill_no) {
                     if (waybillPreview) waybillPreview.value = data.waybill_no;
-                    if (waybillHint) waybillHint.textContent = '保存时：若所填单号在该公司单号池且可用则占用；否则按手写保存（不入池）。留空则按顺序自动分配。';
+                    if (waybillHint) waybillHint.textContent = '保存时：若所填单号在该公司单号池中且可用则占用，否则按手写保存（不入池）。留空则按顺序自动分配。';
                 } else {
                     if (waybillHint) waybillHint.textContent = data.message || '暂无可用单号';
                 }
@@ -278,7 +286,7 @@
                         '<td>' + tq + '</td>' +
                         '<td>' + it.remaining_qty + '</td>' +
                         '<td>' + (it.unit || '') + '</td>' +
-                        '<td><input type="number" step="0.0001" min="0" max="' + it.remaining_qty + '" class="form-control form-control-sm delivery-qty" value="' + it.remaining_qty + '"></td>';
+                        '<td><input type="number" step="0.00000001" min="0" max="' + it.remaining_qty + '" class="form-control form-control-sm delivery-qty" value="' + it.remaining_qty + '"></td>';
                     tbody.appendChild(tr);
                 });
             });
@@ -289,7 +297,7 @@
             alert('请选择客户');
             return false;
         }
-        if (!isSelfDelivery()) {
+        if (isExpressDelivery()) {
             if (expressSelect && !expressSelect.value) {
                 alert('请选择快递公司');
                 return false;

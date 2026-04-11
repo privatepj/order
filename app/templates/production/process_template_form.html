@@ -36,7 +36,7 @@
                     <th>工序名称</th>
                     <th style="width:140px;">资源维度</th>
                     <th style="width:180px;">机台种类</th>
-                    <th style="width:190px;">HR 部门</th>
+                    <th style="width:220px;">工种</th>
                     <th style="width:130px;" class="text-end">准备(分钟)</th>
                     <th style="width:160px;" class="text-end">运行(分钟/单位)</th>
                     <th style="width:140px;">步骤备注</th>
@@ -58,7 +58,7 @@
                         <td>
                             <select class="form-select form-select-sm resource-kind" name="resource_kind">
                                 <option value="machine_type" {% if (st.resource_kind or 'machine_type')=='machine_type' %}selected{% endif %}>机台</option>
-                                <option value="hr_department" {% if (st.resource_kind or '')=='hr_department' %}selected{% endif %}>班组/部门</option>
+                                <option value="hr_work_type" {% if (st.resource_kind or '') in ['hr_department', 'hr_work_type'] %}selected{% endif %}>工种</option>
                             </select>
                         </td>
                         <td>
@@ -70,18 +70,20 @@
                             </select>
                         </td>
                         <td>
-                            <select class="form-select form-select-sm hr-department-id" name="hr_department_id">
+                            <select class="form-select form-select-sm work-type-id" name="work_type_id">
                                 <option value="0">--</option>
-                                {% for d in hr_departments %}
-                                    <option value="{{ d.id }}" {% if (st.hr_department_id or 0)==d.id %}selected{% endif %}>{{ d.name }}</option>
+                                {% for wt in work_types %}
+                                    <option value="{{ wt.id }}" {% if (st.work_type_id or st.hr_department_id or 0)==wt.id %}selected{% endif %}>
+                                        {{ wt.name }}{% if wt.company %}（{{ wt.company.name }}）{% endif %}
+                                    </option>
                                 {% endfor %}
                             </select>
                         </td>
                         <td class="text-end">
-                            <input class="form-control form-control-sm text-end" name="setup_minutes" type="number" step="0.01" min="0" value="{{ st.setup_minutes if st.setup_minutes is not none else '' }}">
+                            <input class="form-control form-control-sm text-end" name="setup_minutes" type="number" step="0.00000001" min="0" value="{{ st.setup_minutes if st.setup_minutes is not none else '' }}">
                         </td>
                         <td class="text-end">
-                            <input class="form-control form-control-sm text-end" name="run_minutes_per_unit" type="number" step="0.0001" min="0" value="{{ st.run_minutes_per_unit if st.run_minutes_per_unit is not none else '' }}">
+                            <input class="form-control form-control-sm text-end" name="run_minutes_per_unit" type="number" step="0.00000001" min="0" value="{{ st.run_minutes_per_unit if st.run_minutes_per_unit is not none else '' }}">
                         </td>
                         <td class="text-nowrap">
                             <input class="form-control form-control-sm" name="step_remark" maxlength="255" value="{{ st.remark or '' }}">
@@ -102,7 +104,7 @@
                         <td>
                             <select class="form-select form-select-sm resource-kind" name="resource_kind">
                                 <option value="machine_type" selected>机台</option>
-                                <option value="hr_department">班组/部门</option>
+                                <option value="hr_work_type">工种</option>
                             </select>
                         </td>
                         <td>
@@ -114,18 +116,18 @@
                             </select>
                         </td>
                         <td>
-                            <select class="form-select form-select-sm hr-department-id" name="hr_department_id">
+                            <select class="form-select form-select-sm work-type-id" name="work_type_id">
                                 <option value="0">--</option>
-                                {% for d in hr_departments %}
-                                    <option value="{{ d.id }}">{{ d.name }}</option>
+                                {% for wt in work_types %}
+                                    <option value="{{ wt.id }}">{{ wt.name }}{% if wt.company %}（{{ wt.company.name }}）{% endif %}</option>
                                 {% endfor %}
                             </select>
                         </td>
                         <td class="text-end">
-                            <input class="form-control form-control-sm text-end" name="setup_minutes" type="number" step="0.01" min="0" value="">
+                            <input class="form-control form-control-sm text-end" name="setup_minutes" type="number" step="0.00000001" min="0" value="">
                         </td>
                         <td class="text-end">
-                            <input class="form-control form-control-sm text-end" name="run_minutes_per_unit" type="number" step="0.0001" min="0" value="">
+                            <input class="form-control form-control-sm text-end" name="run_minutes_per_unit" type="number" step="0.00000001" min="0" value="">
                         </td>
                         <td class="text-nowrap">
                             <input class="form-control form-control-sm" name="step_remark" maxlength="255" value="">
@@ -203,7 +205,7 @@
   function applyRowState(rowEl) {
     var rk = rowEl.querySelector('select[name="resource_kind"]').value;
     var mSel = rowEl.querySelector('select[name="machine_type_id"]');
-    var hSel = rowEl.querySelector('select[name="hr_department_id"]');
+    var hSel = rowEl.querySelector('select[name="work_type_id"]');
     if (rk === 'machine_type') {
       mSel.disabled = false;
       hSel.disabled = false;
@@ -240,7 +242,7 @@
       newRow.querySelector('input[name="step_remark"]').value = '';
       newRow.querySelector('select[name="resource_kind"]').value = 'machine_type';
       newRow.querySelector('select[name="machine_type_id"]').value = '0';
-      newRow.querySelector('select[name="hr_department_id"]').value = '0';
+      newRow.querySelector('select[name="work_type_id"]').value = '0';
       tbody.appendChild(newRow);
       initRow(newRow);
     });

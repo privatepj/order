@@ -13,12 +13,13 @@ from sqlalchemy.orm import selectinload
 
 from app import db
 from app.auth.decorators import capability_required, menu_required
+from app.utils.decimal_scale import quantize_decimal
 from app.models import (
     CustomerProduct,
     Customer,
-    HrDepartment,
     HrEmployee,
     HrEmployeeCapability,
+    HrWorkType,
     Machine,
     MachineOperatorAllowlist,
     MachineScheduleBooking,
@@ -40,9 +41,17 @@ from app.models import (
     ProductionCostPlanDetail,
     OrderItem,
     SalesOrder,
+    SemiMaterial,
     User,
 )
-from app.services import bom_svc, delivery_svc, production_svc, production_cost_svc
+from app.services import (
+    bom_svc,
+    delivery_svc,
+    inventory_svc,
+    production_cost_svc,
+    production_preplan_schedule_manual_svc,
+    production_svc,
+)
 from app.services.production_schedule_svc import (
     compute_preplan_schedule_dashboard,
     list_schedule_plan_rows_for_preplan,
@@ -123,8 +132,16 @@ def _parse_decimal_non_negative(raw: Any, *, default: Decimal = Decimal(0)) -> D
     return v
 
 
-PROCESS_RESOURCE_KINDS = ("machine_type", "hr_department")
+PROCESS_RESOURCE_KINDS = ("machine_type", "hr_department", "hr_work_type")
 PROCESS_EDGE_TYPES = ("fs",)
+
+
+def _production_work_types() -> list[HrWorkType]:
+    return (
+        HrWorkType.query.options(selectinload(HrWorkType.company))
+        .order_by(HrWorkType.company_id.asc(), HrWorkType.sort_order.asc(), HrWorkType.id.asc())
+        .all()
+    )
 
 
 def _topology_has_cycle(nodes: List[int], edges: List[tuple[int, int]]) -> bool:
@@ -221,6 +238,7 @@ def _sync_process_graph_from_steps(
             resource_kind=st.get("resource_kind"),
             machine_type_id=int(st.get("machine_type_id") or 0),
             hr_department_id=int(st.get("hr_department_id") or 0),
+            hr_work_type_id=int(st.get("hr_work_type_id") or st.get("hr_department_id") or 0),
             setup_minutes=st.get("setup_minutes"),
             run_minutes_per_unit=st.get("run_minutes_per_unit"),
             scrap_rate=None,
@@ -265,14 +283,15 @@ def _parse_process_template_steps_from_form() -> List[Dict[str, Any]]:
     工序模板步骤表单解析：
     - 允许末尾空行（step_name 为空的行忽略）
     - step_no 必须从 1 开始连续且唯一（首版串行策略）
-    - resource_kind 决定资源字段必填：machine_type 或 hr_department
+    - resource_kind 决定资源字段必填：machine_type 或 hr_work_type
     """
     step_nos_raw = request.form.getlist("step_no")
     step_codes_raw = request.form.getlist("step_code")
     step_names_raw = request.form.getlist("step_name")
     resource_kinds_raw = request.form.getlist("resource_kind")
     machine_type_ids_raw = request.form.getlist("machine_type_id")
-    hr_department_ids_raw = request.form.getlist("hr_department_id")
+    work_type_ids_raw = request.form.getlist("work_type_id")
+    legacy_department_ids_raw = request.form.getlist("hr_department_id")
     setup_minutes_raw = request.form.getlist("setup_minutes")
     run_minutes_raw = request.form.getlist("run_minutes_per_unit")
     step_remarks_raw = request.form.getlist("step_remark")
@@ -290,10 +309,14 @@ def _parse_process_template_steps_from_form() -> List[Dict[str, Any]]:
         resource_kind = str(resource_kind).strip()
         if resource_kind not in PROCESS_RESOURCE_KINDS:
             raise ValueError("资源维度 resource_kind 不合法。")
+        if resource_kind != "machine_type":
+            resource_kind = "hr_work_type"
 
         machine_type_id = _parse_int(machine_type_ids_raw[i] if i < len(machine_type_ids_raw) else None) or 0
-        hr_department_id = _parse_int(
-            hr_department_ids_raw[i] if i < len(hr_department_ids_raw) else None
+        work_type_id = _parse_int(
+            work_type_ids_raw[i] if i < len(work_type_ids_raw) else None
+        ) or _parse_int(
+            legacy_department_ids_raw[i] if i < len(legacy_department_ids_raw) else None
         ) or 0
 
         setup_minutes = _parse_decimal_non_negative(
@@ -308,10 +331,10 @@ def _parse_process_template_steps_from_form() -> List[Dict[str, Any]]:
         if resource_kind == "machine_type":
             if machine_type_id <= 0:
                 raise ValueError("选择 machine_type 时 machine_type_id 必填。")
-            hr_department_id = 0
+            work_type_id = 0
         else:
-            if hr_department_id <= 0:
-                raise ValueError("选择 hr_department 时 hr_department_id 必填。")
+            if work_type_id <= 0:
+                raise ValueError("选择工种时 work_type_id 必填。")
             machine_type_id = 0
 
         rows.append(
@@ -321,7 +344,8 @@ def _parse_process_template_steps_from_form() -> List[Dict[str, Any]]:
                 "step_name": step_name,
                 "resource_kind": resource_kind,
                 "machine_type_id": int(machine_type_id),
-                "hr_department_id": int(hr_department_id),
+                "hr_department_id": int(work_type_id),
+                "hr_work_type_id": int(work_type_id),
                 "setup_minutes": setup_minutes,
                 "run_minutes_per_unit": run_minutes_per_unit,
                 "remark": step_remark,
@@ -358,7 +382,8 @@ def _parse_product_routing_step_overrides_from_form(
     template_step_nos_raw = request.form.getlist("template_step_no")
     resource_kind_overrides_raw = request.form.getlist("resource_kind_override")
     machine_type_ids_raw = request.form.getlist("machine_type_id_override")
-    hr_department_ids_raw = request.form.getlist("hr_department_id_override")
+    work_type_ids_raw = request.form.getlist("work_type_id_override")
+    legacy_department_ids_raw = request.form.getlist("hr_department_id_override")
     setup_minutes_override_raw = request.form.getlist("setup_minutes_override")
     run_minutes_override_raw = request.form.getlist("run_minutes_per_unit_override")
     step_name_override_raw = request.form.getlist("step_name_override")
@@ -380,13 +405,15 @@ def _parse_product_routing_step_overrides_from_form(
         else:
             if res_kind_override not in PROCESS_RESOURCE_KINDS:
                 raise ValueError("资源维度 resource_kind_override 不合法。")
-            res_kind_override_val = res_kind_override
+            res_kind_override_val = "hr_work_type" if res_kind_override != "machine_type" else res_kind_override
 
         machine_type_id_override = _parse_int(
             machine_type_ids_raw[i] if i < len(machine_type_ids_raw) else None
         ) or 0
-        hr_department_id_override = _parse_int(
-            hr_department_ids_raw[i] if i < len(hr_department_ids_raw) else None
+        work_type_id_override = _parse_int(
+            work_type_ids_raw[i] if i < len(work_type_ids_raw) else None
+        ) or _parse_int(
+            legacy_department_ids_raw[i] if i < len(legacy_department_ids_raw) else None
         ) or 0
 
         setup_override = _parse_decimal(setup_minutes_override_raw[i] if i < len(setup_minutes_override_raw) else None, default=None)
@@ -414,14 +441,14 @@ def _parse_product_routing_step_overrides_from_form(
         # 资源维度继承：忽略机台/班组 id 覆写
         if res_kind_override_val is None:
             machine_type_id_override = 0
-            hr_department_id_override = 0
+            work_type_id_override = 0
         elif res_kind_override_val == "machine_type":
             if machine_type_id_override <= 0:
                 raise ValueError("选择 machine_type 时 machine_type_id_override 必填。")
-            hr_department_id_override = 0
+            work_type_id_override = 0
         else:
-            if hr_department_id_override <= 0:
-                raise ValueError("选择 hr_department 时 hr_department_id_override 必填。")
+            if work_type_id_override <= 0:
+                raise ValueError("选择工种时 work_type_id_override 必填。")
             machine_type_id_override = 0
 
         out.append(
@@ -429,7 +456,8 @@ def _parse_product_routing_step_overrides_from_form(
                 "template_step_no": int(stno),
                 "resource_kind_override": res_kind_override_val,
                 "machine_type_id_override": int(machine_type_id_override),
-                "hr_department_id_override": int(hr_department_id_override),
+                "hr_department_id_override": int(work_type_id_override),
+                "hr_work_type_id_override": int(work_type_id_override),
                 "setup_minutes_override": setup_override,
                 "run_minutes_per_unit_override": run_override,
                 "step_name_override": step_name_override,
@@ -552,18 +580,21 @@ def _budget_options_for_operations(
                             }
                         )
                 out[oid] = {"kind": "machine_type", "pairs": pairs, "machines": machines}
-            elif op.resource_kind == "hr_department" and int(op.hr_department_id or 0) > 0:
+            elif op.resource_kind in ("hr_department", "hr_work_type") and int(op.effective_work_type_id or 0) > 0:
                 cap_ids = production_cost_svc.resolve_capability_dept_ids(
-                    company_id=company_id, process_hr_department_id=int(op.hr_department_id)
+                    company_id=company_id, process_hr_department_id=int(op.effective_work_type_id)
                 )
                 if not cap_ids:
-                    out[oid] = {"kind": "hr_department", "employees": []}
+                    out[oid] = {"kind": "hr_work_type", "employees": []}
                     continue
                 emp_rows = (
                     db.session.query(HrEmployeeCapability.employee_id)
                     .filter(
                         HrEmployeeCapability.company_id == company_id,
-                        HrEmployeeCapability.hr_department_id.in_(cap_ids),
+                        (
+                            HrEmployeeCapability.work_type_id.in_(cap_ids)
+                            | HrEmployeeCapability.hr_department_id.in_(cap_ids)
+                        ),
                     )
                     .distinct()
                     .all()
@@ -575,7 +606,7 @@ def _budget_options_for_operations(
                     else []
                 )
                 out[oid] = {
-                    "kind": "hr_department",
+                    "kind": "hr_work_type",
                     "employees": [{"id": e.id, "label": f"{e.employee_no} {e.name}"} for e in emps],
                 }
     return out
@@ -786,6 +817,7 @@ def register_production_routes(bp):
                 db.session.query(ProductionWorkOrder).filter_by(
                     preplan_id=preplan_id
                 ).delete(synchronize_session=False)
+                inventory_svc.delete_reservations_for_preplan(preplan_id=preplan_id)
                 db.session.flush()
 
                 # 重建明细
@@ -849,6 +881,7 @@ def register_production_routes(bp):
                 return redirect(url_for("main.production_preplan_list"))
 
             # 删除测算结果与明细
+            inventory_svc.delete_reservations_for_preplan(preplan_id=preplan_id)
             db.session.query(ProductionComponentNeed).filter_by(preplan_id=preplan_id).delete(
                 synchronize_session=False
             )
@@ -1133,45 +1166,55 @@ def register_production_routes(bp):
             url_for("main.production_preplan_detail", preplan_id=preplan_id)
         )
 
-    @bp.route("/production/preplans/<int:preplan_id>/budget-assign", methods=["POST"])
+    @bp.route("/production/preplans/<int:preplan_id>/schedule-manual", methods=["POST"])
     @login_required
     @menu_required("production_preplan")
     @capability_required("production.calc.action.run")
-    def production_preplan_budget_assign(preplan_id: int):
+    def production_preplan_schedule_manual(preplan_id: int):
         preplan = db.session.get(ProductionPreplan, preplan_id)
         if not preplan:
             flash("预生产计划不存在。", "warning")
             return redirect(url_for("main.production_preplan_list"))
-        wos = ProductionWorkOrder.query.filter_by(preplan_id=preplan_id).all()
-        for wo in wos:
-            for op in ProductionWorkOrderOperation.query.filter_by(work_order_id=wo.id).all():
-                if op.resource_kind == "machine_type":
-                    raw = (request.form.get(f"budget_pair_{op.id}") or "").strip()
-                    if raw and ":" in raw:
-                        parts = raw.split(":", 1)
-                        try:
-                            mid = int(parts[0])
-                            eid = int(parts[1])
-                        except ValueError:
-                            mid, eid = 0, 0
-                        op.budget_machine_id = mid
-                        op.budget_operator_employee_id = eid
-                    else:
-                        op.budget_machine_id = 0
-                        op.budget_operator_employee_id = 0
-                elif op.resource_kind == "hr_department":
-                    op.budget_operator_employee_id = request.form.get(
-                        f"budget_emp_{op.id}", type=int
-                    ) or 0
-                    op.budget_machine_id = 0
-                db.session.add(op)
         try:
-            production_cost_svc.build_cost_plan_for_preplan(preplan_id=preplan_id)
-            db.session.commit()
-            flash("预算指定已保存并重新计算成本。", "success")
+            errs = production_preplan_schedule_manual_svc.apply_manual_plan_from_form(
+                preplan_id=preplan_id,
+                form_data=request.form,
+                user_id=int(current_user.id),
+            )
+            if errs:
+                db.session.rollback()
+                for msg in errs[:20]:
+                    flash(msg, "danger")
+            else:
+                flash("人工排程已保存。", "success")
         except Exception as e:
             db.session.rollback()
             flash(f"保存失败：{e}", "danger")
+        return redirect(url_for("main.production_preplan_detail", preplan_id=preplan_id))
+
+    @bp.route("/production/preplans/<int:preplan_id>/schedule-confirm", methods=["POST"])
+    @login_required
+    @menu_required("production_preplan")
+    @capability_required("production.calc.action.run")
+    def production_preplan_schedule_confirm(preplan_id: int):
+        preplan = db.session.get(ProductionPreplan, preplan_id)
+        if not preplan:
+            flash("预生产计划不存在。", "warning")
+            return redirect(url_for("main.production_preplan_list"))
+        try:
+            errs = production_preplan_schedule_manual_svc.confirm_preplan_schedule(
+                preplan_id=preplan_id,
+                user_id=int(current_user.id),
+            )
+            if errs:
+                db.session.rollback()
+                for msg in errs[:20]:
+                    flash(msg, "danger")
+            else:
+                flash("计划已确认并同步到机台/人员排班。", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"确认失败：{e}", "danger")
         return redirect(url_for("main.production_preplan_detail", preplan_id=preplan_id))
 
     @bp.route("/production/work-orders/<int:work_order_id>/report", methods=["POST"])
@@ -1231,7 +1274,7 @@ def register_production_routes(bp):
             return redirect(url_for("main.production_preplan_detail", preplan_id=wo.preplan_id))
 
         duration_seconds = int((booking.end_at - booking.start_at).total_seconds())
-        runtime_hours = (Decimal(duration_seconds) / Decimal(3600)).quantize(Decimal("0.0001"))
+        runtime_hours = quantize_decimal(Decimal(duration_seconds) / Decimal(3600))
 
         if not dispatch_log:
             dispatch_log = MachineScheduleDispatchLog(
@@ -1620,7 +1663,7 @@ def register_production_routes(bp):
     @capability_required("production.process_template.action.create")
     def production_process_template_new():
         machine_types = MachineType.query.order_by(MachineType.name.asc()).all()
-        hr_departments = HrDepartment.query.order_by(HrDepartment.sort_order.asc(), HrDepartment.id.asc()).all()
+        work_types = _production_work_types()
         if request.method == "POST":
             try:
                 name = (request.form.get("name") or "").strip()
@@ -1655,6 +1698,7 @@ def register_production_routes(bp):
                             resource_kind=st["resource_kind"],
                             machine_type_id=st["machine_type_id"],
                             hr_department_id=st["hr_department_id"],
+                            hr_work_type_id=st["hr_work_type_id"],
                             setup_minutes=st["setup_minutes"],
                             run_minutes_per_unit=st["run_minutes_per_unit"],
                             remark=st["remark"],
@@ -1675,7 +1719,7 @@ def register_production_routes(bp):
             steps=[],
             edge_rows=[],
             machine_types=machine_types,
-            hr_departments=hr_departments,
+            work_types=work_types,
         )
 
     @bp.route("/production/process-templates/<int:template_id>/edit", methods=["GET", "POST"])
@@ -1689,7 +1733,7 @@ def register_production_routes(bp):
             return redirect(url_for("main.production_process_template_list"))
 
         machine_types = MachineType.query.order_by(MachineType.name.asc()).all()
-        hr_departments = HrDepartment.query.order_by(HrDepartment.sort_order.asc(), HrDepartment.id.asc()).all()
+        work_types = _production_work_types()
 
         if request.method == "POST":
             try:
@@ -1724,6 +1768,7 @@ def register_production_routes(bp):
                             resource_kind=st["resource_kind"],
                             machine_type_id=st["machine_type_id"],
                             hr_department_id=st["hr_department_id"],
+                            hr_work_type_id=st["hr_work_type_id"],
                             setup_minutes=st["setup_minutes"],
                             run_minutes_per_unit=st["run_minutes_per_unit"],
                             remark=st["remark"],
@@ -1750,7 +1795,7 @@ def register_production_routes(bp):
                 "step_name": st.step_name,
                 "resource_kind": st.resource_kind,
                 "machine_type_id": st.machine_type_id,
-                "hr_department_id": st.hr_department_id,
+                "work_type_id": st.effective_work_type_id,
                 "setup_minutes": st.setup_minutes,
                 "run_minutes_per_unit": st.run_minutes_per_unit,
                 "remark": st.remark,
@@ -1785,7 +1830,7 @@ def register_production_routes(bp):
             steps=steps,
             edge_rows=edge_rows,
             machine_types=machine_types,
-            hr_departments=hr_departments,
+            work_types=work_types,
         )
 
     @bp.route("/production/process-templates/<int:template_id>/delete", methods=["POST"])
@@ -1815,44 +1860,97 @@ def register_production_routes(bp):
     @login_required
     @menu_required("production_process")
     def production_product_routing_list():
+        target_kind = (request.args.get("target_kind") or "finished").strip().lower()
+        if target_kind not in ("finished", "semi"):
+            target_kind = "finished"
         keyword = (request.args.get("keyword") or "").strip()
-        q = Product.query
-        if keyword:
-            q = q.filter(db.or_(Product.product_code.contains(keyword), Product.name.contains(keyword)))
+        if target_kind == "finished":
+            q = Product.query
+            if keyword:
+                q = q.filter(
+                    db.or_(Product.product_code.contains(keyword), Product.name.contains(keyword))
+                )
+            items = q.order_by(Product.product_code.asc()).limit(500).all()
+        else:
+            q = SemiMaterial.query.filter_by(kind="semi")
+            if keyword:
+                q = q.filter(
+                    db.or_(SemiMaterial.code.contains(keyword), SemiMaterial.name.contains(keyword))
+                )
+            items = q.order_by(SemiMaterial.code.asc(), SemiMaterial.id.asc()).limit(500).all()
 
-        products = q.order_by(Product.product_code.asc()).limit(500).all()
-        routings = ProductionProductRouting.query.filter(ProductionProductRouting.is_active).all()
-        routing_map: Dict[int, ProductionProductRouting] = {r.product_id: r for r in routings}
+        routings = ProductionProductRouting.query.filter_by(
+            target_kind=target_kind, is_active=True
+        ).all()
+        routing_map: Dict[int, ProductionProductRouting] = {
+            r.effective_target_id: r for r in routings if r.effective_target_id > 0
+        }
         template_ids = sorted({r.template_id for r in routings})
         templates = ProductionProcessTemplate.query.filter(ProductionProcessTemplate.id.in_(template_ids)).all() if template_ids else []
         template_map: Dict[int, ProductionProcessTemplate] = {t.id: t for t in templates}
 
         return render_template(
             "production/product_routing_list.html",
-            products=products,
+            target_kind=target_kind,
+            items=items,
             routing_map=routing_map,
             template_map=template_map,
             keyword=keyword,
         )
 
-    @bp.route("/production/product-routings/<int:product_id>/edit", methods=["GET", "POST"])
+    @bp.route("/production/product-routings/<int:product_id>/edit", methods=["GET"])
     @login_required
     @menu_required("production_process")
     @capability_required("production.process_routing.action.edit")
-    def production_product_routing_edit(product_id: int):
-        product = db.session.get(Product, product_id)
-        if not product:
-            flash("产品不存在。", "warning")
+    def production_product_routing_edit_legacy(product_id: int):
+        return redirect(
+            url_for(
+                "main.production_product_routing_edit",
+                target_kind="finished",
+                target_id=product_id,
+            )
+        )
+
+    @bp.route("/production/product-routings/edit", methods=["GET", "POST"])
+    @login_required
+    @menu_required("production_process")
+    @capability_required("production.process_routing.action.edit")
+    def production_product_routing_edit():
+        target_kind = (request.values.get("target_kind") or "finished").strip().lower()
+        if target_kind not in ("finished", "semi"):
+            target_kind = "finished"
+        target_id = request.values.get("target_id", type=int) or 0
+        if target_id <= 0:
+            flash("请选择需要配置路由的对象。", "warning")
             return redirect(url_for("main.production_product_routing_list"))
 
+        if target_kind == "finished":
+            target_obj = db.session.get(Product, target_id)
+            target_label = "成品"
+            target_code = target_obj.product_code if target_obj else ""
+            target_name = target_obj.name if target_obj else ""
+            target_spec = target_obj.spec if target_obj else ""
+        else:
+            target_obj = SemiMaterial.query.filter_by(id=target_id, kind="semi").first()
+            target_label = "半成品"
+            target_code = target_obj.code if target_obj else ""
+            target_name = target_obj.name if target_obj else ""
+            target_spec = target_obj.spec if target_obj else ""
+        if not target_obj:
+            flash("对象不存在或类型不匹配。", "warning")
+            return redirect(url_for("main.production_product_routing_list", target_kind=target_kind))
+
         machine_types = MachineType.query.order_by(MachineType.name.asc()).all()
-        hr_departments = HrDepartment.query.order_by(HrDepartment.sort_order.asc(), HrDepartment.id.asc()).all()
+        work_types = _production_work_types()
         templates = ProductionProcessTemplate.query.filter_by(is_active=True).order_by(ProductionProcessTemplate.id.desc()).all()
         if not templates:
             flash("请先维护工序模板。", "warning")
             return redirect(url_for("main.production_process_template_list"))
 
-        routing = ProductionProductRouting.query.filter_by(product_id=product_id).first()
+        routing = ProductionProductRouting.query.filter_by(
+            target_kind=target_kind,
+            target_id=target_id,
+        ).first()
         selected_template_id = (
             request.form.get("template_id", type=int)
             or request.args.get("template_id", type=int)
@@ -1891,7 +1989,9 @@ def register_production_routes(bp):
 
                 if routing is None:
                     routing = ProductionProductRouting(
-                        product_id=product_id,
+                        target_kind=target_kind,
+                        target_id=target_id,
+                        product_id=target_id if target_kind == "finished" else 0,
                         template_id=selected_template_id,
                         override_mode="inherit",
                         is_active=True,
@@ -1901,6 +2001,9 @@ def register_production_routes(bp):
                     db.session.add(routing)
                     db.session.flush()
                 else:
+                    routing.target_kind = target_kind
+                    routing.target_id = target_id
+                    routing.product_id = target_id if target_kind == "finished" else 0
                     routing.template_id = selected_template_id
                     routing.is_active = True
                     db.session.flush()
@@ -1915,6 +2018,7 @@ def register_production_routes(bp):
                             resource_kind_override=ov["resource_kind_override"],
                             machine_type_id_override=ov["machine_type_id_override"],
                             hr_department_id_override=ov["hr_department_id_override"],
+                            hr_work_type_id_override=ov["hr_work_type_id_override"],
                             setup_minutes_override=ov["setup_minutes_override"],
                             run_minutes_per_unit_override=ov["run_minutes_per_unit_override"],
                             step_name_override=ov["step_name_override"],
@@ -1923,21 +2027,32 @@ def register_production_routes(bp):
                     )
 
                 db.session.commit()
-                flash("产品路由覆写已保存。", "success")
-                return redirect(url_for("main.production_product_routing_edit", product_id=product_id))
+                flash(f"{target_label}路由覆写已保存。", "success")
+                return redirect(
+                    url_for(
+                        "main.production_product_routing_edit",
+                        target_kind=target_kind,
+                        target_id=target_id,
+                    )
+                )
             except ValueError as e:
                 db.session.rollback()
                 flash(str(e), "danger")
 
         return render_template(
             "production/product_routing_form.html",
-            product=product,
+            target_kind=target_kind,
+            target_id=target_id,
+            target_label=target_label,
+            target_code=target_code,
+            target_name=target_name,
+            target_spec=target_spec,
             templates=templates,
             selected_template_id=selected_template_id,
             steps=steps_db,
             overrides_map=overrides_map,
             machine_types=machine_types,
-            hr_departments=hr_departments,
+            work_types=work_types,
             routing=routing,
         )
 

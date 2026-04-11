@@ -58,6 +58,14 @@ def register_semi_material_routes(bp):
     @menu_required("semi_material")
     def semi_material_list():
         kind = (request.args.get("kind") or "semi").strip()
+        if kind == "material":
+            return redirect(
+                url_for(
+                    "main.procurement_material_list",
+                    keyword=(request.args.get("keyword") or "").strip(),
+                    page=request.args.get("page", 1, type=int),
+                )
+            )
         if kind not in ("semi", "material"):
             kind = "semi"
         keyword = (request.args.get("keyword") or "").strip()
@@ -91,6 +99,8 @@ def register_semi_material_routes(bp):
     @menu_required("semi_material")
     @capability_required("semi_material.action.create")
     def semi_material_new():
+        if request.method == "GET" and (request.args.get("kind") or "").strip() == "material":
+            return redirect(url_for("main.procurement_material_new"))
         if request.method == "POST":
             kind = (request.form.get("kind") or "").strip()
             if kind not in ("semi", "material"):
@@ -141,6 +151,8 @@ def register_semi_material_routes(bp):
     @capability_required("semi_material.action.edit")
     def semi_material_edit(item_id: int):
         item = SemiMaterial.query.get_or_404(item_id)
+        if item.kind == "material" and request.method == "GET":
+            return redirect(url_for("main.procurement_material_edit", item_id=item.id))
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
             spec = (request.form.get("spec") or "").strip() or None
@@ -198,6 +210,8 @@ def register_semi_material_routes(bp):
     @capability_required("semi_material.action.import")
     def semi_material_export_import_template():
         kind = (request.args.get("kind") or "semi").strip()
+        if kind == "material":
+            return redirect(url_for("main.procurement_material_export_import_template"))
         if kind not in ("semi", "material"):
             kind = "semi"
 
@@ -228,6 +242,8 @@ def register_semi_material_routes(bp):
     @capability_required("semi_material.action.import")
     def semi_material_import():
         kind = (request.args.get("kind") or "semi").strip()
+        if kind == "material" and request.method == "GET":
+            return redirect(url_for("main.procurement_material_import"))
         if kind not in ("semi", "material"):
             kind = "semi"
 
@@ -252,7 +268,6 @@ def register_semi_material_routes(bp):
 
             success = 0
             errors = []
-            max_tries = 3
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 code, name, spec, base_unit, remark = (row + (None,) * 5)[:5]
                 code = (code or "").strip() if isinstance(code, str) else (code or "")

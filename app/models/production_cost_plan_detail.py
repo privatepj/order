@@ -14,11 +14,11 @@ class ProductionCostPlanDetail(db.Model):
     operation_id = db.Column(db.Integer)
 
     cost_category = db.Column(db.String(16), nullable=False)
-    amount = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    amount = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     currency = db.Column(db.String(8), nullable=False, default="CNY")
 
-    unit_cost = db.Column(db.Numeric(18, 6))
-    qty_basis = db.Column(db.Numeric(18, 4))
+    unit_cost = db.Column(db.Numeric(26, 8))
+    qty_basis = db.Column(db.Numeric(26, 8))
 
     remark = db.Column(db.String(255))
 

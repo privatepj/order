@@ -111,7 +111,7 @@ CREATE TABLE `customer` (
   `payment_terms` varchar(64) DEFAULT NULL COMMENT '结算方式',
   `remark` varchar(255) DEFAULT NULL,
   `company_id` int unsigned NOT NULL COMMENT '经营主体',
-  `tax_point` decimal(6,4) DEFAULT NULL COMMENT '税率小数如0.13',
+  `tax_point` decimal(26,8) DEFAULT NULL COMMENT '税率小数如0.13',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -147,7 +147,7 @@ CREATE TABLE `semi_material` (
   `name` varchar(128) NOT NULL COMMENT '名称',
   `spec` varchar(128) DEFAULT NULL COMMENT '规格',
   `base_unit` varchar(16) DEFAULT NULL COMMENT '基础单位',
-  `standard_unit_cost` decimal(18,4) DEFAULT NULL COMMENT '标准单位成本（元/单位；预算用）',
+  `standard_unit_cost` decimal(26,8) DEFAULT NULL COMMENT '标准单位成本（元/单位；预算用）',
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -184,7 +184,7 @@ CREATE TABLE `bom_line` (
   `line_no` int unsigned NOT NULL COMMENT '行号（从 1 开始）',
   `child_kind` varchar(16) NOT NULL COMMENT 'semi / material',
   `child_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '半成品/物料 id',
-  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `quantity` decimal(26,8) NOT NULL DEFAULT 0,
   `unit` varchar(16) DEFAULT NULL COMMENT '数量单位（用于展示）',
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -233,7 +233,7 @@ CREATE TABLE `production_preplan_line` (
   `source_type` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual=手工预计划 order_item=订单缺货生成',
   `source_order_item_id` int unsigned DEFAULT NULL,
   `product_id` int unsigned NOT NULL DEFAULT 0 COMMENT '成品 product.id',
-  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `quantity` decimal(26,8) NOT NULL DEFAULT 0,
   `unit` varchar(16) DEFAULT NULL,
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -253,9 +253,9 @@ CREATE TABLE `production_work_order` (
   `parent_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT 'parent_kind IN(semi,material) 时使用',
   `plan_date` date NOT NULL,
   `status` varchar(16) NOT NULL DEFAULT 'planned' COMMENT 'planned/released/closed/cancelled',
-  `demand_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '根需求推导出的总需求',
-  `stock_covered_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '库存覆盖数量（计算时点）',
-  `to_produce_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '需要生产的净数量',
+  `demand_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '根需求推导出的总需求',
+  `stock_covered_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '库存覆盖数量（计算时点）',
+  `to_produce_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '需要生产的净数量',
   `created_by` int unsigned NOT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -276,9 +276,9 @@ CREATE TABLE `production_component_need` (
   `bom_line_id` int unsigned DEFAULT NULL COMMENT '关联 bom_line.id（用于追溯）',
   `child_kind` varchar(16) NOT NULL COMMENT 'semi/material',
   `child_material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '半成品/物料 id',
-  `required_qty` decimal(18,4) NOT NULL DEFAULT 0,
-  `stock_covered_qty` decimal(18,4) NOT NULL DEFAULT 0,
-  `shortage_qty` decimal(18,4) NOT NULL DEFAULT 0,
+  `required_qty` decimal(26,8) NOT NULL DEFAULT 0,
+  `stock_covered_qty` decimal(26,8) NOT NULL DEFAULT 0,
+  `shortage_qty` decimal(26,8) NOT NULL DEFAULT 0,
   `coverage_mode` varchar(16) NOT NULL DEFAULT 'stock' COMMENT 'stock=库存覆盖',
   `storage_area_hint` varchar(32) DEFAULT NULL COMMENT '未来：精确到仓储区的出入库提示',
   `unit` varchar(16) DEFAULT NULL COMMENT '用于展示',
@@ -343,8 +343,8 @@ CREATE TABLE `production_process_template_step` (
   `resource_kind` varchar(16) NOT NULL DEFAULT 'machine_type' COMMENT '资源维度：machine_type 或 hr_department',
   `machine_type_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=machine_type 时使用',
   `hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=hr_department 时使用',
-  `setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '准备/换型时间（分钟）',
-  `run_minutes_per_unit` decimal(12,4) NOT NULL DEFAULT 0 COMMENT '单位运行时间（分钟/件）',
+  `setup_minutes` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '准备/换型时间（分钟）',
+  `run_minutes_per_unit` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '单位运行时间（分钟/件）',
   `remark` varchar(255) DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用该步骤',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -357,7 +357,9 @@ CREATE TABLE `production_process_template_step` (
 
 CREATE TABLE `production_product_routing` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `product_id` int unsigned NOT NULL COMMENT '产品 product.id',
+  `target_kind` varchar(16) NOT NULL DEFAULT 'finished' COMMENT '路由目标类型：finished/semi',
+  `target_id` int unsigned NOT NULL DEFAULT 0 COMMENT '路由目标ID（成品=product.id，半成品=semi_material.id）',
+  `product_id` int unsigned NOT NULL DEFAULT 0 COMMENT '兼容字段：target_kind=finished 时冗余保存 product.id',
   `template_id` int unsigned NOT NULL COMMENT '绑定的工序模板 template.id',
   `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
   `override_mode` varchar(16) NOT NULL DEFAULT 'inherit' COMMENT 'inherit=模板继承（覆写表可选）',
@@ -366,9 +368,10 @@ CREATE TABLE `production_product_routing` (
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_prod_routing_product` (`product_id`),
+  UNIQUE KEY `uk_prod_routing_target` (`target_kind`,`target_id`),
+  KEY `idx_prod_routing_product` (`product_id`),
   KEY `idx_prod_routing_template` (`template_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品工序路由（模板绑定/覆写）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生产对象工序路由（成品/半成品模板绑定与覆写）';
 
 CREATE TABLE `production_product_routing_step` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -377,8 +380,8 @@ CREATE TABLE `production_product_routing_step` (
   `resource_kind_override` varchar(16) DEFAULT NULL COMMENT '可选覆写：资源维度',
   `machine_type_id_override` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=machine_type 时使用',
   `hr_department_id_override` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=hr_department 时使用',
-  `setup_minutes_override` decimal(12,2) DEFAULT NULL COMMENT '准备时间覆写（分钟）',
-  `run_minutes_per_unit_override` decimal(12,4) DEFAULT NULL COMMENT '单位运行时间覆写（分钟/件）',
+  `setup_minutes_override` decimal(26,8) DEFAULT NULL COMMENT '准备时间覆写（分钟）',
+  `run_minutes_per_unit_override` decimal(26,8) DEFAULT NULL COMMENT '单位运行时间覆写（分钟/件）',
   `step_name_override` varchar(128) DEFAULT NULL COMMENT '工序名称覆写',
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -398,12 +401,12 @@ CREATE TABLE `production_work_order_operation` (
   `resource_kind` varchar(16) DEFAULT NULL,
   `machine_type_id` int unsigned NOT NULL DEFAULT 0,
   `hr_department_id` int unsigned NOT NULL DEFAULT 0,
-  `plan_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '用于计算的工序数量（快照）',
-  `setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '工序准备时间（快照）',
-  `run_minutes_per_unit` decimal(12,4) NOT NULL DEFAULT 0 COMMENT '工序运行时间/单位（快照）',
-  `estimated_setup_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '预计准备时间',
-  `estimated_run_minutes` decimal(12,2) NOT NULL DEFAULT 0 COMMENT '预计运行时间',
-  `estimated_total_minutes` decimal(14,2) NOT NULL DEFAULT 0 COMMENT '预计总工时（分钟）',
+  `plan_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '用于计算的工序数量（快照）',
+  `setup_minutes` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '工序准备时间（快照）',
+  `run_minutes_per_unit` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '工序运行时间/单位（快照）',
+  `estimated_setup_minutes` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '预计准备时间',
+  `estimated_run_minutes` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '预计运行时间',
+  `estimated_total_minutes` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '预计总工时（分钟）',
   `budget_machine_id` int unsigned NOT NULL DEFAULT 0 COMMENT '预算指定 machine.id（machine_type 工序）',
   `budget_operator_employee_id` int unsigned NOT NULL DEFAULT 0 COMMENT '预算指定操作员 hr_employee.id',
   `remark` varchar(255) DEFAULT NULL,
@@ -431,9 +434,9 @@ CREATE TABLE `production_process_node` (
   `resource_kind` varchar(16) DEFAULT NULL COMMENT '资源维度：machine_type/hr_department，允许为空表示继承',
   `machine_type_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=machine_type 时使用',
   `hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '资源=hr_department 时使用',
-  `setup_minutes` decimal(12,2) DEFAULT NULL COMMENT '准备时间（可覆写）',
-  `run_minutes_per_unit` decimal(12,4) DEFAULT NULL COMMENT '单位运行时间（可覆写）',
-  `scrap_rate` decimal(8,4) DEFAULT NULL COMMENT '报废/损耗率（0-1，可选）',
+  `setup_minutes` decimal(26,8) DEFAULT NULL COMMENT '准备时间（可覆写）',
+  `run_minutes_per_unit` decimal(26,8) DEFAULT NULL COMMENT '单位运行时间（可覆写）',
+  `scrap_rate` decimal(26,8) DEFAULT NULL COMMENT '报废/损耗率（0-1，可选）',
   `remark` varchar(255) DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -468,9 +471,9 @@ CREATE TABLE `production_routing_node_override` (
   `resource_kind_override` varchar(16) DEFAULT NULL COMMENT '资源维度覆写',
   `machine_type_id_override` int unsigned NOT NULL DEFAULT 0,
   `hr_department_id_override` int unsigned NOT NULL DEFAULT 0,
-  `setup_minutes_override` decimal(12,2) DEFAULT NULL,
-  `run_minutes_per_unit_override` decimal(12,4) DEFAULT NULL,
-  `scrap_rate_override` decimal(8,4) DEFAULT NULL,
+  `setup_minutes_override` decimal(26,8) DEFAULT NULL,
+  `run_minutes_per_unit_override` decimal(26,8) DEFAULT NULL,
+  `scrap_rate_override` decimal(26,8) DEFAULT NULL,
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -498,8 +501,12 @@ CREATE TABLE `production_work_order_operation_plan` (
   `resource_kind` varchar(16) DEFAULT NULL COMMENT '资源维度快照',
   `machine_type_id` int unsigned NOT NULL DEFAULT 0,
   `hr_department_id` int unsigned NOT NULL DEFAULT 0,
-  `planned_minutes` decimal(14,2) NOT NULL DEFAULT 0 COMMENT '排程工时（分钟）',
+  `planned_minutes` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '排程工时（分钟）',
   `remark` varchar(255) DEFAULT NULL,
+  `confirmed_at` datetime DEFAULT NULL COMMENT '确认计划时间',
+  `confirmed_by` int unsigned DEFAULT NULL COMMENT '确认人 user.id',
+  `committed_machine_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '机台排班 booking',
+  `committed_employee_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '人员排班 booking',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -509,6 +516,29 @@ CREATE TABLE `production_work_order_operation_plan` (
   KEY `idx_wo_op_plan_resource` (`resource_kind`,`machine_type_id`,`hr_department_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作单工序排程结果';
 
+CREATE TABLE `production_schedule_commit_row` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `preplan_id` int unsigned NOT NULL,
+  `operation_id` int unsigned NOT NULL COMMENT 'production_work_order_operation.id',
+  `machine_dispatch_log_id` int unsigned NOT NULL DEFAULT 0,
+  `dispatch_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '挂 dispatch 的 machine_schedule_booking.id',
+  `restore_parent_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '被缩短的父 booking',
+  `restore_parent_end_at` datetime DEFAULT NULL COMMENT '父 booking 切分前的 end_at',
+  `delete_middle_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '独立中段 booking',
+  `delete_tail_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '尾段 booking',
+  `employee_booking_id` int unsigned NOT NULL DEFAULT 0 COMMENT '人员占用段',
+  `emp_restore_parent_booking_id` int unsigned NOT NULL DEFAULT 0,
+  `emp_restore_parent_end_at` datetime DEFAULT NULL,
+  `emp_delete_middle_booking_id` int unsigned NOT NULL DEFAULT 0,
+  `emp_delete_tail_booking_id` int unsigned NOT NULL DEFAULT 0,
+  `emp_booking_mode` varchar(16) NOT NULL DEFAULT 'split' COMMENT 'split|mask_parent',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_pscr_operation` (`operation_id`),
+  KEY `idx_pscr_preplan` (`preplan_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='预计划确认排产与机台切分痕迹';
+
 CREATE TABLE `production_material_plan_detail` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `preplan_id` int unsigned NOT NULL,
@@ -517,11 +547,11 @@ CREATE TABLE `production_material_plan_detail` (
   `component_need_id` int unsigned DEFAULT NULL COMMENT '关联 production_component_need.id（逻辑外键）',
   `child_kind` varchar(16) NOT NULL COMMENT 'semi/material',
   `child_material_id` int unsigned NOT NULL DEFAULT 0,
-  `required_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '理论需求量',
-  `scrap_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '损耗/报废量',
-  `net_required_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '净需求量',
-  `stock_covered_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '库存覆盖量（重算后）',
-  `shortage_qty` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '最终缺口',
+  `required_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '理论需求量',
+  `scrap_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '损耗/报废量',
+  `net_required_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '净需求量',
+  `stock_covered_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '库存覆盖量（重算后）',
+  `shortage_qty` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '最终缺口',
   `unit` varchar(16) DEFAULT NULL,
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -539,10 +569,10 @@ CREATE TABLE `production_cost_plan_detail` (
   `work_order_id` int unsigned NOT NULL,
   `operation_id` int unsigned DEFAULT NULL,
   `cost_category` varchar(16) NOT NULL COMMENT 'material/labor/machine/overhead',
-  `amount` decimal(18,4) NOT NULL DEFAULT 0 COMMENT '成本金额',
+  `amount` decimal(26,8) NOT NULL DEFAULT 0 COMMENT '成本金额',
   `currency` varchar(8) DEFAULT 'CNY',
-  `unit_cost` decimal(18,6) DEFAULT NULL COMMENT '单位成本（可选）',
-  `qty_basis` decimal(18,4) DEFAULT NULL COMMENT '成本计量数量（如工时/用量）',
+  `unit_cost` decimal(26,8) DEFAULT NULL COMMENT '单位成本（可选）',
+  `qty_basis` decimal(26,8) DEFAULT NULL COMMENT '成本计量数量（如工时/用量）',
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -563,7 +593,7 @@ CREATE TABLE `customer_product` (
   `customer_material_no` varchar(64) DEFAULT NULL COMMENT '客户料号',
   `material_no` varchar(64) DEFAULT NULL COMMENT '物料编号',
   `unit` varchar(16) DEFAULT NULL COMMENT '结算单位',
-  `price` decimal(18,4) DEFAULT NULL COMMENT '单价',
+  `price` decimal(26,8) DEFAULT NULL COMMENT '单价',
   `currency` varchar(8) DEFAULT NULL COMMENT '币种',
   `remark` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -608,11 +638,12 @@ CREATE TABLE `order_item` (
   `product_name` varchar(128) DEFAULT NULL COMMENT '品名',
   `product_spec` varchar(128) DEFAULT NULL COMMENT '规格',
   `customer_material_no` varchar(64) DEFAULT NULL COMMENT '客户料号',
-  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `quantity` decimal(26,8) NOT NULL DEFAULT 0,
   `unit` varchar(16) DEFAULT NULL,
-  `price` decimal(18,4) DEFAULT NULL,
-  `amount` decimal(18,2) DEFAULT NULL COMMENT '该行总金额',
+  `price` decimal(26,8) DEFAULT NULL,
+  `amount` decimal(26,8) DEFAULT NULL COMMENT '该行总金额',
   `is_sample` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否样品',
+  `is_spare` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否备品',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -650,7 +681,8 @@ CREATE TABLE `delivery` (
   `delivery_no` varchar(64) NOT NULL COMMENT '送货单号',
   `delivery_date` date NOT NULL,
   `customer_id` int unsigned NOT NULL,
-  `express_company_id` int unsigned DEFAULT NULL COMMENT '快递公司；NULL 表示自配送',
+  `delivery_method` varchar(16) NOT NULL DEFAULT 'express' COMMENT 'express/self_delivery/pickup',
+  `express_company_id` int unsigned DEFAULT NULL COMMENT '快递公司；非快递方式为空',
   `express_waybill_id` int unsigned DEFAULT NULL COMMENT '占用的快递单号行',
   `waybill_no` varchar(64) DEFAULT NULL COMMENT '快递单号',
   `status` varchar(32) NOT NULL DEFAULT 'created' COMMENT 'created/shipped/signed',
@@ -693,7 +725,7 @@ CREATE TABLE `delivery_item` (
   `order_id` int unsigned NOT NULL COMMENT '冗余便于汇总',
   `product_name` varchar(128) DEFAULT NULL,
   `customer_material_no` varchar(64) DEFAULT NULL,
-  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `quantity` decimal(26,8) NOT NULL DEFAULT 0,
   `unit` varchar(16) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -725,7 +757,7 @@ CREATE TABLE `inventory_daily_line` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `header_id` int unsigned NOT NULL,
   `product_id` int unsigned NOT NULL,
-  `quantity` decimal(18,4) NOT NULL DEFAULT 0,
+  `quantity` decimal(26,8) NOT NULL DEFAULT 0,
   `unit` varchar(16) DEFAULT NULL,
   `note` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -739,6 +771,7 @@ CREATE TABLE `inventory_daily_line` (
 -- ----------------------------
 -- 期初结存 + 进出明细台账（与 Excel 主表逻辑一致；收发由明细汇总）
 -- ----------------------------
+DROP TABLE IF EXISTS `inventory_reservation`;
 DROP TABLE IF EXISTS `inventory_movement`;
 DROP TABLE IF EXISTS `inventory_movement_batch`;
 DROP TABLE IF EXISTS `inventory_opening_balance`;
@@ -748,7 +781,7 @@ CREATE TABLE `inventory_opening_balance` (
   `product_id` int unsigned NOT NULL DEFAULT 0 COMMENT '成品时关联 product.id，0=无',
   `material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '半成品预留，0=无',
   `storage_area` varchar(32) NOT NULL DEFAULT '' COMMENT '仓储区',
-  `opening_qty` decimal(18,4) NOT NULL DEFAULT 0,
+  `opening_qty` decimal(26,8) NOT NULL DEFAULT 0,
   `unit` varchar(16) DEFAULT NULL,
   `remark` varchar(255) DEFAULT NULL,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -783,7 +816,7 @@ CREATE TABLE `inventory_movement` (
   `product_id` int unsigned NOT NULL DEFAULT 0,
   `material_id` int unsigned NOT NULL DEFAULT 0,
   `storage_area` varchar(32) NOT NULL DEFAULT '',
-  `quantity` decimal(18,4) NOT NULL,
+  `quantity` decimal(26,8) NOT NULL,
   `unit` varchar(16) DEFAULT NULL,
   `biz_date` date NOT NULL COMMENT '业务日期',
   `source_type` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual / delivery',
@@ -800,6 +833,26 @@ CREATE TABLE `inventory_movement` (
   KEY `idx_inv_mov_biz_date` (`biz_date`),
   KEY `idx_inv_mov_batch` (`movement_batch_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存进出明细';
+
+CREATE TABLE `inventory_reservation` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(16) NOT NULL COMMENT 'finished / semi / material',
+  `product_id` int unsigned NOT NULL DEFAULT 0 COMMENT '成品时 product.id',
+  `material_id` int unsigned NOT NULL DEFAULT 0 COMMENT '半成品/物料时 semi_material.id',
+  `storage_area` varchar(32) NOT NULL DEFAULT '' COMMENT '与台账一致；测算按全仓汇总预留',
+  `ref_type` varchar(16) NOT NULL COMMENT 'preplan 等',
+  `ref_id` int unsigned NOT NULL COMMENT '如 production_preplan.id',
+  `reserved_qty` decimal(26,8) NOT NULL DEFAULT 0,
+  `status` varchar(16) NOT NULL DEFAULT 'active' COMMENT 'active/released/consumed',
+  `remark` varchar(255) DEFAULT NULL,
+  `created_by` int unsigned NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_inv_res_cat_item` (`category`,`product_id`,`material_id`),
+  KEY `idx_inv_res_ref` (`ref_type`,`ref_id`),
+  KEY `idx_inv_res_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存预留（计划占用，非出库流水）';
 
 -- ----------------------------
 -- 接口审计日志
@@ -875,12 +928,12 @@ CREATE TABLE `hr_payroll_line` (
   `employee_id` int unsigned NOT NULL COMMENT 'hr_employee.id',
   `period` char(7) NOT NULL COMMENT '账期 YYYY-MM',
   `wage_kind` varchar(16) NOT NULL DEFAULT 'monthly' COMMENT '月薪/时薪：monthly/hourly',
-  `work_hours` decimal(12,2) DEFAULT NULL COMMENT '换算时薪/产能成本所用工时（小时；月薪口径可填）',
-  `hourly_rate` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '时薪（元/小时；小时口径使用）',
-  `base_salary` decimal(14,2) NOT NULL DEFAULT 0.00,
-  `allowance` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '津贴',
-  `deduction` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '扣款',
-  `net_pay` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '实发',
+  `work_hours` decimal(26,8) DEFAULT NULL COMMENT '换算时薪/产能成本所用工时（小时；月薪口径可填）',
+  `hourly_rate` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '时薪（元/小时；小时口径使用）',
+  `base_salary` decimal(26,8) NOT NULL DEFAULT 0.00,
+  `allowance` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '津贴',
+  `deduction` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '扣款',
+  `net_pay` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '实发',
   `remark` varchar(500) DEFAULT NULL,
   `created_by` int unsigned NOT NULL COMMENT 'user.id',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -896,7 +949,7 @@ CREATE TABLE `hr_performance_review` (
   `company_id` int unsigned NOT NULL,
   `employee_id` int unsigned NOT NULL,
   `cycle` varchar(32) NOT NULL COMMENT '考核周期 如 2026-Q1',
-  `score` decimal(6,2) DEFAULT NULL,
+  `score` decimal(26,8) DEFAULT NULL,
   `comment` text COMMENT '评语',
   `reviewer_user_id` int unsigned DEFAULT NULL COMMENT '考核人 user.id',
   `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft=草稿 finalized=已定稿',
@@ -934,11 +987,11 @@ CREATE TABLE `machine` (
   `machine_no` varchar(32) NOT NULL COMMENT '机台编号',
   `name` varchar(64) NOT NULL COMMENT '机台名称',
   `machine_type_id` int unsigned NOT NULL COMMENT '机台种类 machine_type.id',
-  `capacity_per_hour` decimal(12,2) NOT NULL DEFAULT 0.00 COMMENT '标准产能（件/小时）',
-  `machine_cost_purchase_price` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '购入价格（管理员维护）',
-  `machine_accum_produced_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '机台累计生产个数',
-  `machine_accum_runtime_hours` decimal(14,4) NOT NULL DEFAULT 0.0000 COMMENT '机台累计运行时长（小时）',
-  `machine_single_run_cost` decimal(14,2) DEFAULT NULL COMMENT '机台单次运行成本（管理员维护）',
+  `capacity_per_hour` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '标准产能（件/小时）',
+  `machine_cost_purchase_price` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '购入价格（管理员维护）',
+  `machine_accum_produced_qty` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '机台累计生产个数',
+  `machine_accum_runtime_hours` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '机台累计运行时长（小时）',
+  `machine_single_run_cost` decimal(26,8) DEFAULT NULL COMMENT '机台单次运行成本（管理员维护）',
   `status` varchar(16) NOT NULL DEFAULT 'enabled' COMMENT 'enabled/disabled/maintenance/scrapped',
   `location` varchar(128) DEFAULT NULL COMMENT '车间/产线',
   `owner_user_id` int unsigned DEFAULT NULL COMMENT '责任人 user.id',
@@ -1024,10 +1077,10 @@ CREATE TABLE `machine_schedule_dispatch_log` (
   `booking_id` int unsigned NOT NULL COMMENT '机台排班时间窗 machine_schedule_booking.id',
   `dispatch_start_at` datetime DEFAULT NULL COMMENT '排产开始（冗余）',
   `dispatch_end_at` datetime DEFAULT NULL COMMENT '排产结束（冗余）',
-  `planned_runtime_hours` decimal(14,4) NOT NULL DEFAULT 0.0000 COMMENT '计划运行时长（小时）',
+  `planned_runtime_hours` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '计划运行时长（小时）',
   `state` varchar(16) NOT NULL DEFAULT 'scheduled' COMMENT 'scheduled/reported',
-  `actual_produced_qty` decimal(18,4) DEFAULT NULL COMMENT '实际产量（个）',
-  `actual_runtime_hours` decimal(14,4) DEFAULT NULL COMMENT '实际运行时长（小时）',
+  `actual_produced_qty` decimal(26,8) DEFAULT NULL COMMENT '实际产量（个）',
+  `actual_runtime_hours` decimal(26,8) DEFAULT NULL COMMENT '实际运行时长（小时）',
   `work_order_id` int unsigned DEFAULT NULL COMMENT '报工对应 work_order.id',
   `reported_by` int unsigned DEFAULT NULL COMMENT '报工人 user.id',
   `reported_at` datetime DEFAULT NULL COMMENT '报工时间',
@@ -1115,9 +1168,9 @@ CREATE TABLE `hr_employee_schedule_booking` (
   `work_order_id` int unsigned DEFAULT NULL COMMENT '生产工单 production_work_order.id',
   `product_id` int unsigned DEFAULT NULL COMMENT '成品 product.id（由 work_order_id 推导；成品才写入）',
   `unit` varchar(16) DEFAULT NULL COMMENT '单位（由 product.base_unit 回填）',
-  `good_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '良品数量',
-  `bad_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '不良数量',
-  `produced_qty` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '总产出（good+bad）',
+  `good_qty` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '良品数量',
+  `bad_qty` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '不良数量',
+  `produced_qty` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '总产出（good+bad）',
 
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_hes_booking_template_start` (`template_id`,`start_at`),
@@ -1138,12 +1191,12 @@ CREATE TABLE `hr_employee_capability` (
   `employee_id` int unsigned NOT NULL COMMENT 'hr_employee.id',
   `hr_department_id` int unsigned NOT NULL COMMENT 'hr_department.id（工种/工位维度）',
 
-  `good_qty_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计良品数量',
-  `bad_qty_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计不良数量',
-  `produced_qty_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计总产出（good+bad）',
+  `good_qty_total` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '累计良品数量',
+  `bad_qty_total` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '累计不良数量',
+  `produced_qty_total` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '累计总产出（good+bad）',
   `work_order_cnt_total` int unsigned NOT NULL DEFAULT 0 COMMENT '累计干过的工单数（基于 work_order_id distinct 统计）',
-  `worked_minutes_total` decimal(18,4) NOT NULL DEFAULT 0.0000 COMMENT '累计工时（分钟；用于小时产能/成本）',
-  `labor_cost_total` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT '累计劳动力成本（用于单件成本）',
+  `worked_minutes_total` decimal(26,8) NOT NULL DEFAULT 0.0000 COMMENT '累计工时（分钟；用于小时产能/成本）',
+  `labor_cost_total` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '累计劳动力成本（用于单件成本）',
 
   `processed_to` datetime DEFAULT NULL COMMENT '能力表累计进度：已覆盖到的截止时间（用于按小时增量计算）',
 
@@ -1171,7 +1224,7 @@ CREATE TABLE `purchase_requisition` (
   `supplier_name` varchar(128) NOT NULL COMMENT '供应商',
   `item_name` varchar(128) NOT NULL COMMENT '物料名称',
   `item_spec` varchar(128) DEFAULT NULL COMMENT '规格',
-  `qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '请购数量',
+  `qty` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '请购数量',
   `unit` varchar(16) NOT NULL DEFAULT 'pcs' COMMENT '单位',
   `expected_date` date DEFAULT NULL COMMENT '期望到货日期',
   `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/ordered/cancelled',
@@ -1194,10 +1247,10 @@ CREATE TABLE `purchase_order` (
   `supplier_name` varchar(128) NOT NULL COMMENT '供应商',
   `item_name` varchar(128) NOT NULL COMMENT '物料名称',
   `item_spec` varchar(128) DEFAULT NULL COMMENT '规格',
-  `qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '采购数量',
+  `qty` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '采购数量',
   `unit` varchar(16) NOT NULL DEFAULT 'pcs' COMMENT '单位',
-  `unit_price` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '单价',
-  `amount` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '金额',
+  `unit_price` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '单价',
+  `amount` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '金额',
   `expected_date` date DEFAULT NULL COMMENT '期望到货日期',
   `status` varchar(24) NOT NULL DEFAULT 'draft' COMMENT 'draft/ordered/partially_received/received/cancelled',
   `remark` varchar(500) DEFAULT NULL,
@@ -1217,7 +1270,7 @@ CREATE TABLE `purchase_receipt` (
   `receipt_no` varchar(32) NOT NULL COMMENT '收货单号',
   `purchase_order_id` int unsigned NOT NULL COMMENT '采购单 purchase_order.id',
   `receiver_user_id` int unsigned NOT NULL COMMENT '收货人 user.id',
-  `received_qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '收货数量',
+  `received_qty` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '收货数量',
   `received_at` datetime NOT NULL COMMENT '收货时间',
   `status` varchar(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/posted',
   `remark` varchar(500) DEFAULT NULL,
@@ -1236,7 +1289,7 @@ CREATE TABLE `purchase_stock_in` (
   `company_id` int unsigned NOT NULL COMMENT '经营主体 company.id',
   `stock_in_no` varchar(32) NOT NULL COMMENT '入库单号',
   `receipt_id` int unsigned NOT NULL COMMENT '收货单 purchase_receipt.id',
-  `qty` decimal(14,2) NOT NULL DEFAULT 0.00 COMMENT '入库数量',
+  `qty` decimal(26,8) NOT NULL DEFAULT 0.00 COMMENT '入库数量',
   `storage_area` varchar(64) DEFAULT NULL COMMENT '仓储区',
   `stock_in_at` datetime NOT NULL COMMENT '入库时间',
   `created_by` int unsigned NOT NULL COMMENT '创建人 user.id',
@@ -1312,7 +1365,7 @@ CREATE TABLE `orchestrator_ai_advice` (
   `event_id` bigint unsigned NOT NULL COMMENT '关联 orchestrator_event.id（逻辑外键）',
   `advice_type` varchar(64) NOT NULL COMMENT '建议类型',
   `recommended_action` varchar(128) NOT NULL COMMENT '建议动作',
-  `confidence` decimal(5,4) DEFAULT NULL COMMENT '置信度 0-1',
+  `confidence` decimal(26,8) DEFAULT NULL COMMENT '置信度 0-1',
   `reason` varchar(1000) DEFAULT NULL COMMENT '建议理由',
   `meta` json DEFAULT NULL,
   `is_adopted` tinyint(1) NOT NULL DEFAULT 0,
@@ -1364,7 +1417,7 @@ CREATE TABLE `orchestrator_ai_advice_metric` (
   `advice_type` varchar(64) NOT NULL,
   `is_adopted` tinyint(1) NOT NULL DEFAULT 0,
   `adopted_latency_seconds` int DEFAULT NULL,
-  `result_score` decimal(9,4) DEFAULT NULL,
+  `result_score` decimal(26,8) DEFAULT NULL,
   `metric_note` varchar(255) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -1788,13 +1841,13 @@ WHERE `cap_code` = 'inventory_ops_material.movement.delete';
 -- ----------------------------
 -- 机台排班模块：RBAC 种子（machine_schedule + 能力键 + warehouse 可访问）
 -- ----------------------------
-SET @nav_machine_id = (SELECT `id` FROM `sys_nav_item` WHERE `code`='nav_machine' LIMIT 1);
+SET @nav_production_id = (SELECT `id` FROM `sys_nav_item` WHERE `code`='production' LIMIT 1);
 
 INSERT INTO `sys_nav_item` (
   `parent_id`, `code`, `title`, `endpoint`, `sort_order`,
   `is_active`, `admin_only`, `is_assignable`, `landing_priority`
 ) VALUES
-  (@nav_machine_id, 'machine_schedule', '机台排班', 'main.machine_schedule_template_list', 40, 1, 0, 1, 99)
+  (@nav_production_id, 'machine_schedule', '机台排班', 'main.machine_schedule_template_list', 30, 1, 0, 1, 99)
 ON DUPLICATE KEY UPDATE
   `parent_id`=VALUES(`parent_id`),
   `title`=VALUES(`title`),
@@ -1823,13 +1876,13 @@ SELECT r.`id`, 'machine_schedule' FROM `role` r WHERE r.`code`='warehouse';
 -- ----------------------------
 -- 人员排产模块：RBAC 种子（hr_employee_schedule + 能力键 + warehouse 可访问）
 -- ----------------------------
-SET @nav_hr_employee_schedule := (SELECT `id` FROM `sys_nav_item` WHERE `code`='nav_hr' LIMIT 1);
+SET @nav_production_schedule := (SELECT `id` FROM `sys_nav_item` WHERE `code`='production' LIMIT 1);
 
 INSERT INTO `sys_nav_item` (
   `parent_id`, `code`, `title`, `endpoint`, `sort_order`,
   `is_active`, `admin_only`, `is_assignable`, `landing_priority`
 ) VALUES
-  (@nav_hr_employee_schedule, 'hr_employee_schedule', '人员排产', 'main.hr_employee_schedule_template_list', 55, 1, 0, 1, 95)
+  (@nav_production_schedule, 'hr_employee_schedule', '人员排产', 'main.hr_employee_schedule_template_list', 40, 1, 0, 1, 95)
 ON DUPLICATE KEY UPDATE
   `parent_id`=VALUES(`parent_id`),
   `title`=VALUES(`title`),
@@ -1884,3 +1937,144 @@ ON DUPLICATE KEY UPDATE
 
 INSERT IGNORE INTO `role_allowed_nav` (`role_id`, `nav_code`)
 SELECT r.`id`, 'hr_employee_capability' FROM `role` r WHERE r.`code`='warehouse';
+
+-- ----------------------------
+-- 采购模块升级：供应商、批量请购、对比确认
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `supplier` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL,
+  `name` varchar(128) NOT NULL,
+  `contact_name` varchar(64) DEFAULT NULL,
+  `phone` varchar(32) DEFAULT NULL,
+  `address` varchar(255) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_supplier_company_name` (`company_id`,`name`),
+  KEY `idx_supplier_company_active` (`company_id`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='供应商主数据';
+
+CREATE TABLE IF NOT EXISTS `supplier_material_map` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL,
+  `supplier_id` int unsigned NOT NULL,
+  `material_id` int unsigned NOT NULL,
+  `is_preferred` tinyint(1) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `last_unit_price` decimal(26,8) DEFAULT NULL,
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_supplier_material` (`supplier_id`,`material_id`),
+  KEY `idx_supplier_material_company` (`company_id`),
+  KEY `idx_supplier_material_supplier_active` (`supplier_id`,`is_active`),
+  KEY `idx_supplier_material_material_active` (`material_id`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='供应商物料关系';
+
+CREATE TABLE IF NOT EXISTS `purchase_requisition_line` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` int unsigned NOT NULL,
+  `requisition_id` int unsigned NOT NULL,
+  `line_no` int unsigned NOT NULL DEFAULT 1,
+  `supplier_id` int unsigned DEFAULT NULL,
+  `material_id` int unsigned DEFAULT NULL,
+  `supplier_name` varchar(128) NOT NULL,
+  `item_name` varchar(128) NOT NULL,
+  `item_spec` varchar(128) DEFAULT NULL,
+  `qty` decimal(26,8) NOT NULL DEFAULT 0.00,
+  `unit` varchar(16) NOT NULL DEFAULT 'pcs',
+  `expected_date` date DEFAULT NULL,
+  `status` varchar(24) NOT NULL DEFAULT 'pending_order',
+  `remark` varchar(500) DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_purchase_requisition_line` (`requisition_id`,`line_no`),
+  KEY `idx_purchase_requisition_line_company` (`company_id`),
+  KEY `idx_purchase_requisition_line_supplier` (`supplier_id`),
+  KEY `idx_purchase_requisition_line_material` (`material_id`),
+  KEY `idx_purchase_requisition_line_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购请购明细';
+
+ALTER TABLE `purchase_requisition`
+  ADD COLUMN `printed_at` datetime DEFAULT NULL AFTER `status`,
+  ADD COLUMN `signed_at` datetime DEFAULT NULL AFTER `printed_at`,
+  ADD COLUMN `signed_by` int unsigned DEFAULT NULL AFTER `signed_at`,
+  ADD KEY `idx_purchase_requisition_signed_by` (`signed_by`);
+
+ALTER TABLE `purchase_order`
+  ADD COLUMN `requisition_line_id` int unsigned DEFAULT NULL AFTER `requisition_id`,
+  ADD COLUMN `supplier_id` int unsigned DEFAULT NULL AFTER `buyer_user_id`,
+  ADD COLUMN `material_id` int unsigned DEFAULT NULL AFTER `supplier_id`,
+  ADD COLUMN `supplier_contact_name` varchar(64) DEFAULT NULL AFTER `supplier_name`,
+  ADD COLUMN `supplier_phone` varchar(32) DEFAULT NULL AFTER `supplier_contact_name`,
+  ADD COLUMN `supplier_address` varchar(255) DEFAULT NULL AFTER `supplier_phone`,
+  ADD COLUMN `ordered_at` datetime DEFAULT NULL AFTER `status`,
+  ADD COLUMN `ordered_by` int unsigned DEFAULT NULL AFTER `ordered_at`,
+  ADD COLUMN `printed_at` datetime DEFAULT NULL AFTER `ordered_by`,
+  ADD COLUMN `reconcile_status` varchar(24) NOT NULL DEFAULT 'pending' AFTER `printed_at`,
+  ADD KEY `idx_purchase_order_requisition_line` (`requisition_line_id`),
+  ADD KEY `idx_purchase_order_supplier_id` (`supplier_id`),
+  ADD KEY `idx_purchase_order_material_id` (`material_id`),
+  ADD KEY `idx_purchase_order_ordered_by` (`ordered_by`);
+
+ALTER TABLE `purchase_receipt`
+  ADD COLUMN `reconcile_status` varchar(24) NOT NULL DEFAULT 'pending' AFTER `status`,
+  ADD COLUMN `reconcile_note` varchar(500) DEFAULT NULL AFTER `reconcile_status`,
+  ADD COLUMN `reconciled_at` datetime DEFAULT NULL AFTER `reconcile_note`,
+  ADD COLUMN `reconciled_by` int unsigned DEFAULT NULL AFTER `reconciled_at`,
+  ADD KEY `idx_purchase_receipt_reconciled_by` (`reconciled_by`);
+
+ALTER TABLE `purchase_stock_in`
+  ADD COLUMN `purchase_order_id` int unsigned DEFAULT NULL AFTER `receipt_id`,
+  ADD COLUMN `received_qty` decimal(26,8) NOT NULL DEFAULT 0.00 AFTER `qty`,
+  ADD COLUMN `warehouse_qty` decimal(26,8) NOT NULL DEFAULT 0.00 AFTER `received_qty`,
+  ADD COLUMN `variance_qty` decimal(26,8) NOT NULL DEFAULT 0.00 AFTER `warehouse_qty`,
+  ADD COLUMN `approval_status` varchar(24) NOT NULL DEFAULT 'matched' AFTER `variance_qty`,
+  ADD COLUMN `approved_by` int unsigned DEFAULT NULL AFTER `created_by`,
+  ADD COLUMN `approved_at` datetime DEFAULT NULL AFTER `approved_by`,
+  ADD KEY `idx_purchase_stock_in_po` (`purchase_order_id`),
+  ADD KEY `idx_purchase_stock_in_approved_by` (`approved_by`);
+
+ALTER TABLE `inventory_movement`
+  ADD COLUMN `source_purchase_order_id` int unsigned DEFAULT NULL AFTER `source_delivery_item_id`,
+  ADD COLUMN `source_purchase_receipt_id` int unsigned DEFAULT NULL AFTER `source_purchase_order_id`,
+  ADD KEY `idx_inv_mov_purchase_order` (`source_purchase_order_id`),
+  ADD KEY `idx_inv_mov_purchase_receipt` (`source_purchase_receipt_id`);
+
+SET @nav_procurement_id := (SELECT `id` FROM `sys_nav_item` WHERE `code`='nav_procurement' LIMIT 1);
+INSERT INTO `sys_nav_item` (
+  `parent_id`, `code`, `title`, `endpoint`, `sort_order`,
+  `is_active`, `admin_only`, `is_assignable`, `landing_priority`
+) VALUES
+  (@nav_procurement_id, 'procurement_supplier', '供应商管理', 'main.procurement_supplier_list', 15, 1, 0, 1, 102)
+ON DUPLICATE KEY UPDATE
+  `parent_id`=VALUES(`parent_id`),
+  `title`=VALUES(`title`),
+  `endpoint`=VALUES(`endpoint`),
+  `sort_order`=VALUES(`sort_order`),
+  `admin_only`=VALUES(`admin_only`),
+  `is_assignable`=VALUES(`is_assignable`),
+  `landing_priority`=VALUES(`landing_priority`);
+
+INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `sort_order`) VALUES
+('procurement_supplier.filter.keyword', '供应商管理：关键词', 'procurement_supplier', '采购管理', 10),
+('procurement_supplier.action.create', '供应商管理：新建', 'procurement_supplier', '采购管理', 20),
+('procurement_supplier.action.edit', '供应商管理：编辑', 'procurement_supplier', '采购管理', 30),
+('procurement_supplier.action.delete', '供应商管理：删除', 'procurement_supplier', '采购管理', 40),
+('procurement_requisition.action.print', '采购请购：打印', 'procurement_requisition', '采购管理', 50),
+('procurement_requisition.action.mark_signed', '采购请购：标记签字', 'procurement_requisition', '采购管理', 60),
+('procurement_requisition.action.generate_orders', '采购请购：生成采购单', 'procurement_requisition', '采购管理', 70),
+('procurement_order.action.print', '采购单：打印导出', 'procurement_order', '采购管理', 80),
+('procurement_order.action.mark_ordered', '采购单：标记已下单', 'procurement_order', '采购管理', 90),
+('procurement_receipt.action.compare', '采购收货：对比确认', 'procurement_receipt', '采购管理', 100),
+('procurement_receipt.action.approve_stockin', '采购收货：确认对比结果', 'procurement_receipt', '采购管理', 110)
+ON DUPLICATE KEY UPDATE
+  `title`=VALUES(`title`),
+  `nav_item_code`=VALUES(`nav_item_code`),
+  `group_label`=VALUES(`group_label`),
+  `sort_order`=VALUES(`sort_order`);

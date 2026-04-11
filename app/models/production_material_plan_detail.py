@@ -16,11 +16,11 @@ class ProductionMaterialPlanDetail(db.Model):
     child_kind = db.Column(db.String(16), nullable=False)
     child_material_id = db.Column(db.Integer, nullable=False, default=0)
 
-    required_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    scrap_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    net_required_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    stock_covered_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    shortage_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    required_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    scrap_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    net_required_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    stock_covered_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    shortage_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     unit = db.Column(db.String(16))
     remark = db.Column(db.String(255))

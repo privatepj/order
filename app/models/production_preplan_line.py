@@ -14,7 +14,7 @@ class ProductionPreplanLine(db.Model):
     source_order_item_id = db.Column(db.Integer)
 
     product_id = db.Column(db.Integer, nullable=False, default=0)
-    quantity = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    quantity = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     unit = db.Column(db.String(16))
     remark = db.Column(db.String(255))
 

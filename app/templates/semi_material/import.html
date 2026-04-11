@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}半成品/物料 Excel 导入 - 工厂订单系统{% endblock %}
+{% block title %}半成品 Excel 导入 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">半成品/物料主数据导入（Excel）</h2>
+<h2 class="mb-4">半成品主数据导入（Excel）</h2>
 
 <p class="text-muted small mb-3">
-    类别：{% if kind == 'semi' %}半成品{% else %}物料{% endif %}。模板列顺序：<code>物料编号（可留空）</code>、<code>名称</code>、<code>规格</code>、<code>基础单位</code>、<code>备注</code>（从第 2 行开始为数据）。
+    模板列顺序：<code>物料编号（可留空）</code>、<code>名称</code>、<code>规格</code>、<code>基础单位</code>、<code>备注</code>，从第 2 行开始填写数据。
 </p>
 
 <form method="post" enctype="multipart/form-data" class="mb-4">
@@ -13,8 +13,8 @@
         <input type="file" name="file" accept=".xlsx" class="form-control" required>
     </div>
     <button type="submit" class="btn btn-primary">上传并导入</button>
-    <a href="{{ url_for('main.semi_material_export_import_template', kind=kind) }}" class="btn btn-outline-secondary">下载模板</a>
-    <a href="{{ url_for('main.semi_material_list', kind=kind) }}" class="btn btn-outline-secondary">返回</a>
+    <a href="{{ url_for('main.semi_material_export_import_template') }}" class="btn btn-outline-secondary">下载模板</a>
+    <a href="{{ url_for('main.semi_material_list') }}" class="btn btn-outline-secondary">返回</a>
 </form>
 
 {% if result %}
@@ -30,6 +30,4 @@
 </div>
 {% endif %}
 {% endif %}
-
 {% endblock %}
-

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ '编辑' if item and item.id else '新增' }}半成品/物料主数据 - 工厂订单系统{% endblock %}
+{% block title %}{{ '编辑' if item and item.id else '新增' }}半成品主数据 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '编辑主数据' if item and item.id else '新增主数据' }}</h2>
+<h2 class="mb-4">{{ '编辑半成品' if item and item.id else '新增半成品' }}</h2>
 
 <form method="post">
     {% if item and item.id %}
@@ -11,15 +11,9 @@
         <input type="hidden" name="kind" value="{{ item.kind }}">
     </div>
     {% else %}
-    <div class="mb-3">
-        <label class="form-label">类别</label>
-        <select name="kind" class="form-select" required>
-            <option value="semi" {% if kind == 'semi' %}selected{% endif %}>半成品</option>
-            <option value="material" {% if kind == 'material' %}selected{% endif %}>物料</option>
-        </select>
-    </div>
+    <input type="hidden" name="kind" value="semi">
     <div class="mb-3 text-muted small">
-        保存后系统将自动生成编号（全局唯一）。
+        保存后系统将自动生成编号。
     </div>
     {% endif %}
 
@@ -37,9 +31,9 @@
     </div>
     {% if current_user.role_code == 'admin' %}
     <div class="mb-3">
-        <label class="form-label">标准单位成本（元/单位，预算用）</label>
-        <input type="number" step="0.0001" min="0" class="form-control" name="standard_unit_cost" value="{{ item.standard_unit_cost if item and item.standard_unit_cost is not none else '' }}">
-        <div class="form-text">用于预生产预算物料金额；未填则物料成本按 0。</div>
+        <label class="form-label">标准单位成本（元/单位）</label>
+        <input type="number" step="0.00000001" min="0" class="form-control" name="standard_unit_cost" value="{{ item.standard_unit_cost if item and item.standard_unit_cost is not none else '' }}">
+        <div class="form-text">用于半成品成本维护。</div>
     </div>
     {% endif %}
     <div class="mb-3">
@@ -48,7 +42,6 @@
     </div>
 
     <button type="submit" class="btn btn-primary">保存</button>
-    <a href="{{ url_for('main.semi_material_list', kind=(item.kind if item else kind)) }}" class="btn btn-outline-secondary">返回</a>
+    <a href="{{ url_for('main.semi_material_list') }}" class="btn btn-outline-secondary">返回</a>
 </form>
 {% endblock %}
-

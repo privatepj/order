@@ -15,6 +15,29 @@ class Role(db.Model):
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
+    @staticmethod
+    def _normalize_nav_codes(keys):
+        out = set()
+        for k in keys:
+            if k == "inventory":
+                out.add("inventory_query")
+                out.add("inventory_ops_finished")
+                out.add("inventory_ops_semi")
+                out.add("inventory_ops_material")
+            elif k == "inventory_ops":
+                out.add("inventory_ops_finished")
+                out.add("inventory_ops_semi")
+                out.add("inventory_ops_material")
+            elif k == "report_export":
+                out.add("report_notes")
+                out.add("report_records")
+            elif k == "production":
+                out.add("production_preplan")
+                out.add("production_incident")
+            else:
+                out.add(k)
+        return frozenset(out)
+
     def parsed_menu_key_set(self):
         """非 admin：返回已允许的 menu key 集合；admin/pending 由调用方按 code 处理。"""
         raw = self.allowed_menu_keys
@@ -50,45 +73,31 @@ class Role(db.Model):
         return frozenset(str(x) for x in raw if x is not None)
 
     def resolved_nav_codes(self):
-        """优先 role_allowed_nav；无记录时从 allowed_menu_keys 兼容（含 inventory/report_export 展开）。"""
+        """兼容旧 JSON 与新授权表混用；历史角色按并集解析，新模型角色仍以新表为准。"""
         from app.models.rbac import RoleAllowedNav
 
         rows = RoleAllowedNav.query.filter_by(role_id=self.id).all()
-        if rows:
-            codes = {r.nav_code for r in rows}
-            # 迁移前仅有叶子 production；现为分组 + production_preplan / production_incident
-            if "production" in codes:
-                codes.discard("production")
-                codes.add("production_preplan")
-                codes.add("production_incident")
-            return frozenset(codes)
-        raw = self.parsed_menu_key_set()
-        if not raw:
-            return frozenset()
-        out = set()
-        for k in raw:
-            if k == "inventory":
-                out.add("inventory_query")
-                out.add("inventory_ops_finished")
-                out.add("inventory_ops_semi")
-                out.add("inventory_ops_material")
-            elif k == "report_export":
-                out.add("report_notes")
-                out.add("report_records")
-            elif k == "production":
-                out.add("production_preplan")
-                out.add("production_incident")
-            else:
-                out.add(k)
-        return frozenset(out)
+        table_codes = self._normalize_nav_codes(r.nav_code for r in rows)
+        legacy_codes = self._normalize_nav_codes(self.parsed_menu_key_set())
+        if self.allowed_menu_keys is not None:
+            return frozenset(set(table_codes) | set(legacy_codes))
+        if table_codes:
+            return table_codes
+        return legacy_codes
 
     def resolved_capability_key_set(self):
-        """优先 role_allowed_capability；无记录时用 allowed_capability_keys JSON。"""
+        """历史角色保留旧能力语义；新模型角色仍以新表能力为准。"""
         from app.models.rbac import RoleAllowedCapability
 
         rows = RoleAllowedCapability.query.filter_by(role_id=self.id).all()
-        if rows:
-            return frozenset(r.cap_code for r in rows)
+        table_caps = frozenset(r.cap_code for r in rows)
+        if self.allowed_menu_keys is not None:
+            legacy_caps = self.parsed_capability_key_set()
+            if legacy_caps is None:
+                return None
+            return frozenset(set(legacy_caps) | set(table_caps))
+        if table_caps:
+            return table_caps
         return self.parsed_capability_key_set()
 
     # 不使用数据库外键，用 primaryjoin + foreign() 标注引用列

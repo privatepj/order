@@ -1,5 +1,7 @@
-from app import db
 from decimal import Decimal
+
+from app import db
+from app.utils.decimal_scale import quantize_decimal
 
 
 class SalesOrder(db.Model):
@@ -36,11 +38,12 @@ class OrderItem(db.Model):
     product_name = db.Column(db.String(128))
     product_spec = db.Column(db.String(128))
     customer_material_no = db.Column(db.String(64))
-    quantity = db.Column(db.Numeric(18, 4), default=0, nullable=False)
+    quantity = db.Column(db.Numeric(26, 8), default=0, nullable=False)
     unit = db.Column(db.String(16))
-    price = db.Column(db.Numeric(18, 4))
-    amount = db.Column(db.Numeric(18, 2))
+    price = db.Column(db.Numeric(26, 8))
+    amount = db.Column(db.Numeric(26, 8))
     is_sample = db.Column(db.Boolean, nullable=False, default=False)
+    is_spare = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
@@ -51,6 +54,13 @@ class OrderItem(db.Model):
         "CustomerProduct", primaryjoin="foreign(OrderItem.customer_product_id) == CustomerProduct.id", backref="order_items", lazy=True
     )
 
+    @property
+    def display_product_name(self):
+        name = (self.product_name or "").strip()
+        if not self.is_spare:
+            return name
+        return f"{name}（备品）" if name else "备品"
+
     def compute_amount(self):
         if self.price is not None and self.quantity is not None:
-            self.amount = Decimal(str(self.quantity)) * Decimal(str(self.price))
+            self.amount = quantize_decimal(Decimal(str(self.quantity)) * Decimal(str(self.price)))

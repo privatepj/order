@@ -57,8 +57,8 @@
     <thead>
         <tr>
             <th>送货单号</th>
-            <th>快递</th>
-            <th>快递单号</th>
+            <th>配送方式</th>
+            <th>配送方式/单号</th>
             <th>送货日期</th>
             <th>状态</th>
             <th>操作</th>
@@ -85,9 +85,9 @@
                 {{ d.delivery_no }}
                 {% endif %}
             </td>
-            <td>{% if d.express_company_id %}{{ d.express_company.name if d.express_company else '-' }}{% else %}自配送{% endif %}</td>
+            <td>{{ d.delivery_method_display }}</td>
             <td>
-                {% if d.status == 'created' and user_can_cap('delivery.action.edit_waybill') %}
+                {% if d.status == 'created' and d.is_express_delivery and user_can_cap('delivery.action.edit_waybill') %}
                 <form method="post" action="{{ url_for('main.delivery_update_waybill', delivery_id=d.id) }}" class="d-flex flex-wrap gap-1 align-items-center">
                     {% if customer_id is not none %}
                     <input type="hidden" name="ret_customer_id" value="{{ customer_id }}">
@@ -101,7 +101,7 @@
                     </div>
                 </form>
                 {% else %}
-                {{ d.waybill_no or '-' }}
+                {{ d.delivery_method_waybill_text }}
                 {% endif %}
             </td>
             <td>{{ d.delivery_date }}</td>

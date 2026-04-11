@@ -17,9 +17,9 @@ class ProductionComponentNeed(db.Model):
     child_kind = db.Column(db.String(16), nullable=False)
     child_material_id = db.Column(db.Integer, nullable=False, default=0)
 
-    required_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    stock_covered_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    shortage_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    required_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    stock_covered_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    shortage_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     coverage_mode = db.Column(db.String(16), nullable=False, default="stock")
     storage_area_hint = db.Column(db.String(32))

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
+from collections import defaultdict
 from decimal import Decimal
+import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app import db
@@ -10,6 +12,7 @@ from app.models import (
     HrEmployeeScheduleBooking,
     Machine,
     MachineScheduleBooking,
+    ProductionComponentNeed,
     ProductionProcessEdge,
     ProductionProcessNode,
     ProductionProductRouting,
@@ -136,11 +139,125 @@ def _resource_key(op: ProductionWorkOrderOperation) -> Optional[Tuple[str, int]]
         mid = int(op.budget_machine_id or 0)
         if mid > 0:
             return ("machine", mid)
-    elif rk == "hr_department":
+    elif rk in ("hr_department", "hr_work_type"):
         eid = int(op.budget_operator_employee_id or 0)
         if eid > 0:
             return ("employee", eid)
     return None
+
+
+def _wo_matches_child_target(
+    wo: ProductionWorkOrder, child_kind: str, child_material_id: int
+) -> bool:
+    """与测算工单字段一致：finished→parent_product_id；semi→parent_material_id。"""
+    k = (child_kind or "").strip()
+    cid = int(child_material_id or 0)
+    if cid <= 0:
+        return False
+    if k == "finished":
+        return (wo.parent_kind or "").strip() == "finished" and int(
+            wo.parent_product_id or 0
+        ) == cid
+    if k == "semi":
+        return (wo.parent_kind or "").strip() == "semi" and int(
+            wo.parent_material_id or 0
+        ) == cid
+    return False
+
+
+def _build_bom_child_to_parent_edges(
+    *,
+    preplan_id: int,
+    work_orders: List[ProductionWorkOrder],
+) -> Tuple[Dict[int, Set[int]], Dict[int, Set[int]]]:
+    """
+    子工单 → 父工单：父工单须等待其 BOM 缺口对应子工单全部完工（FS）。
+    返回 (children_by_parent, parents_after_child)。
+    子工单匹配：同 preplan、同 root_preplan_line_id、child_kind/child_material_id 与工单 parent 字段一致。
+    多条 need 同一子项：将该父项下所有匹配子工单并入依赖（父取 max(子 EF)）。
+    """
+    children_by_parent: Dict[int, Set[int]] = defaultdict(set)
+    wo_by_id = {int(w.id): w for w in work_orders}
+    needs = (
+        ProductionComponentNeed.query.filter_by(preplan_id=preplan_id)
+        .order_by(ProductionComponentNeed.id.asc())
+        .all()
+    )
+    for need in needs:
+        if _d(need.shortage_qty) <= 0:
+            continue
+        ck = (need.child_kind or "").strip()
+        if ck not in ("finished", "semi"):
+            continue
+        pid = int(need.work_order_id or 0)
+        parent_wo = wo_by_id.get(pid)
+        if not parent_wo:
+            continue
+        root = parent_wo.root_preplan_line_id
+        cid = int(need.child_material_id or 0)
+        for wo in work_orders:
+            if int(wo.id) == pid:
+                continue
+            if wo.root_preplan_line_id != root:
+                continue
+            if not _wo_matches_child_target(wo, ck, cid):
+                continue
+            children_by_parent[pid].add(int(wo.id))
+
+    parents_after_child: Dict[int, Set[int]] = defaultdict(set)
+    for p_id, chs in children_by_parent.items():
+        for c_id in chs:
+            parents_after_child[c_id].add(p_id)
+
+    return children_by_parent, parents_after_child
+
+
+def list_bom_work_order_gate_errors(
+    *,
+    preplan_id: int,
+    rows: List[Dict[str, Any]],
+) -> List[str]:
+    """
+    人工/确认排程校验：父工单任意工序的 ES 不得早于其 BOM 子生产工单的最晚 EF（方案 A）。
+    rows：含 work_order_id、es、ef（与 validate_preplan_schedule 的 row_dicts 一致）。
+    """
+    errs: List[str] = []
+    by_wo: Dict[int, List[Tuple[datetime, datetime]]] = defaultdict(list)
+    for r in rows:
+        wid = int(r.get("work_order_id") or 0)
+        es, ef = r.get("es"), r.get("ef")
+        if wid <= 0 or not es or not ef:
+            continue
+        by_wo[wid].append((es, ef))
+
+    work_orders = ProductionWorkOrder.query.filter_by(preplan_id=preplan_id).all()
+    if not work_orders:
+        return errs
+    children_by_parent, _ = _build_bom_child_to_parent_edges(
+        preplan_id=preplan_id, work_orders=list(work_orders)
+    )
+
+    for p_id, child_ids in children_by_parent.items():
+        if not child_ids:
+            continue
+        p_times = by_wo.get(int(p_id), [])
+        if not p_times:
+            continue
+        min_parent_es = min(t[0] for t in p_times)
+        child_max_efs: List[datetime] = []
+        for cid in child_ids:
+            ct = by_wo.get(int(cid), [])
+            if not ct:
+                continue
+            child_max_efs.append(max(t[1] for t in ct))
+        if not child_max_efs:
+            continue
+        gate = max(child_max_efs)
+        if min_parent_es < gate:
+            errs.append(
+                f"BOM 先后：父工单 WO#{p_id} 最早 ES 早于子工单完工（要求父最早 ES ≥ 子最晚 EF {gate.strftime('%m-%d %H:%M')}）。请把父工单整体排到子工单之后。"
+            )
+    return errs
 
 
 def plan_operations_for_preplan(*, preplan_id: int) -> None:
@@ -150,6 +267,7 @@ def plan_operations_for_preplan(*, preplan_id: int) -> None:
     - 前向计算 ES/EF，后向计算 LS/LF 与关键工序；
     - 资源：按 budget 机台/人员做 list scheduling；
     - 日历：有机台/人员 available 排班窗时，仅在窗内累计有效作业分钟（跨多日、跳过非工作 gap）。
+    - 跨工单：BOM 子生产工单整单完工后，父工单工序方可开工（与 component_need 缺口一致）。
     """
     db.session.query(ProductionWorkOrderOperationPlan).filter_by(preplan_id=preplan_id).delete(
         synchronize_session=False
@@ -163,6 +281,16 @@ def plan_operations_for_preplan(*, preplan_id: int) -> None:
     )
     if not work_orders:
         return
+
+    children_by_parent, parents_after_child = _build_bom_child_to_parent_edges(
+        preplan_id=preplan_id, work_orders=work_orders
+    )
+    wo_by_id = {int(w.id): w for w in work_orders}
+    indegree: Dict[int, int] = {
+        int(w.id): len(children_by_parent.get(int(w.id), set())) for w in work_orders
+    }
+    remaining: Set[int] = {int(w.id) for w in work_orders}
+    wo_max_ef: Dict[int, datetime] = {}
 
     min_d = min(wo.plan_date for wo in work_orders)
     max_d = max(wo.plan_date for wo in work_orders)
@@ -193,39 +321,74 @@ def plan_operations_for_preplan(*, preplan_id: int) -> None:
     # 同一预计划内多工单共享机台/人员尾时间（跨 WO 排队）
     shared_resource_tail: Dict[Tuple[str, int], datetime] = {}
 
-    for wo in work_orders:
+    while remaining:
+        ready = sorted(wid for wid in remaining if indegree.get(wid, 0) == 0)
+        if not ready:
+            logging.warning(
+                "preplan_id=%s BOM 工单依赖存在环或未解析子工单，将按工单 id 强行续排。",
+                preplan_id,
+            )
+            ready = sorted(remaining)
+        wid = ready[0]
+        remaining.remove(wid)
+        wo = wo_by_id[wid]
         base_start = datetime.combine(wo.plan_date, datetime.min.time())
+        child_ids = children_by_parent.get(wid, set())
+        if child_ids:
+            gate_floor = max(
+                base_start,
+                max((wo_max_ef[c] for c in child_ids), default=base_start),
+            )
+        else:
+            gate_floor = base_start
+
         ops: List[ProductionWorkOrderOperation] = (
             ProductionWorkOrderOperation.query.filter_by(work_order_id=wo.id)
             .order_by(ProductionWorkOrderOperation.step_no.asc(), ProductionWorkOrderOperation.id.asc())
             .all()
         )
-        _plan_one_work_order(
+        last_ef = _plan_one_work_order(
             wo=wo,
             ops=list(ops),
-            base_start=base_start,
+            gate_floor=gate_floor,
             get_windows=get_windows,
             shared_resource_tail=shared_resource_tail,
         )
+        if last_ef is not None:
+            wo_max_ef[wid] = last_ef
+        else:
+            wo_max_ef[wid] = gate_floor
+
+        for p in parents_after_child.get(wid, set()):
+            if p in indegree:
+                indegree[p] -= 1
 
 
 def _plan_one_work_order(
     *,
     wo: ProductionWorkOrder,
     ops: List[ProductionWorkOrderOperation],
-    base_start: datetime,
+    gate_floor: datetime,
     get_windows,
     shared_resource_tail: Dict[Tuple[str, int], datetime],
-) -> None:
+) -> Optional[datetime]:
+    """
+    gate_floor：本工单无工序内向前置的工序最早可开工时间（含跨工单 BOM 门控）。
+    返回本工单各工序 EF 的最大值；无工序时返回 None。
+    """
     if not ops:
-        return
+        return None
 
     predecessors: Dict[int, Set[int]] = {int(op.id): set() for op in ops}
+    pred_lag_minutes: Dict[Tuple[int, int], int] = {}
     step_to_op_id: Dict[int, int] = {int(op.step_no): int(op.id) for op in ops}
     ops_by_id: Dict[int, ProductionWorkOrderOperation] = {int(op.id): op for op in ops}
     sorted_ops = sorted(ops, key=lambda x: (x.step_no, x.id))
     for i in range(1, len(sorted_ops)):
-        predecessors[int(sorted_ops[i].id)].add(int(sorted_ops[i - 1].id))
+        cur_id = int(sorted_ops[i].id)
+        prev_id = int(sorted_ops[i - 1].id)
+        predecessors[cur_id].add(prev_id)
+        pred_lag_minutes[(prev_id, cur_id)] = 0
 
     template_id = _resolve_template_id_for_work_order(wo)
     if template_id:
@@ -238,6 +401,7 @@ def _plan_one_work_order(
         }
         edges = ProductionProcessEdge.query.filter_by(template_id=template_id).all()
         dag_predecessors: Dict[int, Set[int]] = {int(op.id): set() for op in ops}
+        dag_pred_lag_minutes: Dict[Tuple[int, int], int] = {}
         has_effective_edge = False
         for e in edges:
             from_step = node_map.get(int(e.from_node_id))
@@ -248,10 +412,14 @@ def _plan_one_work_order(
             to_op_id = step_to_op_id.get(int(to_step))
             if not from_op_id or not to_op_id:
                 continue
+            if str((e.edge_type or "fs")).strip().lower() != "fs":
+                continue
             dag_predecessors[to_op_id].add(from_op_id)
+            dag_pred_lag_minutes[(from_op_id, to_op_id)] = int(e.lag_minutes or 0)
             has_effective_edge = True
         if has_effective_edge:
             predecessors = dag_predecessors
+            pred_lag_minutes = dag_pred_lag_minutes
 
     indeg: Dict[int, int] = {op_id: len(preds) for op_id, preds in predecessors.items()}
     ready = [op_id for op_id, d in indeg.items() if d == 0]
@@ -275,8 +443,12 @@ def _plan_one_work_order(
     if len(topo) != len(ops):
         topo = [int(op.id) for op in sorted_ops]
         predecessors = {int(op.id): set() for op in ops}
+        pred_lag_minutes = {}
         for i in range(1, len(sorted_ops)):
-            predecessors[int(sorted_ops[i].id)].add(int(sorted_ops[i - 1].id))
+            cur_id = int(sorted_ops[i].id)
+            prev_id = int(sorted_ops[i - 1].id)
+            predecessors[cur_id].add(prev_id)
+            pred_lag_minutes[(prev_id, cur_id)] = 0
         succs = {int(op.id): [] for op in ops}
         for to_id, preds in predecessors.items():
             for p in preds:
@@ -288,13 +460,20 @@ def _plan_one_work_order(
     for oid in topo:
         op = ops_by_id[oid]
         preds = predecessors.get(oid, set())
-        es = max((ef_map[p] for p in preds), default=base_start)
+        es = max(
+            (
+                ef_map[p]
+                + timedelta(minutes=float(pred_lag_minutes.get((p, oid), 0)))
+                for p in preds
+            ),
+            default=gate_floor,
+        )
         dur = float(_d(op.estimated_total_minutes))
         ef = es + timedelta(minutes=dur)
         es_map[oid] = es
         ef_map[oid] = ef
 
-    project_end = max(ef_map.values())
+    project_end = max(ef_map.values()) if ef_map else gate_floor
 
     # ---------- 后向 LS/LF（关键路径） ----------
     ls_map: Dict[int, datetime] = {}
@@ -321,9 +500,15 @@ def _plan_one_work_order(
         op = ops_by_id[oid]
         preds = predecessors.get(oid, set())
         if preds:
-            es_from = max(es_final[p] for p in preds)
+            es_from = max(
+                (
+                    ef_final[p]
+                    + timedelta(minutes=float(pred_lag_minutes.get((p, oid), 0)))
+                    for p in preds
+                )
+            )
         else:
-            es_from = base_start
+            es_from = gate_floor
 
         rkey = _resource_key(op)
         if rkey:
@@ -363,19 +548,30 @@ def _plan_one_work_order(
                 resource_kind=op.resource_kind,
                 machine_type_id=op.machine_type_id,
                 hr_department_id=op.hr_department_id,
+                hr_work_type_id=op.effective_work_type_id,
                 planned_minutes=_d(op.estimated_total_minutes),
                 remark=None,
             )
         )
 
+    return max(ef_final.values()) if ef_final else None
+
 
 def _resolve_template_id_for_work_order(wo: ProductionWorkOrder) -> Optional[int]:
-    if (wo.parent_kind or "") != "finished":
+    parent_kind = (wo.parent_kind or "").strip()
+    if parent_kind not in ("finished", "semi"):
         return None
-    product_id = int(wo.parent_product_id or 0)
-    if product_id <= 0:
+    if parent_kind == "finished":
+        target_id = int(wo.parent_product_id or 0)
+    else:
+        target_id = int(wo.parent_material_id or 0)
+    if target_id <= 0:
         return None
-    routing = ProductionProductRouting.query.filter_by(product_id=product_id, is_active=True).first()
+    routing = ProductionProductRouting.query.filter_by(
+        target_kind=parent_kind,
+        target_id=target_id,
+        is_active=True,
+    ).first()
     if not routing:
         return None
     return int(routing.template_id or 0) or None
@@ -484,12 +680,14 @@ def list_schedule_plan_rows_for_preplan(*, preplan_id: int) -> List[Dict[str, An
         rk = (op.resource_kind or "").strip()
         if rk == "machine_type":
             rk_zh = "机台"
-        elif rk == "hr_department":
-            rk_zh = "人工"
+        elif rk in ("hr_department", "hr_work_type"):
+            rk_zh = "工种"
         else:
             rk_zh = rk or "—"
         out.append(
             {
+                "plan_id": int(plan.id),
+                "operation_id": int(op.id),
                 "work_order_id": int(plan.work_order_id),
                 "step_no": op.step_no,
                 "step_name": op.step_name or "",
@@ -501,6 +699,10 @@ def list_schedule_plan_rows_for_preplan(*, preplan_id: int) -> List[Dict[str, An
                 "budget_machine_label": m_label,
                 "budget_employee_label": e_label,
                 "is_critical": bool(plan.is_critical),
+                "resource_kind": rk,
+                "confirmed_at": plan.confirmed_at,
+                "budget_machine_id": mid,
+                "budget_operator_employee_id": eid,
             }
         )
     return out

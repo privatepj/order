@@ -20,6 +20,13 @@ from app.models import (
     ExpressWaybill,
 )
 from app.utils.billing_period import period_start_containing, next_period_start
+from app.utils.decimal_scale import json_decimal
+from app.utils.delivery_method import (
+    DELIVERY_METHOD_EXPRESS,
+    DELIVERY_METHOD_SELF,
+    delivery_method_label,
+    resolve_delivery_method,
+)
 
 
 def effective_customer_material_no(oi: OrderItem) -> str:
@@ -156,7 +163,7 @@ def order_item_shipped_and_in_transit_maps(
 
 def _delivery_qty_by_order_item_ids(
     order_item_ids: list[int], statuses: Tuple[str, ...]
-) -> Dict[int, float]:
+) -> Dict[int, Decimal]:
     """按订单行汇总送货明细数量（仅统计给定送货单状态）。"""
     if not order_item_ids:
         return {}
@@ -173,7 +180,7 @@ def _delivery_qty_by_order_item_ids(
         .group_by(DeliveryItem.order_item_id)
         .all()
     )
-    return {r[0]: float(r[1] or 0) for r in rows}
+    return {int(r[0]): Decimal(str(r[1] or 0)) for r in rows}
 
 
 def get_pending_order_items(customer_id: int, order_id: Optional[int] = None):
@@ -196,11 +203,11 @@ def get_pending_order_items(customer_id: int, order_id: Optional[int] = None):
     in_transit_map = _delivery_qty_by_order_item_ids(item_ids, ("created",))
     result = []
     for item, order in items:
-        shipped = shipped_map.get(item.id, 0.0)
-        in_transit = in_transit_map.get(item.id, 0.0)
-        need = float(item.quantity or 0)
+        shipped = shipped_map.get(item.id, Decimal(0))
+        in_transit = in_transit_map.get(item.id, Decimal(0))
+        need = Decimal(str(item.quantity or 0))
         allocated = shipped + in_transit
-        remaining = max(0, need - allocated)
+        remaining = max(Decimal(0), need - allocated)
         if remaining > 0:
             result.append(
                 {
@@ -261,6 +268,15 @@ def _is_self_delivery(data: dict[str, Any]) -> bool:
     return False
 
 
+def _delivery_method_from_data(data: dict[str, Any]) -> str:
+    return resolve_delivery_method(
+        data.get("delivery_method"),
+        legacy_self_delivery=data.get("self_delivery"),
+        express_company_id=data.get("express_company_id"),
+        default_when_missing=DELIVERY_METHOD_EXPRESS,
+    )
+
+
 def preview_delivery_create(data: dict[str, Any]) -> Tuple[Optional[str], dict[str, Any]]:
     """
     不写库：校验创建送货单参数并返回摘要，供用户确认后再 POST /deliveries。
@@ -278,11 +294,12 @@ def preview_delivery_create(data: dict[str, Any]) -> Tuple[Optional[str], dict[s
     summary["customer_id"] = int(customer_id)
     summary["customer_label"] = (cust.short_code or cust.customer_code or cust.name or str(cust.id))
 
-    self_delivery = _is_self_delivery(data)
+    delivery_method = _delivery_method_from_data(data)
+    is_express = delivery_method == DELIVERY_METHOD_EXPRESS
     express_company_id: Optional[int] = None
     ec: Optional[ExpressCompany] = None
 
-    if self_delivery:
+    if not is_express:
         express_company_id = None
     else:
         express_company_id = data.get("express_company_id")
@@ -307,14 +324,16 @@ def preview_delivery_create(data: dict[str, Any]) -> Tuple[Optional[str], dict[s
             pass
 
     summary["delivery_date"] = delivery_date.isoformat()
-    summary["self_delivery"] = self_delivery
+    summary["delivery_method"] = delivery_method
+    summary["delivery_method_label"] = delivery_method_label(delivery_method)
+    summary["self_delivery"] = delivery_method == DELIVERY_METHOD_SELF
     summary["express_company_id"] = express_company_id
     summary["express_company_name"] = (ec.name if ec else None)
-    prefer_wb = (data.get("waybill_no") or "").strip()
+    prefer_wb = (data.get("waybill_no") or "").strip() if is_express else ""
     summary["waybill_no"] = prefer_wb or None
     summary["waybill_note"] = (
-        "自配送不占运单池"
-        if self_delivery
+        f"{delivery_method_label(delivery_method)}不占运单池"
+        if not is_express
         else ("将尝试占用单号池中与此相同单号" if prefer_wb else "保存时将自动从单号池顺序占号")
     )
     summary["driver"] = (data.get("driver") or "").strip() or None
@@ -379,11 +398,11 @@ def preview_delivery_create(data: dict[str, Any]) -> Tuple[Optional[str], dict[s
             return "本次送货数量超过可发剩余（已含待发送货单占用，请核对或调整待发单）。", summary
         line_out.append({
             "order_item_id": oi_id,
-            "quantity": float(total_need),
-            "remaining_before": float(rem),
+            "quantity": json_decimal(total_need),
+            "remaining_before": json_decimal(rem),
             "order_id": order_row.id,
             "order_no": order_row.order_no,
-            "product_name": item.product_name or "",
+            "product_name": item.display_product_name or "",
             "product_spec": (item.product_spec or "")[:128],
         })
 
@@ -396,21 +415,23 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
     根据字典数据创建送货单。
     data: customer_id, lines: [{ order_item_id, quantity }],
           order_id?（若传则所有行须属于该订单且订单须属于该客户）,
-          self_delivery?（True 表示自配送，不占单号池，express_company_id 置空）,
-          express_company_id?, waybill_no?（非自配送：非空时先尝试占用池中可用同号，否则手写落库不入池）,
+          delivery_method?（express/self_delivery/pickup）,
+          self_delivery?（兼容旧入参；未传 delivery_method 时 true 视为 self_delivery）,
+          express_company_id?, waybill_no?（快递：非空时先尝试占用池中可用同号，否则手写落库不入池）,
           delivery_date?, driver?, plate_no?, remark?
-    非自配送且未传 express_company_id 时使用默认顺丰并占号；缺省 delivery_date 为今天。
-    非自配送时 waybill_no 为空则按 id 顺序自动占号；非空则池内可用则占号，否则仅保存单号（express_waybill_id 为空）。
+    快递且未传 express_company_id 时使用默认顺丰并占号；缺省 delivery_date 为今天。
+    快递时 waybill_no 为空则按 id 顺序自动占号；非空则池内可用则占号，否则仅保存单号（express_waybill_id 为空）。
     返回 (delivery, None) 成功；(None, error_message) 失败。
     """
     customer_id = data.get("customer_id")
     if not customer_id:
         return None, "请选择客户。"
 
-    self_delivery = _is_self_delivery(data)
+    delivery_method = _delivery_method_from_data(data)
+    is_express = delivery_method == DELIVERY_METHOD_EXPRESS
     express_company_id: Optional[int] = None
 
-    if self_delivery:
+    if not is_express:
         express_company_id = None
     else:
         express_company_id = data.get("express_company_id")
@@ -504,7 +525,10 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
                 delivery_no=delivery_no,
                 delivery_date=delivery_date,
                 customer_id=customer_id,
+                delivery_method=delivery_method,
                 express_company_id=express_company_id,
+                express_waybill_id=None,
+                waybill_no=None,
                 status="created",
                 driver=driver,
                 plate_no=plate_no,
@@ -513,7 +537,7 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
             db.session.add(delivery)
             db.session.flush()
 
-            if not self_delivery and express_company_id is not None:
+            if is_express and express_company_id is not None:
                 prefer = (data.get("waybill_no") or "").strip()
                 if prefer:
                     if len(prefer) > 64:
@@ -533,6 +557,10 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
                         return None, "该快递公司暂无可用单号，请先录入单号池。"
                     delivery.express_waybill_id = w.id
                     delivery.waybill_no = w.waybill_no
+            else:
+                delivery.express_company_id = None
+                delivery.express_waybill_id = None
+                delivery.waybill_no = None
 
             for i, oi_id in enumerate(order_item_ids):
                 qty = quantities[i] if i < len(quantities) else Decimal(0)
@@ -549,7 +577,7 @@ def create_delivery_from_data(data: dict[str, Any]) -> Tuple[Optional[Delivery],
                     delivery_id=delivery.id,
                     order_item_id=item.id,
                     order_id=item.order_id,
-                    product_name=item.product_name,
+                    product_name=item.display_product_name,
                     customer_material_no=effective_customer_material_no(item),
                     quantity=qty,
                     unit=item.unit,
@@ -574,6 +602,8 @@ def update_delivery_waybill_for_list(delivery_id: int, new_waybill_raw: str) -> 
         return "danger", "送货单不存在。"
     if delivery.status != "created":
         return "warning", "仅待发状态可修改快递单号。"
+    if not delivery.is_express_delivery:
+        return "warning", f"仅快递方式可修改快递单号；当前为「{delivery.delivery_method_text}」。"
     new_wb = (new_waybill_raw or "").strip()
     old_wb = (delivery.waybill_no or "").strip()
     if new_wb == old_wb:
@@ -581,19 +611,8 @@ def update_delivery_waybill_for_list(delivery_id: int, new_waybill_raw: str) -> 
     if len(new_wb) > 64:
         return "danger", "快递单号不能超过 64 个字符。"
 
-    if delivery.express_company_id is None:
-        delivery.waybill_no = new_wb or None
-        delivery.express_waybill_id = None
-        db.session.add(delivery)
-        try:
-            db.session.commit()
-            return "success", "快递单号已更新。"
-        except IntegrityError:
-            db.session.rollback()
-            return "danger", "保存失败，请重试。"
-
     if not new_wb:
-        return "danger", "非自配送时快递单号不能为空。"
+        return "danger", "快递方式下快递单号不能为空。"
 
     if delivery.express_waybill_id:
         w_old = db.session.get(ExpressWaybill, delivery.express_waybill_id)

@@ -25,7 +25,7 @@ class CustomerProduct(db.Model):
     customer_material_no = db.Column(db.String(64))
     material_no = db.Column(db.String(64))
     unit = db.Column(db.String(16))
-    price = db.Column(db.Numeric(18, 4))
+    price = db.Column(db.Numeric(26, 8))
     currency = db.Column(db.String(8))
     remark = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, server_default=db.func.now())

@@ -1,11 +1,17 @@
 {% extends "base.html" %}
-{% block title %}产品路由覆写 - 工厂订单系统{% endblock %}
+{% block title %}工序路由覆写 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">产品路由覆写</h2>
+<h2 class="mb-4">工序路由覆写</h2>
 
 <form method="get" class="row g-2 mb-3">
+    <div class="col-md-2">
+        <select class="form-select" name="target_kind">
+            <option value="finished" {% if target_kind == 'finished' %}selected{% endif %}>成品</option>
+            <option value="semi" {% if target_kind == 'semi' %}selected{% endif %}>半成品</option>
+        </select>
+    </div>
     <div class="col-md-5">
-        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="产品编号/名称关键词">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="{% if target_kind == 'semi' %}半成品编号/名称关键词{% else %}产品编号/名称关键词{% endif %}">
     </div>
     <div class="col-auto">
         <button type="submit" class="btn btn-outline-secondary">查询</button>
@@ -25,11 +31,15 @@
             </tr>
         </thead>
         <tbody>
-        {% for p in products %}
+        {% for p in items %}
             {% set r = routing_map.get(p.id) %}
             <tr>
                 <td class="text-nowrap">
-                    {{ p.product_code }} - {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}
+                    {% if target_kind == 'semi' %}
+                        {{ p.code }} - {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}
+                    {% else %}
+                        {{ p.product_code }} - {{ p.name }}{% if p.spec %}（{{ p.spec }}）{% endif %}
+                    {% endif %}
                 </td>
                 <td class="text-nowrap">
                     {% if r %}
@@ -41,7 +51,7 @@
                 </td>
                 <td class="text-nowrap">
                     {% if user_can_cap('production.process_routing.action.edit') %}
-                        <a href="{{ url_for('main.production_product_routing_edit', product_id=p.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                        <a href="{{ url_for('main.production_product_routing_edit', target_kind=target_kind, target_id=p.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
                     {% else %}
                         <span class="text-muted small">无权限</span>
                     {% endif %}

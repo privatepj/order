@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}采购物料管理{% endblock %}
+{% block content %}
+<h2 class="mb-4">采购物料管理</h2>
+
+<div class="alert alert-light border py-2">
+    默认供应商按当前默认经营主体生效；报价读取供应商维护中的最近单价。
+</div>
+
+<div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+    <form class="d-flex gap-2 ms-auto" method="get">
+        {% if user_can_cap('procurement_material.filter.keyword') %}
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编码、名称、规格">
+        {% endif %}
+        <button type="submit" class="btn btn-primary">搜索</button>
+    </form>
+</div>
+
+<p>
+    {% if user_can_cap('procurement_material.action.create') %}
+    <a href="{{ url_for('main.procurement_material_new') }}" class="btn btn-success me-2">新增</a>
+    {% endif %}
+    {% if user_can_cap('procurement_material.action.import') %}
+    <a href="{{ url_for('main.procurement_material_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
+    {% endif %}
+</p>
+
+<div class="table-responsive app-table-scroll">
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>编号</th>
+            <th>名称</th>
+            <th>规格</th>
+            <th>基础单位</th>
+            <th>默认供应商</th>
+            <th>默认报价</th>
+            <th>备注</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        {% set item = row.item %}
+        {% set default_mapping = row.default_mapping %}
+        <tr>
+            <td>{{ item.code }}</td>
+            <td>{{ item.name }}</td>
+            <td>{{ item.spec or '-' }}</td>
+            <td>{{ item.base_unit or '-' }}</td>
+            <td>{{ default_mapping.supplier.name if default_mapping and default_mapping.supplier else '-' }}</td>
+            <td>{{ default_mapping.last_unit_price if default_mapping and default_mapping.last_unit_price is not none else '-' }}</td>
+            <td>{{ item.remark or '-' }}</td>
+            <td>
+                {% if user_can_cap('procurement_material.action.edit') %}
+                <a href="{{ url_for('main.procurement_material_edit', item_id=item.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
+                {% endif %}
+                {% if user_can_cap('procurement_material.action.delete') %}
+                <form method="post" action="{{ url_for('main.procurement_material_delete', item_id=item.id) }}" class="d-inline" onsubmit="return confirm('确定删除这条物料？');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">暂无数据</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% if pagination.pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.procurement_material_list', page=pagination.prev_num, keyword=keyword) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.procurement_material_list', page=pagination.next_num, keyword=keyword) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

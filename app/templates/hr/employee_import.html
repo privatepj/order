@@ -2,9 +2,21 @@
 {% block title %}人员 Excel 导入 - 工厂订单系统{% endblock %}
 {% block content %}
 <h2 class="mb-4">人员 Excel 导入</h2>
-<p class="text-muted">表头：经营主体短码、工号、姓名、部门名称、手机、身份证、岗位、入职日期、状态（active/left）。部门须已存在。</p>
+<p class="text-muted">
+    表头：经营主体短码、工号、姓名、部门名称、手机、身份证、主工种、辅工种列表(逗号分隔)、入职日期、状态(active/left)。
+    部门和工种都需要先在系统中维护。
+</p>
 {% if result %}
-<div class="alert alert-info">成功导入 {{ result.success }} 条。{% if result.errors %}<ul class="mb-0 mt-2">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>
+<div class="alert alert-info">
+    成功导入 {{ result.success }} 条。
+    {% if result.errors %}
+    <ul class="mb-0 mt-2">
+        {% for e in result.errors %}
+        <li>{{ e }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
 {% endif %}
 <form method="post" enctype="multipart/form-data">
     <div class="mb-3">

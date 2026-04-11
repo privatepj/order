@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ "新增工种" if not row else "编辑工种" }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ "新增工种" if not row else "编辑工种" }}</h2>
+<form method="post">
+    <div class="mb-3">
+        <label class="form-label">名称</label>
+        <input type="text" class="form-control" name="name" value="{{ row.name if row else '' }}" required maxlength="128">
+    </div>
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label class="form-label">排序</label>
+            <input type="number" class="form-control" name="sort_order" value="{{ row.sort_order if row else 0 }}">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label class="form-label">状态</label>
+            <select name="is_active" class="form-select">
+                <option value="1" {% if not row or row.is_active %}selected{% endif %}>启用</option>
+                <option value="0" {% if row and not row.is_active %}selected{% endif %}>停用</option>
+            </select>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <textarea class="form-control" name="remark" rows="2" maxlength="255">{{ row.remark if row else '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.hr_work_type_list') }}" class="btn btn-secondary">返回</a>
+</form>
+{% endblock %}

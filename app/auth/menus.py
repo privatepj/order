@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from flask import url_for
 from flask_login import current_user
@@ -38,17 +38,21 @@ _FALLBACK_ASSIGNABLE = frozenset(
         "report_notes",
         "report_records",
         "hr_department",
+        "hr_work_type",
         "hr_employee",
         "hr_employee_schedule",
         "hr_employee_capability",
         "hr_department_capability_map",
         "hr_payroll",
         "hr_performance",
+        "dept_piece_rate",
         "machine_type",
         "machine_asset",
         "machine_runtime",
         "machine_schedule",
+        "procurement_material",
         "procurement_requisition",
+        "procurement_supplier",
         "procurement_order",
         "procurement_receipt",
         "procurement_stockin",
@@ -75,17 +79,21 @@ _FALLBACK_ENDPOINTS = {
     "user_mgmt": "main.user_list",
     "role_mgmt": "main.role_list",
     "hr_department": "main.hr_department_list",
+    "hr_work_type": "main.hr_work_type_list",
     "hr_employee": "main.hr_employee_list",
     "hr_employee_schedule": "main.hr_employee_schedule_template_list",
     "hr_employee_capability": "main.hr_employee_capability_list",
     "hr_department_capability_map": "main.hr_department_capability_map_list",
     "hr_payroll": "main.hr_payroll_list",
     "hr_performance": "main.hr_performance_list",
+    "dept_piece_rate": "main.dept_piece_rate_list",
     "machine_type": "main.machine_type_list",
     "machine_asset": "main.machine_list",
     "machine_runtime": "main.machine_runtime_list",
     "machine_schedule": "main.machine_schedule_template_list",
+    "procurement_material": "main.procurement_material_list",
     "procurement_requisition": "main.procurement_requisition_list",
+    "procurement_supplier": "main.procurement_supplier_list",
     "procurement_order": "main.procurement_order_list",
     "procurement_receipt": "main.procurement_receipt_list",
     "procurement_stockin": "main.procurement_stockin_list",
@@ -110,17 +118,21 @@ _FALLBACK_LANDING = [
     "user_mgmt",
     "role_mgmt",
     "hr_department",
+    "hr_work_type",
     "hr_employee",
     "hr_employee_schedule",
     "hr_employee_capability",
     "hr_department_capability_map",
     "hr_payroll",
     "hr_performance",
+    "dept_piece_rate",
     "machine_type",
     "machine_asset",
     "machine_runtime",
     "machine_schedule",
+    "procurement_material",
     "procurement_requisition",
+    "procurement_supplier",
     "procurement_order",
     "procurement_receipt",
     "procurement_stockin",
@@ -145,21 +157,26 @@ _FALLBACK_MENU_LABELS = {
     "report_notes": "导出送货单Excel",
     "report_records": "导出送货记录Excel",
     "hr_department": "部门",
+    "hr_work_type": "工种管理",
     "hr_employee": "人员档案",
     "hr_employee_schedule": "人员排产",
     "hr_employee_capability": "人员能力表",
-    "hr_department_capability_map": "工序部门↔能力工位",
+    "hr_department_capability_map": "部门-工种允许关系",
     "hr_payroll": "工资录入",
     "hr_performance": "绩效管理",
+    "dept_piece_rate": "工种计件单价",
     "machine_type": "机台种类",
     "machine_asset": "机台台账",
     "machine_runtime": "运转情况",
     "machine_schedule": "机台排班",
     "procurement_requisition": "采购请购",
+    "procurement_supplier": "供应商",
     "procurement_order": "采购单",
     "procurement_receipt": "采购收货",
     "procurement_stockin": "采购入库",
 }
+
+_FALLBACK_MENU_LABELS["procurement_material"] = "物料管理"
 
 
 def get_menu_label_map() -> dict:
@@ -247,14 +264,25 @@ def user_menu_key_set(user):
 
 
 def user_can_menu(user, menu_key: str) -> bool:
-    if menu_key not in _assignable_codes():
-        return False
     if not user or not getattr(user, "is_authenticated", False):
         return False
     code = getattr(user, "role_code", None)
-    if code == "admin":
-        return True
     if code == "pending":
+        return False
+    if code == "admin":
+        # 管理员也须对应有效菜单项；但须先于 assignable 快照判断。
+        # 否则 RBAC 进程内缓存未刷新时，新写入 sys_nav_item 的菜单会对 admin 误返回 False。
+        if menu_key in _assignable_codes():
+            return True
+        from app.models.rbac import SysNavItem
+
+        return (
+            SysNavItem.query.filter_by(
+                code=menu_key, is_active=True, is_assignable=True
+            ).first()
+            is not None
+        )
+    if menu_key not in _assignable_codes():
         return False
     allowed = user_menu_key_set(user)
     if allowed is None:
@@ -298,54 +326,172 @@ def _fallback_nav_specs():
     """库表无数据时的静态树（与 run_16 一致）。"""
     return [
         ("order", "订单", "main.order_list", None),
-        ("production", "生产管理", None, [
-            ("production_preplan", "预生产计划", "main.production_preplan_list", None),
-            ("production_incident", "生产事故", "main.production_incident_list", None),
-        ]),
-        ("nav_hr", "人力资源", None, [
-            ("hr_department", "部门", "main.hr_department_list", None),
-            ("hr_employee", "人员档案", "main.hr_employee_list", None),
-            ("hr_employee_schedule", "人员排产", "main.hr_employee_schedule_template_list", None),
-            ("hr_employee_capability", "人员能力表", "main.hr_employee_capability_list", None),
-            ("hr_department_capability_map", "工序部门↔能力工位", "main.hr_department_capability_map_list", None),
-            ("hr_payroll", "工资录入", "main.hr_payroll_list", None),
-            ("hr_performance", "绩效管理", "main.hr_performance_list", None),
-        ]),
-        ("nav_machine", "机台管理", None, [
-            ("machine_type", "机台种类", "main.machine_type_list", None),
-            ("machine_asset", "机台台账", "main.machine_list", None),
-            ("machine_runtime", "运转情况", "main.machine_runtime_list", None),
-            ("machine_schedule", "机台排班", "main.machine_schedule_template_list", None),
-        ]),
-        ("nav_procurement", "采购管理", None, [
-            ("procurement_requisition", "采购请购", "main.procurement_requisition_list", None),
-            ("procurement_order", "采购单", "main.procurement_order_list", None),
-            ("procurement_receipt", "采购收货", "main.procurement_receipt_list", None),
-            ("procurement_stockin", "采购入库", "main.procurement_stockin_list", None),
-        ]),
-        ("nav_warehouse", "仓管", None, [
-            ("delivery", "送货", "main.delivery_list", None),
-            ("express", "快递", "main.express_company_list", None),
-            ("inventory_query", "库存查询", "main.inventory_stock_query", None),
-            ("inventory_ops_finished", "成品录入", "main.inventory_finished_entry", None),
-            ("inventory_ops_semi", "半成品录入", "main.inventory_semi_entry", None),
-            ("inventory_ops_material", "材料录入", "main.inventory_material_entry", None),
-        ]),
-        ("nav_base", "基础数据", None, [
-            ("customer", "客户", "main.customer_list", None),
-            ("product", "产品", "main.product_list", None),
-            ("customer_product", "客户产品", "main.customer_product_list", None),
-            ("company", "公司主体", "main.company_list", None),
-            ("user_mgmt", "用户管理", "main.user_list", None),
-            ("role_mgmt", "角色管理", "main.role_list", None),
-        ]),
-        ("nav_finance", "财务", None, [
-            ("reconciliation", "对账导出", "main.reconciliation_export", None),
-        ]),
-        ("nav_report", "报表导出", None, [
-            ("report_notes", "导出送货单Excel", "main.report_export_delivery_notes", None),
-            ("report_records", "导出送货记录Excel", "main.report_export_delivery_records", None),
-        ]),
+        (
+            "production",
+            "生产管理",
+            None,
+            [
+                (
+                    "production_preplan",
+                    "预生产计划",
+                    "main.production_preplan_list",
+                    None,
+                ),
+                (
+                    "production_incident",
+                    "生产事故",
+                    "main.production_incident_list",
+                    None,
+                ),
+                (
+                    "machine_schedule",
+                    "机台排班",
+                    "main.machine_schedule_template_list",
+                    None,
+                ),
+                (
+                    "hr_employee_schedule",
+                    "人员排产",
+                    "main.hr_employee_schedule_template_list",
+                    None,
+                ),
+            ],
+        ),
+        (
+            "nav_hr",
+            "人力资源",
+            None,
+            [
+                ("hr_department", "部门", "main.hr_department_list", None),
+                ("hr_work_type", "工种管理", "main.hr_work_type_list", None),
+                ("hr_employee", "人员档案", "main.hr_employee_list", None),
+                (
+                    "hr_employee_capability",
+                    "人员能力表",
+                    "main.hr_employee_capability_list",
+                    None,
+                ),
+                (
+                    "hr_department_capability_map",
+                    "部门-工种允许关系",
+                    "main.hr_department_capability_map_list",
+                    None,
+                ),
+                ("hr_payroll", "工资录入", "main.hr_payroll_list", None),
+                ("hr_performance", "绩效管理", "main.hr_performance_list", None),
+            ],
+        ),
+        (
+            "nav_machine",
+            "机台管理",
+            None,
+            [
+                ("machine_type", "机台种类", "main.machine_type_list", None),
+                ("machine_asset", "机台台账", "main.machine_list", None),
+                ("machine_runtime", "运转情况", "main.machine_runtime_list", None),
+            ],
+        ),
+        (
+            "nav_procurement",
+            "采购管理",
+            None,
+            [
+                (
+                    "procurement_material",
+                    "物料管理",
+                    "main.procurement_material_list",
+                    None,
+                ),
+                (
+                    "procurement_requisition",
+                    "采购请购",
+                    "main.procurement_requisition_list",
+                    None,
+                ),
+                (
+                    "procurement_supplier",
+                    "供应商",
+                    "main.procurement_supplier_list",
+                    None,
+                ),
+                ("procurement_order", "采购单", "main.procurement_order_list", None),
+                (
+                    "procurement_receipt",
+                    "采购收货",
+                    "main.procurement_receipt_list",
+                    None,
+                ),
+                (
+                    "procurement_stockin",
+                    "采购入库",
+                    "main.procurement_stockin_list",
+                    None,
+                ),
+            ],
+        ),
+        (
+            "nav_warehouse",
+            "仓管",
+            None,
+            [
+                ("delivery", "送货", "main.delivery_list", None),
+                ("express", "快递", "main.express_company_list", None),
+                ("inventory_query", "库存查询", "main.inventory_stock_query", None),
+                (
+                    "inventory_ops_finished",
+                    "成品录入",
+                    "main.inventory_finished_entry",
+                    None,
+                ),
+                ("inventory_ops_semi", "半成品录入", "main.inventory_semi_entry", None),
+                (
+                    "inventory_ops_material",
+                    "材料录入",
+                    "main.inventory_material_entry",
+                    None,
+                ),
+            ],
+        ),
+        (
+            "nav_base",
+            "基础数据",
+            None,
+            [
+                ("customer", "客户", "main.customer_list", None),
+                ("product", "产品", "main.product_list", None),
+                ("customer_product", "客户产品", "main.customer_product_list", None),
+                ("company", "公司主体", "main.company_list", None),
+                ("user_mgmt", "用户管理", "main.user_list", None),
+                ("role_mgmt", "角色管理", "main.role_list", None),
+            ],
+        ),
+        (
+            "nav_finance",
+            "财务",
+            None,
+            [
+                ("reconciliation", "对账导出", "main.reconciliation_export", None),
+            ],
+        ),
+        (
+            "nav_report",
+            "报表导出",
+            None,
+            [
+                (
+                    "report_notes",
+                    "导出送货单Excel",
+                    "main.report_export_delivery_notes",
+                    None,
+                ),
+                (
+                    "report_records",
+                    "导出送货记录Excel",
+                    "main.report_export_delivery_records",
+                    None,
+                ),
+            ],
+        ),
     ]
 
 
@@ -392,7 +538,6 @@ def nav_tree_for_user() -> List[dict]:
                     }
                 )
         return nodes
-    by_id = {r.id: r for r in rows}
     children: dict = {}
     for r in rows:
         pid = r.parent_id
@@ -441,4 +586,3 @@ def nav_tree_for_user() -> List[dict]:
         if node:
             out.append(node)
     return out
-

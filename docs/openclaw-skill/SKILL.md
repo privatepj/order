@@ -98,7 +98,7 @@ requires:
 
 ## 阶段 D：送货单（必须先预览再创建）
 
-1. `GET .../api/openclaw/deliveries/pending-items?customer_id=`（可选 `order_id=`）取得待发 `order_item_id`；响应含 `quantity`、`delivered_qty`、`in_transit_qty`、`remaining_qty`。组装 `lines` 时本次数量不得超过 `remaining_qty`。
+1. `GET .../api/openclaw/deliveries/pending-items?customer_id=`（可选 `order_id=`）取得待发 `order_item_id`；响应含 `quantity`、`delivered_qty`、`in_transit_qty`、`remaining_qty`（均为**十进制字符串**，避免 IEEE754；解析比较请用 Decimal）。组装 `lines` 时本次数量不得超过 `remaining_qty`。
 2. 组装 `lines`：`[{ order_item_id, quantity }]`；若指定订单，body 加 `order_id` 与接口说明一致。
 3. `POST .../api/openclaw/deliveries/preview` 得到 `summary`（日期、是否自配送、快递、各行）。
 

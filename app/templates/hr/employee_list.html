@@ -2,21 +2,42 @@
 {% block title %}人员档案 - 工厂订单系统{% endblock %}
 {% block content %}
 <h2 class="mb-4">人员档案</h2>
-<p class="text-muted small">敏感列默认脱敏；具备「查看身份证/完整手机」能力后显示完整信息。</p>
+<p class="text-muted small">部门只表示组织归属；工种表示技能/能力/计件维度。敏感字段默认脱敏显示。</p>
 <form method="get" class="row g-2 mb-3 align-items-end">
     {% if user_can_cap('hr_employee.filter.keyword') %}
-    <div class="col-auto">
+    <div class="col-md-3">
         <label class="form-label">关键词</label>
         <input type="text" class="form-control form-control-sm" name="keyword" value="{{ keyword or '' }}" placeholder="姓名/工号/手机">
+    </div>
+    {% endif %}
+    <div class="col-md-3">
+        <label class="form-label">部门</label>
+        <select class="form-select form-select-sm" name="department_id">
+            <option value="0">全部部门</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}" {% if department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">工种</label>
+        <select class="form-select form-select-sm" name="work_type_id">
+            <option value="0">全部工种</option>
+            {% for wt in work_types %}
+            <option value="{{ wt.id }}" {% if work_type_id == wt.id %}selected{% endif %}>{{ wt.name }}</option>
+            {% endfor %}
+        </select>
     </div>
     <div class="col-auto">
         <button type="submit" class="btn btn-sm btn-outline-secondary">筛选</button>
     </div>
-    {% endif %}
 </form>
 <div class="mb-3 d-flex gap-2 flex-wrap">
     {% if user_can_cap('hr_employee.action.create') %}
     <a href="{{ url_for('main.hr_employee_new') }}" class="btn btn-sm btn-primary">新增人员</a>
+    {% endif %}
+    {% if user_can_menu('hr_work_type') %}
+    <a href="{{ url_for('main.hr_work_type_list') }}" class="btn btn-sm btn-outline-secondary">工种管理</a>
     {% endif %}
     {% if user_can_cap('hr_employee.action.export_template') %}
     <a href="{{ url_for('main.hr_employee_export_import_template') }}" class="btn btn-sm btn-outline-secondary">下载导入模板</a>
@@ -32,9 +53,10 @@
             <th>工号</th>
             <th>姓名</th>
             <th>部门</th>
+            <th>主工种</th>
+            <th>辅工种</th>
             <th>手机</th>
             <th>身份证</th>
-            <th>岗位</th>
             <th>状态</th>
             <th>操作</th>
         </tr>
@@ -45,9 +67,10 @@
             <td>{{ e.employee_no }}</td>
             <td>{{ e.name }}</td>
             <td>{{ e.department.name if e.department else '—' }}</td>
+            <td>{{ e.primary_work_type_name or '—' }}</td>
+            <td>{{ e.secondary_work_type_names|join('，') if e.secondary_work_type_names else '—' }}</td>
             <td>{{ display_phone(e.phone, sensitive=show_sensitive) }}</td>
             <td>{{ display_id_card(e.id_card, sensitive=show_sensitive) }}</td>
-            <td>{{ e.job_title or '—' }}</td>
             <td>{{ '在职' if e.status == 'active' else '离职' }}</td>
             <td class="d-flex gap-2 flex-wrap">
                 {% if user_can_cap('hr_employee.action.edit') %}
@@ -61,7 +84,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="text-muted">暂无数据</td></tr>
+        <tr><td colspan="9" class="text-muted">暂无数据</td></tr>
         {% endfor %}
     </tbody>
 </table>

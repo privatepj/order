@@ -12,14 +12,15 @@ from app import db
 from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.models import (
-    HrDepartment,
     HrEmployee,
     HrEmployeeScheduleBooking,
     HrEmployeeScheduleTemplate,
+    HrWorkType,
     Product,
     ProductionWorkOrder,
 )
 from app.services.hr_employee_schedule_svc import generate_bookings_for_range
+from app.services.hr_work_type_svc import list_work_types
 
 
 SCHEDULE_STATES = ("available", "unavailable")
@@ -344,11 +345,7 @@ def register_employee_schedule_routes(bp):
             else []
         )
 
-        departments = (
-            HrDepartment.query.filter(HrDepartment.company_id == employee.company_id).order_by(HrDepartment.sort_order.asc(), HrDepartment.id.asc()).all()
-            if employee
-            else []
-        )
+        work_types = list_work_types(company_id=employee.company_id, active_only=False) if employee else []
 
         # 仅展示最近的成品工单，用户可手工填写 work_order_id
         recent_work_orders = (
@@ -366,7 +363,7 @@ def register_employee_schedule_routes(bp):
             row=None,
             employees=employees,
             templates=templates,
-            departments=departments,
+            work_types=work_types,
             recent_work_orders=recent_work_orders,
             employee_id=employee_id,
             schedule_states=SCHEDULE_STATES,
@@ -387,11 +384,7 @@ def register_employee_schedule_routes(bp):
             .order_by(HrEmployeeScheduleTemplate.id.asc())
             .all()
         )
-        departments = (
-            HrDepartment.query.filter(HrDepartment.company_id == employee.company_id).order_by(HrDepartment.sort_order.asc(), HrDepartment.id.asc()).all()
-            if employee
-            else []
-        )
+        work_types = list_work_types(company_id=employee.company_id, active_only=False) if employee else []
         recent_work_orders = (
             ProductionWorkOrder.query.filter(ProductionWorkOrder.parent_kind == "finished")
             .order_by(ProductionWorkOrder.plan_date.desc(), ProductionWorkOrder.id.desc())
@@ -407,7 +400,7 @@ def register_employee_schedule_routes(bp):
             row=row,
             employees=employees,
             templates=templates,
-            departments=departments,
+            work_types=work_types,
             recent_work_orders=recent_work_orders,
             employee_id=employee_id,
             schedule_states=SCHEDULE_STATES,
@@ -442,7 +435,7 @@ def register_employee_schedule_routes(bp):
         end_at = _parse_dt(request.form.get("end_at"))
         remark = _text_or_none(request.form.get("remark"))
 
-        hr_department_id = _parse_int(request.form.get("hr_department_id"), default=None)
+        work_type_id = _parse_int(request.form.get("work_type_id"), default=None)
         work_order_id = _parse_int(request.form.get("work_order_id"), default=None)
 
         try:
@@ -501,7 +494,7 @@ def register_employee_schedule_routes(bp):
                 )
             )
 
-        # 若填写工单：回填工位/产品/单位，并计算 produced_qty
+        # 若填写工单：回填实际工种/产品/单位，并计算 produced_qty
         product_id: int | None = None
         unit: str | None = None
         if work_order_id:
@@ -530,8 +523,8 @@ def register_employee_schedule_routes(bp):
                         employee_id=employee_id,
                     )
                 )
-            if not hr_department_id or int(hr_department_id) <= 0:
-                flash("工单填写后，工位（hr_department_id）为必填。", "danger")
+            if not work_type_id or int(work_type_id) <= 0:
+                flash("工单填写后，实际工种为必填。", "danger")
                 return redirect(
                     url_for(
                         "main.hr_employee_schedule_booking_list",
@@ -539,18 +532,18 @@ def register_employee_schedule_routes(bp):
                     )
                 )
 
-            dept = db.session.get(HrDepartment, hr_department_id)
             emp = db.session.get(HrEmployee, employee_id)
-            if not emp or not dept:
-                flash("人员或工位不存在。", "danger")
+            work_type = db.session.get(HrWorkType, work_type_id)
+            if not emp or not work_type:
+                flash("人员或工种不存在。", "danger")
                 return redirect(
                     url_for(
                         "main.hr_employee_schedule_booking_list",
                         employee_id=employee_id,
                     )
                 )
-            if dept.company_id != emp.company_id:
-                flash("所选工位不属于当前人员的主体。", "danger")
+            if int(work_type.company_id or 0) != int(emp.company_id or 0):
+                flash("所选工种不属于当前人员的主体。", "danger")
                 return redirect(
                     url_for(
                         "main.hr_employee_schedule_booking_list",
@@ -574,7 +567,8 @@ def register_employee_schedule_routes(bp):
         row.end_at = end_at.replace(second=0, microsecond=0)
         row.remark = remark
 
-        row.hr_department_id = hr_department_id
+        row.hr_department_id = None
+        row.work_type_id = work_type_id
         row.work_order_id = work_order_id
         row.product_id = product_id
         row.unit = unit

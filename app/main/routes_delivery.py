@@ -20,7 +20,6 @@ from app.models import (
     ExpressCompany,
     ExpressWaybill,
     CustomerProduct,
-    Product,
 )
 from app.utils.query import is_valid_customer_search_keyword, keyword_like_or
 from app.utils.delivery_note_excel import (
@@ -31,6 +30,11 @@ from app.utils.delivery_note_excel import (
     _qty_str,
 )
 from app.utils.delivery_records_excel import build_delivery_records_workbook
+from app.utils.delivery_method import (
+    DELIVERY_METHOD_EXPRESS,
+    DELIVERY_METHOD_LABELS,
+    resolve_delivery_method,
+)
 from app.utils.payment_type import PAYMENT_TYPE_LABELS, VALID_PAYMENT_TYPES
 from app.services.delivery_svc import (
     create_delivery_from_data,
@@ -80,6 +84,7 @@ def _pending_order_items(customer_id):
 def _delivery_form_ctx(pending_items=None):
     return {
         "delivery": None,
+        "delivery_method_labels": DELIVERY_METHOD_LABELS,
         "express_companies": _express_companies_for_delivery(),
         "pending_items": pending_items or [],
         "today": date.today().isoformat(),
@@ -457,9 +462,9 @@ def register_delivery_routes(bp):
             liao = effective_customer_material_no(oi)
             name_spec = (
                 " ".join(
-                    x for x in (oi.product_name or "", oi.product_spec or "") if x
+                    x for x in (oi.display_product_name or "", oi.product_spec or "") if x
                 ).strip()
-                or (oi.product_name or "")
+                or (oi.display_product_name or "")
             )
             order_cell = (
                 (so.customer_order_no or "").strip() if so else ""
@@ -481,6 +486,7 @@ def register_delivery_routes(bp):
         return render_template(
             "delivery/print.html",
             delivery=delivery,
+            delivery_method_waybill_label="配送方式/单号",
             rows=rows,
             address_line=ADDRESS_LINE,
             tel_line=TEL_LINE,
@@ -529,7 +535,7 @@ def register_delivery_routes(bp):
 
         try:
             # 释放单号池占用（仅当该运单确实指向当前 delivery 时）。
-            if delivery.express_waybill_id:
+            if delivery.is_express_delivery and delivery.express_waybill_id:
                 w = db.session.get(ExpressWaybill, delivery.express_waybill_id)
                 if w and w.delivery_id == delivery.id:
                     w.status = "available"
@@ -633,7 +639,7 @@ def register_delivery_routes(bp):
         delivery.status = "expired"
 
         # 仅在从“待发(created)”进入“失效(expired)”时释放占用的快递单号池。
-        if was_created and delivery.express_waybill_id:
+        if was_created and delivery.is_express_delivery and delivery.express_waybill_id:
             w = ExpressWaybill.query.get(delivery.express_waybill_id)
             if w:
                 w.status = "available"
@@ -665,7 +671,7 @@ def register_delivery_routes(bp):
                     "order_item_id": x["order_item"].id,
                     "order_id": x["order"].id,
                     "order_no": x["order"].order_no,
-                    "product_name": x["order_item"].product_name,
+                    "product_name": x["order_item"].display_product_name,
                     "product_spec": x["order_item"].product_spec or "",
                     "customer_material_no": effective_customer_material_no(
                         x["order_item"]
@@ -697,13 +703,16 @@ def register_delivery_routes(bp):
 
     def _delivery_save():
         customer_id = request.form.get("customer_id", type=int)
-        self_delivery = request.form.get("self_delivery", "0").strip() == "1"
+        delivery_method = resolve_delivery_method(
+            request.form.get("delivery_method"),
+            default_when_missing=DELIVERY_METHOD_EXPRESS,
+        )
         express_company_id = request.form.get("express_company_id", type=int)
         if not customer_id:
             flash("请选择客户。", "danger")
             return render_template("delivery/form.html", **_delivery_form_ctx())
-        if not self_delivery and not express_company_id:
-            flash("请选择快递公司，或改为「自配送」。", "danger")
+        if delivery_method == DELIVERY_METHOD_EXPRESS and not express_company_id:
+            flash("请选择快递公司，或改为「自配送 / 自提」。", "danger")
             ctx = _delivery_form_ctx()
             ctx["pending_items"] = _pending_order_items(customer_id)
             return render_template("delivery/form.html", **ctx)
@@ -724,9 +733,9 @@ def register_delivery_routes(bp):
                 lines.append({"order_item_id": oi_id, "quantity": qty})
         data = {
             "customer_id": customer_id,
-            "self_delivery": self_delivery,
-            "express_company_id": None if self_delivery else express_company_id,
-            "waybill_no": (request.form.get("waybill_no") or "").strip(),
+            "delivery_method": delivery_method,
+            "express_company_id": express_company_id if delivery_method == DELIVERY_METHOD_EXPRESS else None,
+            "waybill_no": (request.form.get("waybill_no") or "").strip() if delivery_method == DELIVERY_METHOD_EXPRESS else "",
             "delivery_date": request.form.get("delivery_date"),
             "driver": None,
             "plate_no": None,

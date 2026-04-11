@@ -13,8 +13,8 @@ from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.models import (
     Company,
-    HrDepartment,
     HrEmployee,
+    HrWorkType,
     Machine,
     MachineOperatorAllowlist,
     MachineRuntimeLog,
@@ -34,8 +34,8 @@ def _hr_departments_for_machine_form():
     if not cid:
         return []
     return (
-        HrDepartment.query.filter_by(company_id=cid)
-        .order_by(HrDepartment.sort_order, HrDepartment.id)
+        HrWorkType.query.filter_by(company_id=cid)
+        .order_by(HrWorkType.sort_order, HrWorkType.id)
         .all()
     )
 
@@ -107,7 +107,11 @@ def register_machine_routes(bp):
             name = (request.form.get("name") or "").strip()
             is_active = (request.form.get("is_active") or "1") == "1"
             remark = (request.form.get("remark") or "").strip() or None
-            def_cap = request.form.get("default_capability_hr_department_id", type=int) or 0
+            def_cap = (
+                request.form.get("default_capability_work_type_id", type=int)
+                or request.form.get("default_capability_hr_department_id", type=int)
+                or 0
+            )
             if def_cap < 0:
                 def_cap = 0
             if not code or not name:
@@ -118,7 +122,8 @@ def register_machine_routes(bp):
                 name=name,
                 is_active=is_active,
                 remark=remark,
-                default_capability_hr_department_id=def_cap,
+                default_capability_hr_department_id=0,
+                default_capability_work_type_id=def_cap,
             )
             db.session.add(row)
             try:
@@ -143,7 +148,11 @@ def register_machine_routes(bp):
             name = (request.form.get("name") or "").strip()
             is_active = (request.form.get("is_active") or "1") == "1"
             remark = (request.form.get("remark") or "").strip() or None
-            def_cap = request.form.get("default_capability_hr_department_id", type=int) or 0
+            def_cap = (
+                request.form.get("default_capability_work_type_id", type=int)
+                or request.form.get("default_capability_hr_department_id", type=int)
+                or 0
+            )
             if def_cap < 0:
                 def_cap = 0
             if not code or not name:
@@ -153,7 +162,8 @@ def register_machine_routes(bp):
             row.name = name
             row.is_active = is_active
             row.remark = remark
-            row.default_capability_hr_department_id = def_cap
+            row.default_capability_hr_department_id = 0
+            row.default_capability_work_type_id = def_cap
             try:
                 db.session.commit()
             except IntegrityError:
@@ -258,7 +268,10 @@ def register_machine_routes(bp):
         location = (request.form.get("location") or "").strip() or None
         owner_user_id = request.form.get("owner_user_id", type=int) or None
         remark = (request.form.get("remark") or "").strip() or None
-        def_cap_raw = request.form.get("default_capability_hr_department_id", type=int)
+        def_cap_raw = (
+            request.form.get("default_capability_work_type_id", type=int)
+            or request.form.get("default_capability_hr_department_id", type=int)
+        )
         def_cap_m = max(0, int(def_cap_raw or 0))
         is_admin = getattr(current_user, "role_code", None) == "admin"
         try:
@@ -367,7 +380,8 @@ def register_machine_routes(bp):
         row.location = location
         row.owner_user_id = owner_user_id
         row.remark = remark
-        row.default_capability_hr_department_id = def_cap_m
+        row.default_capability_hr_department_id = 0
+        row.default_capability_work_type_id = def_cap_m
         try:
             db.session.commit()
         except IntegrityError:
@@ -428,7 +442,11 @@ def register_machine_routes(bp):
     def machine_operator_allowlist_add(machine_id):
         Machine.query.get_or_404(machine_id)
         employee_id = request.form.get("employee_id", type=int)
-        cap_dept = request.form.get("capability_hr_department_id", type=int) or 0
+        cap_dept = (
+            request.form.get("capability_work_type_id", type=int)
+            or request.form.get("capability_hr_department_id", type=int)
+            or 0
+        )
         if not employee_id:
             flash("请选择员工。", "danger")
             return redirect(url_for("main.machine_detail", machine_id=machine_id))
@@ -438,7 +456,8 @@ def register_machine_routes(bp):
         row = MachineOperatorAllowlist(
             machine_id=machine_id,
             employee_id=employee_id,
-            capability_hr_department_id=max(0, int(cap_dept)),
+            capability_hr_department_id=0,
+            capability_work_type_id=max(0, int(cap_dept)),
             is_active=True,
         )
         db.session.add(row)

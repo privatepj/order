@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑物料' if item and item.id else '新增物料' }}{% endblock %}
+{% block content %}
+<h2 class="mb-4">{{ '编辑物料' if item and item.id else '新增物料' }}</h2>
+
+<form method="post">
+    {% if item and item.id %}
+    <div class="mb-3">
+        <label class="form-label">编号</label>
+        <input type="text" class="form-control" value="{{ item.code }}" readonly>
+    </div>
+    {% else %}
+    <div class="mb-3 text-muted small">
+        保存后系统将自动生成物料编号。
+    </div>
+    {% endif %}
+
+    <div class="mb-3">
+        <label class="form-label">名称 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" name="name" required value="{{ item.name if item else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">规格</label>
+        <input type="text" class="form-control" name="spec" value="{{ item.spec if item else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">基础单位</label>
+        <input type="text" class="form-control" name="base_unit" value="{{ item.base_unit if item else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">默认供应商</label>
+        <select class="form-select" name="default_supplier_id" id="defaultSupplierSelect">
+            <option value="">未设置</option>
+            {% for option in supplier_options %}
+            <option value="{{ option.supplier_id }}" data-price="{{ option.last_unit_price or '' }}" {% if default_supplier_id == option.supplier_id %}selected{% endif %}>
+                {{ option.name }}
+            </option>
+            {% endfor %}
+        </select>
+        <div class="form-text">
+            这里只能从当前主体已关联且启用的供应商中选择；报价请到供应商维护页修改。
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">默认供应商报价</label>
+        <input type="text" class="form-control" id="defaultSupplierPrice" value="{{ default_supplier_price }}" readonly placeholder="自动带出">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">备注</label>
+        <textarea class="form-control" name="remark" rows="3">{{ item.remark if item else '' }}</textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('main.procurement_material_list') }}" class="btn btn-outline-secondary">返回</a>
+</form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var supplierSelect = document.getElementById('defaultSupplierSelect');
+    var priceInput = document.getElementById('defaultSupplierPrice');
+    if (!supplierSelect || !priceInput) return;
+
+    function syncPrice() {
+        var option = supplierSelect.options[supplierSelect.selectedIndex];
+        priceInput.value = option ? (option.getAttribute('data-price') || '') : '';
+    }
+
+    supplierSelect.addEventListener('change', syncPrice);
+    syncPrice();
+})();
+</script>
+{% endblock %}

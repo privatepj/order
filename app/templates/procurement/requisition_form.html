@@ -1,48 +1,332 @@
 {% extends "base.html" %}
-{% block title %}{{ '新增请购' if not row else '编辑请购' }} - 工厂订单系统{% endblock %}
+{% block title %}{{ '新增请购' if not row else '编辑请购' }}{% endblock %}
+{% block extra_css %}
+<style>
+.req-cell { position: relative; min-width: 200px; }
+.req-dd {
+    position: fixed;
+    z-index: 1050;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+}
+</style>
+{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '新增请购' if not row else '编辑请购' }}</h2>
-<form method="post" class="row g-3">
-    <input type="hidden" name="company_id" value="{{ company_id }}">
-    <div class="col-md-4">
-        <label class="form-label">供应商</label>
-        <input type="text" class="form-control" name="supplier_name" value="{{ row.supplier_name if row else '' }}" maxlength="128" required>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h2 class="mb-0">{{ '新增请购' if not row else '编辑请购' }}</h2>
+    {% if row %}
+    <div class="text-muted small">
+        请购单号：{{ row.req_no }}{% if row.signed_at %}，已签字{% endif %}
     </div>
-    <div class="col-md-4">
-        <label class="form-label">物料名称</label>
-        <input type="text" class="form-control" name="item_name" value="{{ row.item_name if row else '' }}" maxlength="128" required>
+    {% endif %}
+</div>
+
+<form method="post" id="requisitionForm"
+    data-supplier-search-url="{{ supplier_search_url }}"
+    data-material-search-url="{{ material_search_url }}"
+    data-supplier-materials-url="{{ supplier_materials_url }}"
+    data-material-suppliers-url="{{ material_suppliers_url }}">
+    <div class="alert alert-light border py-2">
+        填供应商或物料任一项后，另一项会按已维护关系联动筛选。签字后请购单会锁定，不再允许改明细。
     </div>
-    <div class="col-md-4">
-        <label class="form-label">规格</label>
-        <input type="text" class="form-control" name="item_spec" value="{{ row.item_spec if row else '' }}" maxlength="128">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <h5 class="mb-0">请购明细</h5>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="addReqLine">新增一行</button>
     </div>
-    <div class="col-md-3">
-        <label class="form-label">数量</label>
-        <input type="number" step="0.01" min="0" class="form-control" name="qty" value="{{ row.qty if row else '' }}" required>
+
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle" id="reqTable">
+            <thead>
+                <tr>
+                    <th style="min-width:220px;">供应商</th>
+                    <th style="min-width:220px;">物料</th>
+                    <th style="width:140px;">规格</th>
+                    <th style="width:90px;">单位</th>
+                    <th style="width:120px;">最近单价</th>
+                    <th style="width:120px;">数量</th>
+                    <th style="width:150px;">到货日期</th>
+                    <th>备注</th>
+                    <th style="width:72px;"></th>
+                </tr>
+            </thead>
+            <tbody id="reqBody">
+                {% set lines = row.lines if row and row.lines else [None] %}
+                {% for line in lines %}
+                <tr class="req-row">
+                    <td class="req-cell">
+                        <input type="hidden" name="line_supplier_id" class="req-supplier-id" value="{{ line.supplier_id if line else '' }}">
+                        <input type="text" class="form-control form-control-sm req-supplier-search" value="{{ line.supplier_name if line else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+                        <div class="req-dd req-supplier-dd list-group d-none"></div>
+                    </td>
+                    <td class="req-cell">
+                        <input type="hidden" name="line_material_id" class="req-material-id" value="{{ line.material_id if line else '' }}">
+                        <input type="text" class="form-control form-control-sm req-material-search" value="{{ line.item_name if line else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+                        <div class="req-dd req-material-dd list-group d-none"></div>
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm req-spec" value="{{ line.item_spec if line else '' }}" readonly></td>
+                    <td><input type="text" class="form-control form-control-sm req-unit" name="line_unit" value="{{ line.unit if line else '' }}" maxlength="16"></td>
+                    <td><input type="text" class="form-control form-control-sm req-price" value="" readonly placeholder="自动带出"></td>
+                    <td><input type="text" class="form-control form-control-sm" name="line_qty" value="{{ line.qty if line else '' }}"></td>
+                    <td><input type="date" class="form-control form-control-sm" name="line_expected_date" value="{{ line.expected_date.strftime('%Y-%m-%d') if line and line.expected_date else '' }}"></td>
+                    <td><input type="text" class="form-control form-control-sm" name="line_remark" value="{{ line.remark if line else '' }}" maxlength="500"></td>
+                    <td><button type="button" class="btn btn-outline-danger btn-sm btn-remove-line">删除</button></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-    <div class="col-md-2">
-        <label class="form-label">单位</label>
-        <input type="text" class="form-control" name="unit" value="{{ row.unit if row else 'pcs' }}" maxlength="16" required>
-    </div>
-    <div class="col-md-3">
-        <label class="form-label">期望到货日期</label>
-        <input type="date" class="form-control" name="expected_date" value="{{ row.expected_date.strftime('%Y-%m-%d') if row and row.expected_date else '' }}">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label">状态</label>
-        <select name="status" class="form-select">
-            {% for s in requisition_statuses %}
-            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'draft') %}selected{% endif %}>{{ s|status_zh('procurement_requisition_status') }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-12">
+
+    <div class="mt-3">
         <label class="form-label">备注</label>
-        <textarea name="remark" rows="3" class="form-control" maxlength="500">{{ row.remark if row else '' }}</textarea>
+        <textarea class="form-control" name="remark" rows="3" maxlength="500">{{ row.remark if row else '' }}</textarea>
     </div>
-    <div class="col-12">
+
+    <div class="mt-3">
         <button type="submit" class="btn btn-primary">保存</button>
-        <a href="{{ url_for('main.procurement_requisition_list') }}" class="btn btn-secondary">返回</a>
+        <a href="{{ url_for('main.procurement_requisition_list') }}" class="btn btn-outline-secondary">返回</a>
     </div>
 </form>
+
+<template id="reqRowTpl">
+    <tr class="req-row">
+        <td class="req-cell">
+            <input type="hidden" name="line_supplier_id" class="req-supplier-id" value="">
+            <input type="text" class="form-control form-control-sm req-supplier-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+            <div class="req-dd req-supplier-dd list-group d-none"></div>
+        </td>
+        <td class="req-cell">
+            <input type="hidden" name="line_material_id" class="req-material-id" value="">
+            <input type="text" class="form-control form-control-sm req-material-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+            <div class="req-dd req-material-dd list-group d-none"></div>
+        </td>
+        <td><input type="text" class="form-control form-control-sm req-spec" value="" readonly></td>
+        <td><input type="text" class="form-control form-control-sm req-unit" name="line_unit" value="" maxlength="16"></td>
+        <td><input type="text" class="form-control form-control-sm req-price" value="" readonly placeholder="自动带出"></td>
+        <td><input type="text" class="form-control form-control-sm" name="line_qty" value=""></td>
+        <td><input type="date" class="form-control form-control-sm" name="line_expected_date" value=""></td>
+        <td><input type="text" class="form-control form-control-sm" name="line_remark" value="" maxlength="500"></td>
+        <td><button type="button" class="btn btn-outline-danger btn-sm btn-remove-line">删除</button></td>
+    </tr>
+</template>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('requisitionForm');
+    var supplierSearchUrl = form.getAttribute('data-supplier-search-url');
+    var materialSearchUrl = form.getAttribute('data-material-search-url');
+    var supplierMaterialsUrl = form.getAttribute('data-supplier-materials-url');
+    var materialSuppliersUrl = form.getAttribute('data-material-suppliers-url');
+    var body = document.getElementById('reqBody');
+    var tpl = document.getElementById('reqRowTpl');
+
+    function hideAll() {
+        document.querySelectorAll('.req-dd').forEach(function (el) {
+            el.classList.add('d-none');
+            el.innerHTML = '';
+        });
+    }
+
+    function place(dd, input) {
+        var rect = input.getBoundingClientRect();
+        dd.style.left = rect.left + 'px';
+        dd.style.top = rect.bottom + 'px';
+        dd.style.width = Math.max(rect.width, 220) + 'px';
+    }
+
+    function render(dd, input, items, onSelect) {
+        dd.innerHTML = '';
+        place(dd, input);
+        if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted';
+            empty.textContent = '无匹配项';
+            dd.appendChild(empty);
+            dd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function (item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = item.label || '';
+            btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            btn.addEventListener('click', function () {
+                onSelect(item);
+                hideAll();
+            });
+            dd.appendChild(btn);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    function fetchJson(url) {
+        return fetch(url, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        }).then(function (r) { return r.json(); });
+    }
+
+    function bindRow(row) {
+        if (row.getAttribute('data-bound') === '1') return;
+        row.setAttribute('data-bound', '1');
+        var supplierInput = row.querySelector('.req-supplier-search');
+        var supplierId = row.querySelector('.req-supplier-id');
+        var supplierDd = row.querySelector('.req-supplier-dd');
+        var materialInput = row.querySelector('.req-material-search');
+        var materialId = row.querySelector('.req-material-id');
+        var materialDd = row.querySelector('.req-material-dd');
+        var spec = row.querySelector('.req-spec');
+        var unit = row.querySelector('.req-unit');
+        var price = row.querySelector('.req-price');
+        var supplierTimer = null;
+        var materialTimer = null;
+
+        function setSupplier(item) {
+            supplierId.value = item ? (item.supplier_id || item.id || '') : '';
+            supplierInput.value = item ? (item.label || item.name || '') : '';
+            if (item && item.last_unit_price) {
+                price.value = item.last_unit_price;
+            }
+        }
+
+        function clearSupplier() {
+            supplierId.value = '';
+            supplierInput.value = '';
+        }
+
+        function setMaterial(item) {
+            materialId.value = item ? (item.material_id || item.id || '') : '';
+            materialInput.value = item ? (item.label || item.name || '') : '';
+            spec.value = item ? (item.spec || '') : '';
+            if (item) {
+                unit.value = item.base_unit || unit.value || '';
+                price.value = item.last_unit_price || '';
+            } else {
+                materialInput.value = '';
+                spec.value = '';
+                price.value = '';
+            }
+        }
+
+        function loadSuppliersForMaterial(options) {
+            if (!materialId.value) {
+                clearSupplier();
+                return Promise.resolve([]);
+            }
+            var url = materialSuppliersUrl + '?material_id=' + encodeURIComponent(materialId.value);
+            return fetchJson(url)
+                .then(function (data) {
+                    var items = data.items || [];
+                    var current = items.find(function (item) {
+                        return String(item.supplier_id || item.id) === String(supplierId.value || '');
+                    });
+                    var defaultItem = items.find(function (item) { return !!item.is_default_supplier; });
+                    if (options && options.preserveCurrentSupplier && current) {
+                        setSupplier(current);
+                    } else if (options && options.autoSelectDefault && defaultItem) {
+                        setSupplier(defaultItem);
+                    } else if (options && options.autoSelectDefault) {
+                        clearSupplier();
+                    }
+                    return items;
+                })
+                .catch(function () {
+                    if (!(options && options.preserveCurrentSupplier)) {
+                        clearSupplier();
+                    }
+                    return [];
+                });
+        }
+
+        function fetchSuppliers() {
+            var q = (supplierInput.value || '').trim();
+            var url = supplierSearchUrl + '?q=' + encodeURIComponent(q);
+            if (materialId.value) {
+                url = materialSuppliersUrl + '?material_id=' + encodeURIComponent(materialId.value) + '&q=' + encodeURIComponent(q);
+            }
+            fetchJson(url)
+                .then(function (data) {
+                    render(supplierDd, supplierInput, data.items || [], function (item) {
+                        setSupplier(item);
+                    });
+                })
+                .catch(function () { render(supplierDd, supplierInput, [], function () {}); });
+        }
+
+        function fetchMaterials() {
+            var q = (materialInput.value || '').trim();
+            var url = materialSearchUrl + '?q=' + encodeURIComponent(q);
+            if (supplierId.value) {
+                url = supplierMaterialsUrl + '?supplier_id=' + encodeURIComponent(supplierId.value) + '&q=' + encodeURIComponent(q);
+            }
+            fetchJson(url)
+                .then(function (data) {
+                    render(materialDd, materialInput, data.items || [], function (item) {
+                        setMaterial(item);
+                        loadSuppliersForMaterial({ autoSelectDefault: true });
+                    });
+                })
+                .catch(function () { render(materialDd, materialInput, [], function () {}); });
+        }
+
+        supplierInput.addEventListener('input', function () {
+            supplierId.value = '';
+            if (supplierTimer) clearTimeout(supplierTimer);
+            supplierTimer = setTimeout(fetchSuppliers, 200);
+        });
+        supplierInput.addEventListener('focus', fetchSuppliers);
+        materialInput.addEventListener('input', function () {
+            materialId.value = '';
+            spec.value = '';
+            price.value = '';
+            clearSupplier();
+            if (materialTimer) clearTimeout(materialTimer);
+            materialTimer = setTimeout(fetchMaterials, 200);
+        });
+        materialInput.addEventListener('focus', fetchMaterials);
+
+        if (materialId.value) {
+            loadSuppliersForMaterial({ preserveCurrentSupplier: true });
+        }
+    }
+
+    body.querySelectorAll('.req-row').forEach(bindRow);
+
+    document.getElementById('addReqLine').addEventListener('click', function () {
+        body.appendChild(tpl.content.cloneNode(true));
+        bindRow(body.querySelectorAll('.req-row')[body.querySelectorAll('.req-row').length - 1]);
+    });
+
+    body.addEventListener('click', function (e) {
+        if (e.target.classList.contains('btn-remove-line')) {
+            var rows = body.querySelectorAll('.req-row');
+            if (rows.length <= 1) return;
+            e.target.closest('.req-row').remove();
+        }
+    });
+
+    form.addEventListener('submit', function (e) {
+        var ok = false;
+        body.querySelectorAll('.req-row').forEach(function (row) {
+            if (row.querySelector('.req-supplier-id').value && row.querySelector('.req-material-id').value && (row.querySelector('[name="line_qty"]').value || '').trim()) {
+                ok = true;
+            }
+        });
+        if (!ok) {
+            e.preventDefault();
+            alert('请至少完整填写一行请购明细。');
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.req-cell')) hideAll();
+    });
+})();
+</script>
 {% endblock %}

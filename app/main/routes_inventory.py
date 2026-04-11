@@ -19,6 +19,8 @@ from app.models import (
     InventoryMovementBatch,
     InventoryOpeningBalance,
     Product,
+    PurchaseOrder,
+    PurchaseReceipt,
     SemiMaterial,
     User,
 )
@@ -545,6 +547,52 @@ def register_inventory_routes(bp):
     def inventory_movement_new():
         import_result = None
         category_from_query = (request.args.get("category") or "").strip()
+        purchase_order_id = (
+            request.form.get("purchase_order_id", type=int)
+            if request.method == "POST"
+            else request.args.get("purchase_order_id", type=int)
+        )
+        purchase_receipt_id = (
+            request.form.get("purchase_receipt_id", type=int)
+            if request.method == "POST"
+            else request.args.get("purchase_receipt_id", type=int)
+        )
+        purchase_receipt = (
+            PurchaseReceipt.query.options(selectinload(PurchaseReceipt.purchase_order)).get(purchase_receipt_id)
+            if purchase_receipt_id
+            else None
+        )
+        purchase_order = None
+        if purchase_order_id:
+            purchase_order = PurchaseOrder.query.options(selectinload(PurchaseOrder.material)).get(purchase_order_id)
+        elif purchase_receipt and purchase_receipt.purchase_order_id:
+            purchase_order = PurchaseOrder.query.options(selectinload(PurchaseOrder.material)).get(
+                purchase_receipt.purchase_order_id
+            )
+            purchase_order_id = purchase_order.id if purchase_order else None
+        if purchase_receipt and purchase_order and purchase_receipt.purchase_order_id != purchase_order.id:
+            purchase_receipt = None
+            purchase_receipt_id = None
+        purchase_category = None
+        purchase_context = None
+        if purchase_order:
+            purchase_category = (
+                purchase_order.material.kind
+                if purchase_order.material
+                and purchase_order.material.kind in (inventory_svc.INV_SEMI, inventory_svc.INV_MATERIAL)
+                else inventory_svc.INV_MATERIAL
+            )
+            purchase_context = {
+                "purchase_order_id": purchase_order.id,
+                "purchase_receipt_id": purchase_receipt.id if purchase_receipt else None,
+                "po_no": purchase_order.po_no,
+                "receipt_no": purchase_receipt.receipt_no if purchase_receipt else None,
+                "supplier_name": purchase_order.supplier_name,
+                "item_name": purchase_order.item_name,
+                "item_spec": purchase_order.item_spec,
+                "material_id": purchase_order.material_id,
+                "category": purchase_category,
+            }
         if request.method == "POST":
             do_excel = request.form.get("do_excel_import") == "1"
             try:
@@ -565,7 +613,15 @@ def register_inventory_routes(bp):
                 if not biz_date:
                     raise ValueError("请选择业务日期。")
 
+                if purchase_context:
+                    if direction != "in":
+                        raise ValueError("采购来源关联入库只允许录入入库明细。")
+                    if purchase_category and cat != purchase_category:
+                        raise ValueError("请使用采购单对应的物料类别进行入库。")
+
                 if do_excel:
+                    if purchase_context:
+                        raise ValueError("关联采购来源时暂不支持 Excel 导入，请手工录入。")
                     file = request.files.get("excel_file")
                     if not file or not (file.filename or "").strip():
                         raise ValueError("请先选择要上传的 Excel 文件（.xlsx）。")
@@ -618,6 +674,7 @@ def register_inventory_routes(bp):
                         form_category=request.form.get("category"),
                         form_direction=request.form.get("direction"),
                         import_result=import_result,
+                        purchase_context=purchase_context,
                     )
 
                 if cat == inventory_svc.INV_FINISHED:
@@ -649,6 +706,8 @@ def register_inventory_routes(bp):
                             remark=remark,
                             created_by=current_user.id,
                             movement_batch_id=batch.id,
+                            source_purchase_order_id=purchase_order_id,
+                            source_purchase_receipt_id=purchase_receipt_id,
                         )
                 else:
                     line_rows = _parse_movement_material_line_rows()
@@ -679,9 +738,15 @@ def register_inventory_routes(bp):
                             remark=remark,
                             created_by=current_user.id,
                             movement_batch_id=batch.id,
+                            source_purchase_order_id=purchase_order_id,
+                            source_purchase_receipt_id=purchase_receipt_id,
                         )
                 db.session.commit()
                 flash(f"已保存批次（{len(line_rows)} 条明细）。", "success")
+                if purchase_receipt_id:
+                    return redirect(url_for("main.procurement_receipt_compare", receipt_id=purchase_receipt_id))
+                if purchase_order_id:
+                    return redirect(url_for("main.procurement_order_detail", po_id=purchase_order_id))
                 return redirect(url_for("main.inventory_list"))
             except ValueError as e:
                 db.session.rollback()
@@ -697,9 +762,14 @@ def register_inventory_routes(bp):
         return render_template(
             "inventory/movement_form.html",
             default_biz_date=bd,
-            form_category=request.form.get("category") if request.method == "POST" else category_from_query or None,
-            form_direction=request.form.get("direction") if request.method == "POST" else None,
+            form_category=(
+                request.form.get("category")
+                if request.method == "POST"
+                else category_from_query or purchase_category or None
+            ),
+            form_direction=request.form.get("direction") if request.method == "POST" else ("in" if purchase_context else None),
             import_result=import_result,
+            purchase_context=purchase_context,
         )
 
     # ----- 库存批次列表（主「库存」入口） -----

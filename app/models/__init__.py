@@ -19,6 +19,7 @@ from app.models.inventory_ledger import (
     InventoryMovementBatch,
     InventoryOpeningBalance,
 )
+from app.models.inventory_reservation import InventoryReservation
 from app.models.semi_material import SemiMaterial
 from app.models.bom import BomHeader, BomLine
 from app.models.production_preplan import ProductionPreplan
@@ -34,17 +35,23 @@ from app.models.production_process_edge import ProductionProcessEdge
 from app.models.production_routing_node_override import ProductionRoutingNodeOverride
 from app.models.production_work_order_operation import ProductionWorkOrderOperation
 from app.models.production_work_order_operation_plan import ProductionWorkOrderOperationPlan
+from app.models.production_schedule_commit_row import ProductionScheduleCommitRow
 from app.models.production_material_plan_detail import ProductionMaterialPlanDetail
 from app.models.production_cost_plan_detail import ProductionCostPlanDetail
 from app.models.production_incident import ProductionIncident
 from app.models.hr import (
     HrDepartment,
+    HrDepartmentWorkTypeMap,
     HrEmployee,
+    HrEmployeeWorkType,
     HrEmployeeScheduleBooking,
     HrEmployeeScheduleTemplate,
     HrPayrollLine,
     HrPerformanceReview,
     HrEmployeeCapability,
+    HrDepartmentPieceRate,
+    HrWorkType,
+    HrWorkTypePieceRate,
 )
 from app.models.machine import (
     MachineType,
@@ -57,7 +64,10 @@ from app.models.machine import (
 from app.models.machine_operator_allowlist import MachineOperatorAllowlist
 from app.models.hr_department_capability_map import HrDepartmentCapabilityMap
 from app.models.procurement import (
+    Supplier,
+    SupplierMaterialMap,
     PurchaseRequisition,
+    PurchaseRequisitionLine,
     PurchaseOrder,
     PurchaseReceipt,
     PurchaseStockIn,
@@ -96,6 +106,7 @@ __all__ = [
     "InventoryOpeningBalance",
     "InventoryMovement",
     "InventoryMovementBatch",
+    "InventoryReservation",
     "SemiMaterial",
     "BomHeader",
     "BomLine",
@@ -112,14 +123,20 @@ __all__ = [
     "ProductionRoutingNodeOverride",
     "ProductionWorkOrderOperation",
     "ProductionWorkOrderOperationPlan",
+    "ProductionScheduleCommitRow",
     "ProductionMaterialPlanDetail",
     "ProductionCostPlanDetail",
     "ProductionIncident",
     "HrDepartment",
+    "HrDepartmentWorkTypeMap",
     "HrEmployee",
+    "HrEmployeeWorkType",
     "HrPayrollLine",
     "HrPerformanceReview",
     "HrEmployeeCapability",
+    "HrDepartmentPieceRate",
+    "HrWorkType",
+    "HrWorkTypePieceRate",
     "HrEmployeeScheduleTemplate",
     "HrEmployeeScheduleBooking",
     "MachineType",
@@ -130,7 +147,10 @@ __all__ = [
     "MachineScheduleDispatchLog",
     "MachineOperatorAllowlist",
     "HrDepartmentCapabilityMap",
+    "Supplier",
+    "SupplierMaterialMap",
     "PurchaseRequisition",
+    "PurchaseRequisitionLine",
     "PurchaseOrder",
     "PurchaseReceipt",
     "PurchaseStockIn",

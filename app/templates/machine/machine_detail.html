@@ -12,7 +12,7 @@
             <div class="col-md-3"><strong>机台编号：</strong>{{ row.machine_no }}</div>
             <div class="col-md-3"><strong>机台名称：</strong>{{ row.name }}</div>
             <div class="col-md-3"><strong>机台种类：</strong>{{ row.machine_type.name if row.machine_type else '-' }}</div>
-            <div class="col-md-5"><strong>默认能力工位 id：</strong>{% if row.default_capability_hr_department_id %}{{ row.default_capability_hr_department_id }}（覆盖机种）{% elif row.machine_type and row.machine_type.default_capability_hr_department_id %}{{ row.machine_type.default_capability_hr_department_id }}（来自机种）{% else %}-{% endif %}</div>
+            <div class="col-md-5"><strong>默认能力工种：</strong>{% if row.effective_default_capability_work_type_id %}{{ row.effective_default_capability_work_type_id }}{% else %}-{% endif %}</div>
             <div class="col-md-3"><strong>标准产能：</strong>{{ row.capacity_per_hour }} 件/小时</div>
             <div class="col-md-3"><strong>累计生产：</strong>{{ row.machine_accum_produced_qty|qty_plain }}</div>
             <div class="col-md-3"><strong>累计运行：</strong>{{ row.machine_accum_runtime_hours|qty_plain }} 小时</div>
@@ -29,20 +29,20 @@
 
 <div class="card mb-3">
     <div class="card-body">
-        <h5>当前运转情况</h5>
+        <h5>当前运行情况</h5>
         {% if open_log %}
         <div class="alert alert-info mb-0">
             状态：{{ open_log.runtime_status|status_zh('machine_runtime_status') }}，开始时间：{{ open_log.started_at.strftime('%Y-%m-%d %H:%M') }}
         </div>
         {% else %}
-        <div class="text-muted">当前无进行中的运转记录。</div>
+        <div class="text-muted">当前无进行中的运行记录。</div>
         {% endif %}
     </div>
 </div>
 
 <div class="card">
     <div class="card-body">
-        <h5>最近 20 条运转记录</h5>
+        <h5>最近 20 条运行记录</h5>
         <div class="table-responsive app-table-scroll">
             <table class="table table-bordered table-sm align-middle">
                 <thead>
@@ -85,7 +85,7 @@
 <div class="card mt-3">
     <div class="card-body">
         <h5 class="mb-2">操作员白名单（预算成本选人）</h5>
-        <p class="text-muted small">预生产「指定资源」成本仅允许选择此处维护的机台+操作员组合。能力工位 id 填 0 时：优先用本机台/机种上配置的「默认能力工位」在能力表中取该工种；若均未配置，才在员工全部工种里择优品率。</p>
+        <p class="text-muted small">白名单工种填 0 时：优先使用机台/机种默认能力工种；若均未配置，才在员工全部工种中择优能力。</p>
         {% if user_can_cap('machine_asset.action.edit') %}
         <form method="post" action="{{ url_for('main.machine_operator_allowlist_add', machine_id=row.id) }}" class="row g-2 align-items-end mb-3">
             <div class="col-md-4">
@@ -98,8 +98,8 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label">能力工位 id（可选）</label>
-                <input type="number" name="capability_hr_department_id" class="form-control form-control-sm" min="0" value="0" placeholder="0=自动">
+                <label class="form-label">能力工种 id（可选）</label>
+                <input type="number" name="capability_work_type_id" class="form-control form-control-sm" min="0" value="0" placeholder="0=自动">
             </div>
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary btn-sm">添加</button>
@@ -111,7 +111,7 @@
                 <thead>
                     <tr>
                         <th>员工</th>
-                        <th>能力工位 id</th>
+                        <th>能力工种 id</th>
                         <th style="width:90px;"></th>
                     </tr>
                 </thead>
@@ -119,7 +119,7 @@
                     {% for al in allowlist %}
                     <tr>
                         <td>{{ al.employee.name if al.employee else al.employee_id }}</td>
-                        <td>{{ al.capability_hr_department_id }}</td>
+                        <td>{{ al.effective_capability_work_type_id }}</td>
                         <td>
                             {% if user_can_cap('machine_asset.action.edit') %}
                             <form method="post" action="{{ url_for('main.machine_operator_allowlist_delete', machine_id=row.id, row_id=al.id) }}" class="d-inline" onsubmit="return confirm('确认移除？');">

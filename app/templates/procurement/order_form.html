@@ -1,61 +1,340 @@
 {% extends "base.html" %}
-{% block title %}{{ '新增采购单' if not row else '编辑采购单' }} - 工厂订单系统{% endblock %}
+{% block title %}{{ '新增采购单' if not row else '编辑采购单' }}{% endblock %}
+{% block extra_css %}
+<style>
+.order-cell { position: relative; min-width: 220px; }
+.order-dd {
+    position: fixed;
+    z-index: 1050;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+}
+</style>
+{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '新增采购单' if not row else '编辑采购单' }}</h2>
-<form method="post" class="row g-3">
-    <input type="hidden" name="company_id" value="{{ company_id }}">
+<h2 class="mb-3">{{ '新增采购单' if not row else '编辑采购单' }}</h2>
+
+<form method="post" class="row g-3" id="orderForm"
+    data-supplier-search-url="{{ supplier_search_url }}"
+    data-material-search-url="{{ material_search_url }}"
+    data-supplier-materials-url="{{ supplier_materials_url }}"
+    data-material-suppliers-url="{{ material_suppliers_url }}">
+    <div class="col-12">
+        <div class="alert alert-light border py-2 mb-0">
+            采购单按“物料优先”联动：先选物料会自动带出默认供应商；如果该物料没有默认供应商，则需要再从已关联供应商里手工选择。
+        </div>
+    </div>
     <div class="col-md-4">
-        <label class="form-label">关联请购单</label>
-        <select name="requisition_id" class="form-select">
+        <label class="form-label">来源请购行</label>
+        <select name="requisition_line_id" class="form-select" id="requisitionLineSelect">
             <option value="">不关联</option>
-            {% for req in requisitions %}
-            <option value="{{ req.id }}" {% if row and row.requisition_id == req.id %}selected{% endif %}>{{ req.req_no }} / {{ req.supplier_name }} / {{ req.item_name }}</option>
+            {% for line in requisition_lines %}
+            <option
+                value="{{ line.id }}"
+                {% if row and row.requisition_line_id == line.id %}selected{% endif %}
+                data-supplier-id="{{ line.supplier_id or '' }}"
+                data-supplier-name="{{ line.supplier_name or '' }}"
+                data-material-id="{{ line.material_id or '' }}"
+                data-material-name="{{ line.item_name or '' }}"
+                data-material-spec="{{ line.item_spec or '' }}"
+                data-unit="{{ line.unit or '' }}"
+                data-qty="{{ line.qty or '' }}"
+                data-expected-date="{{ line.expected_date.strftime('%Y-%m-%d') if line.expected_date else '' }}">
+                {{ line.requisition.req_no if line.requisition else '-' }} / {{ line.supplier_name }} / {{ line.item_name }} / {{ line.qty }}
+            </option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-4 order-cell">
         <label class="form-label">供应商</label>
-        <input type="text" class="form-control" name="supplier_name" value="{{ row.supplier_name if row else '' }}" maxlength="128" required>
+        <input type="hidden" name="supplier_id" id="orderSupplierId" value="{{ row.supplier_id if row else '' }}">
+        <input type="text" class="form-control" id="orderSupplierSearch" value="{{ row.supplier_name if row else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+        <div class="order-dd list-group d-none" id="orderSupplierDd"></div>
     </div>
-    <div class="col-md-4">
-        <label class="form-label">物料名称</label>
-        <input type="text" class="form-control" name="item_name" value="{{ row.item_name if row else '' }}" maxlength="128" required>
+    <div class="col-md-4 order-cell">
+        <label class="form-label">物料</label>
+        <input type="hidden" name="material_id" id="orderMaterialId" value="{{ row.material_id if row else '' }}">
+        <input type="text" class="form-control" id="orderMaterialSearch" value="{{ row.item_name if row else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+        <div class="order-dd list-group d-none" id="orderMaterialDd"></div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <label class="form-label">规格</label>
-        <input type="text" class="form-control" name="item_spec" value="{{ row.item_spec if row else '' }}" maxlength="128">
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">数量</label>
-        <input type="number" step="0.01" min="0" class="form-control" name="qty" value="{{ row.qty if row else '' }}" required>
+        <input type="text" class="form-control" id="orderSpec" value="{{ row.item_spec if row else '' }}" readonly>
     </div>
     <div class="col-md-2">
         <label class="form-label">单位</label>
-        <input type="text" class="form-control" name="unit" value="{{ row.unit if row else 'pcs' }}" maxlength="16" required>
+        <input type="text" class="form-control" name="unit" id="orderUnit" value="{{ row.unit if row else '' }}" maxlength="16">
     </div>
     <div class="col-md-2">
-        <label class="form-label">单价</label>
-        <input type="number" step="0.01" min="0" class="form-control" name="unit_price" value="{{ row.unit_price if row else '' }}" required>
+        <label class="form-label">参考单价</label>
+        <input type="text" class="form-control" id="orderReferencePrice" value="" readonly placeholder="自动带出">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">采购数量</label>
+        <input type="text" class="form-control" name="qty" id="orderQty" value="{{ row.qty if row else '' }}">
     </div>
     <div class="col-md-3">
-        <label class="form-label">期望到货日期</label>
-        <input type="date" class="form-control" name="expected_date" value="{{ row.expected_date.strftime('%Y-%m-%d') if row and row.expected_date else '' }}">
+        <label class="form-label">单价</label>
+        <input type="text" class="form-control" name="unit_price" id="orderUnitPrice" value="{{ row.unit_price if row else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">到货日期</label>
+        <input type="date" class="form-control" name="expected_date" id="orderExpectedDate" value="{{ row.expected_date.strftime('%Y-%m-%d') if row and row.expected_date else '' }}">
     </div>
     <div class="col-md-3">
         <label class="form-label">状态</label>
         <select name="status" class="form-select">
-            {% for s in po_statuses %}
-            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'draft') %}selected{% endif %}>{{ s|status_zh('procurement_po_status') }}</option>
+            {% for status in po_statuses %}
+            <option value="{{ status }}" {% if (row and row.status == status) or (not row and status == 'draft') %}selected{% endif %}>{{ status|status_zh('procurement_po_status') }}</option>
             {% endfor %}
         </select>
     </div>
     <div class="col-12">
         <label class="form-label">备注</label>
-        <textarea name="remark" rows="3" class="form-control" maxlength="500">{{ row.remark if row else '' }}</textarea>
+        <textarea class="form-control" name="remark" rows="3" maxlength="500">{{ row.remark if row else '' }}</textarea>
     </div>
     <div class="col-12">
         <button type="submit" class="btn btn-primary">保存</button>
-        <a href="{{ url_for('main.procurement_order_list') }}" class="btn btn-secondary">返回</a>
+        <a href="{{ url_for('main.procurement_order_list') }}" class="btn btn-outline-secondary">返回</a>
     </div>
 </form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('orderForm');
+    var supplierSearchUrl = form.getAttribute('data-supplier-search-url');
+    var materialSearchUrl = form.getAttribute('data-material-search-url');
+    var supplierMaterialsUrl = form.getAttribute('data-supplier-materials-url');
+    var materialSuppliersUrl = form.getAttribute('data-material-suppliers-url');
+
+    var requisitionLineSelect = document.getElementById('requisitionLineSelect');
+    var supplierId = document.getElementById('orderSupplierId');
+    var supplierInput = document.getElementById('orderSupplierSearch');
+    var supplierDd = document.getElementById('orderSupplierDd');
+    var materialId = document.getElementById('orderMaterialId');
+    var materialInput = document.getElementById('orderMaterialSearch');
+    var materialDd = document.getElementById('orderMaterialDd');
+    var specInput = document.getElementById('orderSpec');
+    var unitInput = document.getElementById('orderUnit');
+    var refPriceInput = document.getElementById('orderReferencePrice');
+    var unitPriceInput = document.getElementById('orderUnitPrice');
+    var qtyInput = document.getElementById('orderQty');
+    var expectedDateInput = document.getElementById('orderExpectedDate');
+    var supplierTimer = null;
+    var materialTimer = null;
+
+    function hideAll() {
+        [supplierDd, materialDd].forEach(function (el) {
+            el.classList.add('d-none');
+            el.innerHTML = '';
+        });
+    }
+
+    function place(dd, input) {
+        var rect = input.getBoundingClientRect();
+        dd.style.left = rect.left + 'px';
+        dd.style.top = rect.bottom + 'px';
+        dd.style.width = Math.max(rect.width, 220) + 'px';
+    }
+
+    function render(dd, input, items, onSelect) {
+        dd.innerHTML = '';
+        place(dd, input);
+        if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted';
+            empty.textContent = '无匹配项';
+            dd.appendChild(empty);
+            dd.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function (item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = item.label || '';
+            btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            btn.addEventListener('click', function () {
+                onSelect(item);
+                hideAll();
+            });
+            dd.appendChild(btn);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    function setSourceLocked(locked) {
+        supplierInput.readOnly = locked;
+        materialInput.readOnly = locked;
+        supplierInput.classList.toggle('bg-light', locked);
+        materialInput.classList.toggle('bg-light', locked);
+    }
+
+    function setSupplier(item, syncPrice) {
+        supplierId.value = item ? (item.supplier_id || item.id || '') : '';
+        supplierInput.value = item ? (item.label || item.name || '') : '';
+        if (item && item.last_unit_price) {
+            refPriceInput.value = item.last_unit_price;
+            if (syncPrice) {
+                unitPriceInput.value = item.last_unit_price;
+            }
+        } else if (!item) {
+            supplierInput.value = '';
+        }
+    }
+
+    function clearSupplier() {
+        supplierId.value = '';
+        supplierInput.value = '';
+    }
+
+    function setMaterial(item, syncPrice) {
+        materialId.value = item ? (item.material_id || item.id || '') : '';
+        materialInput.value = item ? (item.label || item.name || '') : '';
+        specInput.value = item ? (item.spec || '') : '';
+        if (item) {
+            unitInput.value = item.base_unit || unitInput.value || '';
+            refPriceInput.value = item.last_unit_price || '';
+            if (syncPrice && item.last_unit_price) {
+                unitPriceInput.value = item.last_unit_price;
+            }
+        } else {
+            materialInput.value = '';
+            specInput.value = '';
+            refPriceInput.value = '';
+        }
+    }
+
+    function fetchJson(url) {
+        return fetch(url, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        }).then(function (r) { return r.json(); });
+    }
+
+    function loadSuppliersForMaterial(options) {
+        if (!materialId.value) {
+            clearSupplier();
+            return Promise.resolve([]);
+        }
+        var url = materialSuppliersUrl + '?material_id=' + encodeURIComponent(materialId.value);
+        return fetchJson(url).then(function (data) {
+            var items = data.items || [];
+            var current = items.find(function (item) {
+                return String(item.supplier_id || item.id) === String(supplierId.value || '');
+            });
+            var defaultItem = items.find(function (item) { return !!item.is_default_supplier; });
+            if (options && options.preserveCurrentSupplier && current) {
+                setSupplier(current, !!(options && options.syncPrice));
+            } else if (options && options.autoSelectDefault && defaultItem) {
+                setSupplier(defaultItem, !!(options && options.syncPrice));
+            } else if (!(options && options.preserveCurrentSupplier && current)) {
+                clearSupplier();
+            }
+            return items;
+        }).catch(function () {
+            if (!(options && options.preserveCurrentSupplier)) {
+                clearSupplier();
+            }
+            return [];
+        });
+    }
+
+    function fetchSuppliers() {
+        if (supplierInput.readOnly) return;
+        var q = (supplierInput.value || '').trim();
+        var url = supplierSearchUrl + '?q=' + encodeURIComponent(q);
+        if (materialId.value) {
+            url = materialSuppliersUrl + '?material_id=' + encodeURIComponent(materialId.value) + '&q=' + encodeURIComponent(q);
+        }
+        fetchJson(url)
+            .then(function (data) {
+                render(supplierDd, supplierInput, data.items || [], function (item) {
+                    setSupplier(item, true);
+                });
+            })
+            .catch(function () { render(supplierDd, supplierInput, [], function () {}); });
+    }
+
+    function fetchMaterials() {
+        if (materialInput.readOnly) return;
+        var q = (materialInput.value || '').trim();
+        var url = materialSearchUrl + '?q=' + encodeURIComponent(q);
+        if (supplierId.value) {
+            url = supplierMaterialsUrl + '?supplier_id=' + encodeURIComponent(supplierId.value) + '&q=' + encodeURIComponent(q);
+        }
+        fetchJson(url)
+            .then(function (data) {
+                render(materialDd, materialInput, data.items || [], function (item) {
+                    setMaterial(item, true);
+                    loadSuppliersForMaterial({ autoSelectDefault: true, syncPrice: true });
+                });
+            })
+            .catch(function () { render(materialDd, materialInput, [], function () {}); });
+    }
+
+    supplierInput.addEventListener('input', function () {
+        if (supplierInput.readOnly) return;
+        supplierId.value = '';
+        if (supplierTimer) window.clearTimeout(supplierTimer);
+        supplierTimer = window.setTimeout(fetchSuppliers, 200);
+    });
+    supplierInput.addEventListener('focus', fetchSuppliers);
+
+    materialInput.addEventListener('input', function () {
+        if (materialInput.readOnly) return;
+        materialId.value = '';
+        specInput.value = '';
+        refPriceInput.value = '';
+        clearSupplier();
+        if (materialTimer) window.clearTimeout(materialTimer);
+        materialTimer = window.setTimeout(fetchMaterials, 200);
+    });
+    materialInput.addEventListener('focus', fetchMaterials);
+
+    requisitionLineSelect.addEventListener('change', function () {
+        var option = requisitionLineSelect.options[requisitionLineSelect.selectedIndex];
+        if (requisitionLineSelect.value && option) {
+            setSourceLocked(true);
+            supplierId.value = option.getAttribute('data-supplier-id') || '';
+            supplierInput.value = option.getAttribute('data-supplier-name') || '';
+            materialId.value = option.getAttribute('data-material-id') || '';
+            materialInput.value = option.getAttribute('data-material-name') || '';
+            specInput.value = option.getAttribute('data-material-spec') || '';
+            unitInput.value = option.getAttribute('data-unit') || unitInput.value || '';
+            if (!qtyInput.value) {
+                qtyInput.value = option.getAttribute('data-qty') || '';
+            }
+            if (!expectedDateInput.value) {
+                expectedDateInput.value = option.getAttribute('data-expected-date') || '';
+            }
+            loadSuppliersForMaterial({ preserveCurrentSupplier: true, syncPrice: true });
+            return;
+        }
+        setSourceLocked(false);
+    });
+
+    form.addEventListener('submit', function (e) {
+        if (!supplierId.value || !materialId.value) {
+            e.preventDefault();
+            alert('请选择有效供应商和物料。');
+        }
+    });
+
+    if (requisitionLineSelect.value) {
+        requisitionLineSelect.dispatchEvent(new Event('change'));
+    } else if (materialId.value) {
+        loadSuppliersForMaterial({ preserveCurrentSupplier: true, syncPrice: true });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.order-cell')) hideAll();
+    });
+})();
+</script>
 {% endblock %}

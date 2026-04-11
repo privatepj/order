@@ -14,8 +14,10 @@ from openpyxl.worksheet.worksheet import Worksheet
 from app import db
 from app.models import Delivery, DeliveryItem, OrderItem, SalesOrder
 from app.models.product import CustomerProduct
+from app.utils.delivery_method import delivery_method_waybill_display
 from app.utils.payment_type import normalize_payment_type, payment_type_label
 from app.services.delivery_svc import effective_customer_material_no
+from app.utils.qty_display import format_qty_plain
 
 COLS = 8
 ADDRESS_LINE = "深圳市光明新区公明马山头旭发科技园A3栋1楼、2楼"
@@ -56,10 +58,8 @@ def _safe_sheet_title(name: str, used: set) -> str:
 def _qty_str(q) -> str:
     if q is None:
         return ""
-    d = Decimal(str(q))
-    if d == d.to_integral_value():
-        return str(int(d))
-    return format(float(d), ".4f").rstrip("0").rstrip(".")
+    s = format_qty_plain(q)
+    return "" if s == "-" else s
 
 
 def _apply_column_widths(ws: Worksheet) -> None:
@@ -84,7 +84,7 @@ def _write_delivery_section(
     di_list: List[DeliveryItem],
     oi_map: Dict[int, OrderItem],
     order_cache: Dict[int, Optional[SalesOrder]],
-    remaining_after: Dict[int, float],
+    remaining_after: Dict[int, Decimal],
 ) -> int:
     """
     从 start_row 起写入一个送货单段落（表头+明细+脚注+签栏）。
@@ -97,7 +97,11 @@ def _write_delivery_section(
     )
     company_name = company.name if company else ""
     cust = delivery.customer.name if delivery.customer else ""
-    waybill = delivery.waybill_no or "送货"
+    waybill = delivery_method_waybill_display(
+        delivery.delivery_method,
+        waybill_no=delivery.waybill_no,
+        express_company_id=delivery.express_company_id,
+    )
     dno = delivery.delivery_no or ""
     dstr = (
         delivery.delivery_date.strftime("%Y%m%d") if delivery.delivery_date else ""
@@ -137,7 +141,7 @@ def _write_delivery_section(
     ws.row_dimensions[r].height = 24.0
     r += 1
 
-    ws.cell(r, 1, "快递单号")
+    ws.cell(r, 1, "配送方式/单号")
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
     ws.cell(r, 2, waybill)
     ws.cell(r, 5, "日期")
@@ -187,12 +191,12 @@ def _write_delivery_section(
         liao = effective_customer_material_no(oi)
         name_spec = (
             " ".join(
-                x for x in (oi.product_name or "", oi.product_spec or "") if x
+                x for x in (oi.display_product_name or "", oi.product_spec or "") if x
             ).strip()
-            or (oi.product_name or "")
+            or (oi.display_product_name or "")
         )
 
-        remaining = remaining_after.get(di.id, 0.0)
+        remaining = remaining_after.get(di.id, Decimal(0))
         order_cell = (
             (so.customer_order_no or "").strip()
             if so
@@ -290,16 +294,16 @@ def build_delivery_notes_workbook(deliveries: List[Delivery]) -> Optional[BytesI
     )
     oi_map = {oi.id: oi for oi in order_items}
 
-    delivered_running: Dict[int, float] = defaultdict(float)
-    remaining_after: Dict[int, float] = {}
+    delivered_running: Dict[int, Decimal] = defaultdict(lambda: Decimal(0))
+    remaining_after: Dict[int, Decimal] = {}
     for _, di in all_pairs:
         oi = oi_map.get(di.order_item_id)
         if not oi:
             continue
-        need = float(oi.quantity or 0)
-        q = float(di.quantity or 0)
+        need = Decimal(str(oi.quantity or 0))
+        q = Decimal(str(di.quantity or 0))
         delivered_running[oi.id] += q
-        remaining_after[di.id] = max(0.0, need - delivered_running[oi.id])
+        remaining_after[di.id] = max(Decimal(0), need - delivered_running[oi.id])
 
     order_cache: Dict[int, Optional[SalesOrder]] = {}
 

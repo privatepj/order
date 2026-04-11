@@ -45,14 +45,14 @@
         <div class="text-center company-name">{{ delivery.customer.company.name if delivery.customer and delivery.customer.company else '' }}</div>
         <div class="text-center address-tel">{{ address_line }}</div>
         <div class="text-center address-tel">{{ tel_line }}</div>
-        <div class="text-center title-main">送  货  单</div>
+        <div class="text-center title-main">送 货 单</div>
 
         <div class="info-row">
             <div>客户：{{ delivery.customer.name }}</div>
             <div class="text-right">单号：{{ delivery.delivery_no or '' }}</div>
         </div>
         <div class="info-row">
-            <div>快递单号：{% if delivery.express_company_id %}{{ delivery.waybill_no or '-' }}{% else %}自配送{% endif %}</div>
+            <div>{{ delivery_method_waybill_label }}：{{ delivery.delivery_method_waybill_text }}</div>
             <div class="text-right">日期：{{ delivery.delivery_date.strftime('%Y%m%d') if delivery.delivery_date else '' }}</div>
         </div>
 

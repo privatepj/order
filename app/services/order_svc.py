@@ -1,6 +1,6 @@
 """订单创建/更新逻辑，供 Web 表单与 OpenClaw API 共用。"""
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional, Tuple
 
 from sqlalchemy import func
@@ -16,11 +16,115 @@ from app.models import (
     Delivery,
     DeliveryItem,
     CustomerProduct,
-    Product,
 )
 from app.utils.billing_period import period_bounds_containing
+from app.utils.decimal_scale import json_decimal, quantize_decimal
 from app.utils.payment_type import normalize_payment_type, payment_type_label
 from app.services.orchestrator_contracts import EVENT_ORDER_CHANGED
+
+
+_SPARE_RATIO = Decimal("0.003")
+_SPARE_ROUND_BASE = Decimal("10")
+
+
+def _coerce_bool(val: Any) -> bool:
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return int(val) != 0
+    if val is None:
+        return False
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+def calc_spare_quantity(main_qty: Any) -> Decimal:
+    try:
+        qty = Decimal(str(main_qty or 0))
+    except Exception:
+        qty = Decimal(0)
+    if qty <= 0:
+        return Decimal(0)
+    raw = qty * _SPARE_RATIO
+    if raw <= 0:
+        return Decimal(0)
+    if raw < _SPARE_ROUND_BASE:
+        return _SPARE_ROUND_BASE
+    rounded_units = (raw / _SPARE_ROUND_BASE).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return rounded_units * _SPARE_ROUND_BASE
+
+
+def _parse_order_rows(items: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not isinstance(items, list):
+        return rows
+    for r in items:
+        if not isinstance(r, dict):
+            continue
+        try:
+            cp_id = (
+                int(r["customer_product_id"])
+                if r.get("customer_product_id") is not None
+                else None
+            )
+        except (TypeError, ValueError, KeyError):
+            cp_id = None
+        try:
+            qty = Decimal(str(r.get("quantity") or 0))
+        except Exception:
+            qty = Decimal(0)
+        oi_id = None
+        if r.get("order_item_id") is not None:
+            try:
+                oi_id = int(r["order_item_id"])
+            except (TypeError, ValueError):
+                pass
+        if cp_id and qty > 0:
+            rows.append(
+                {
+                    "customer_product_id": cp_id,
+                    "quantity": qty,
+                    "is_sample": _coerce_bool(r.get("is_sample")),
+                    "is_spare": _coerce_bool(r.get("is_spare")),
+                    "order_item_id": oi_id,
+                }
+            )
+    return rows
+
+
+def _with_auto_spare_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    expanded: list[dict[str, Any]] = []
+    for idx, row in enumerate(rows):
+        expanded.append(row)
+        should_auto_add = (
+            row["order_item_id"] is None
+            and not row["is_spare"]
+            and row["quantity"] > 0
+        )
+        if not should_auto_add:
+            continue
+        next_row = rows[idx + 1] if idx + 1 < len(rows) else None
+        has_immediate_spare = bool(
+            next_row
+            and next_row["is_spare"]
+            and next_row["customer_product_id"] == row["customer_product_id"]
+        )
+        if has_immediate_spare:
+            continue
+        spare_qty = calc_spare_quantity(row["quantity"])
+        if spare_qty <= 0:
+            continue
+        expanded.append(
+            {
+                "customer_product_id": row["customer_product_id"],
+                "quantity": spare_qty,
+                "is_sample": False,
+                "is_spare": True,
+                "order_item_id": None,
+            }
+        )
+    return expanded
 
 
 def _next_order_no_for_customer(customer_id: int) -> str:
@@ -173,7 +277,7 @@ def create_order_from_data(
     """
     根据字典数据创建或更新订单。
     data: customer_id, customer_order_no?, salesperson?, order_date?, required_date?,
-          payment_type?, remark?, items: [{ customer_product_id, quantity, is_sample? }]
+          payment_type?, remark?, items: [{ customer_product_id, quantity, is_sample?, is_spare? }]
     返回 (order, None) 成功；(None, error_message) 失败。
     """
     customer_id = data.get("customer_id")
@@ -192,37 +296,16 @@ def create_order_from_data(
         return None, "订单行格式错误。"
 
     # 解析行：customer_product_id, quantity, is_sample?, order_item_id?（编辑时）
-    rows = []
-    for r in items:
-        if not isinstance(r, dict):
-            continue
-        try:
-            cp_id = int(r["customer_product_id"]) if r.get("customer_product_id") is not None else None
-        except (TypeError, ValueError, KeyError):
-            cp_id = None
-        try:
-            qty = Decimal(str(r.get("quantity") or 0))
-        except Exception:
-            qty = Decimal(0)
-        is_sample = bool(r.get("is_sample"))
-        oi_id = None
-        if r.get("order_item_id") is not None:
-            try:
-                oi_id = int(r["order_item_id"])
-            except (TypeError, ValueError):
-                pass
-        if cp_id and qty > 0:
-            rows.append((cp_id, qty, is_sample, oi_id))
+    rows = _with_auto_spare_rows(_parse_order_rows(items))
 
     if existing_order is None and not rows:
         return None, "请至少选择一行客户产品并填写数量。"
 
     for row in rows:
-        if row[1] > 0 and not row[0]:
+        if row["quantity"] > 0 and not row["customer_product_id"]:
             return None, "存在已填数量但未选择产品的行，请检查。"
 
     order = existing_order
-    persisted_id = order.id if order else None
 
     if order is None:
         order = SalesOrder()
@@ -267,7 +350,7 @@ def create_order_from_data(
                 return None, "保存失败，请重试（订单号可能冲突）。"
 
     if order.id and existing_order:
-        kept_ids = {r[3] for r in rows if r[3]}
+        kept_ids = {r["order_item_id"] for r in rows if r["order_item_id"]}
         for oi in list(order.items):
             has_delivery = (
                 db.session.query(DeliveryItem)
@@ -280,13 +363,18 @@ def create_order_from_data(
             if oi.id not in kept_ids:
                 db.session.delete(oi)
 
-    for cp_id, qty, is_sample, oi_id in rows:
+    for row in rows:
+        cp_id = row["customer_product_id"]
+        qty = row["quantity"]
+        is_sample = row["is_sample"]
+        is_spare = row["is_spare"]
+        oi_id = row["order_item_id"]
         cp, p = _load_cp_for_order(customer_id, cp_id)
         if not cp or not p:
             db.session.rollback()
             return None, "存在无效的客户产品行，请重新选择。"
         pr = cp.price
-        if is_sample:
+        if is_sample or is_spare:
             pr = Decimal("0")
         if oi_id and order.id:
             item = OrderItem.query.filter_by(id=oi_id, order_id=order.id).first()
@@ -308,6 +396,7 @@ def create_order_from_data(
                 item.quantity = qty
                 item.unit = cp.unit or p.base_unit
                 item.is_sample = bool(is_sample)
+                item.is_spare = bool(is_spare)
                 item.price = pr
                 item.compute_amount()
                 continue
@@ -321,6 +410,7 @@ def create_order_from_data(
             unit=cp.unit or p.base_unit,
             price=pr,
             is_sample=bool(is_sample),
+            is_spare=bool(is_spare),
         )
         item.compute_amount()
         db.session.add(item)
@@ -385,44 +475,35 @@ def preview_order_create(data: dict[str, Any]) -> Tuple[Optional[str], dict[str,
     if not isinstance(items, list):
         return "订单行格式错误。", summary
 
-    rows = []
-    for r in items:
-        if not isinstance(r, dict):
-            continue
-        try:
-            cp_id = int(r["customer_product_id"]) if r.get("customer_product_id") is not None else None
-        except (TypeError, ValueError, KeyError):
-            cp_id = None
-        try:
-            qty = Decimal(str(r.get("quantity") or 0))
-        except Exception:
-            qty = Decimal(0)
-        is_sample = bool(r.get("is_sample"))
-        if cp_id and qty > 0:
-            rows.append((cp_id, qty, is_sample))
+    rows = _with_auto_spare_rows(_parse_order_rows(items))
 
     if not rows:
         return "请至少选择一行客户产品并填写数量。", summary
 
     line_summaries = []
-    for cp_id, qty, is_sample in rows:
+    for row in rows:
+        cp_id = row["customer_product_id"]
+        qty = row["quantity"]
+        is_sample = row["is_sample"]
+        is_spare = row["is_spare"]
         cp, p = _load_cp_for_order(int(customer_id), cp_id)
         if not cp or not p:
             return "存在无效的客户产品行，请重新选择。", summary
         pr = cp.price
-        if is_sample:
+        if is_sample or is_spare:
             pr = Decimal("0")
-        amt = (qty * pr) if pr is not None else None
+        amt = quantize_decimal(qty * pr) if pr is not None else None
         line_summaries.append({
             "customer_product_id": cp_id,
             "product_code": p.product_code or "",
             "product_name": p.name or "",
             "product_spec": (p.spec or "")[:128],
-            "quantity": float(qty),
+            "quantity": json_decimal(qty),
             "is_sample": is_sample,
+            "is_spare": is_spare,
             "unit": cp.unit or p.base_unit or "",
-            "unit_price": float(pr) if pr is not None else None,
-            "line_amount": float(amt) if amt is not None else None,
+            "unit_price": json_decimal(pr) if pr is not None else None,
+            "line_amount": json_decimal(amt) if amt is not None else None,
         })
 
     summary["items"] = line_summaries

@@ -8,6 +8,8 @@ from sqlalchemy import or_
 from app import db
 from app.models import HrEmployee, HrEmployeeScheduleBooking, HrEmployeeScheduleTemplate
 
+_EMP_SCHED_STATE_AVAILABLE = "available"
+
 
 def _dt_minute_floor(dt: datetime) -> datetime:
     return dt.replace(second=0, microsecond=0)
@@ -164,4 +166,58 @@ def generate_bookings_for_range(
     except Exception:
         db.session.rollback()
         raise
+
+
+def is_employee_available(*, employee_id: int, start_at: datetime, end_at: datetime) -> bool:
+    """
+    判断员工在 [start_at, end_at) 是否处于「可用窗」连续覆盖（与机台 is_machine_available 对称）。
+
+    - 员工非 active：不可用。
+    - 若区间内无任何 booking：视为可用（无排班数据时不挡人工排产）。
+    - 若存在 booking：任意与区间重叠且 state != available 则不可用；
+      否则要求 available 片段对 [start_at,end_at) 无间隙覆盖。
+    """
+    if employee_id <= 0:
+        return False
+    if start_at >= end_at:
+        return False
+
+    emp = HrEmployee.query.get(employee_id)
+    if not emp or (emp.status or "").strip() != "active":
+        return False
+
+    start_at = _dt_minute_floor(start_at)
+    end_at = _dt_minute_floor(end_at)
+
+    booking_rows: List[HrEmployeeScheduleBooking] = (
+        HrEmployeeScheduleBooking.query.filter(
+            HrEmployeeScheduleBooking.employee_id == employee_id,
+            HrEmployeeScheduleBooking.start_at < end_at,
+            HrEmployeeScheduleBooking.end_at > start_at,
+        )
+        .order_by(HrEmployeeScheduleBooking.start_at.asc(), HrEmployeeScheduleBooking.id.asc())
+        .all()
+    )
+
+    if not booking_rows:
+        return True
+
+    for b in booking_rows:
+        if (b.state or "").strip() != _EMP_SCHED_STATE_AVAILABLE:
+            return False
+
+    cursor = start_at
+    for b in booking_rows:
+        if (b.state or "").strip() != _EMP_SCHED_STATE_AVAILABLE:
+            continue
+        bs = max(b.start_at, start_at)
+        be = min(b.end_at, end_at)
+        if be <= cursor:
+            continue
+        if bs > cursor:
+            return False
+        cursor = max(cursor, be)
+        if cursor >= end_at:
+            return True
+    return cursor >= end_at
 

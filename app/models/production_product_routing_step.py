@@ -16,9 +16,10 @@ class ProductionProductRoutingStep(db.Model):
     resource_kind_override = db.Column(db.String(16))
     machine_type_id_override = db.Column(db.Integer, nullable=False, default=0)
     hr_department_id_override = db.Column(db.Integer, nullable=False, default=0)
+    hr_work_type_id_override = db.Column(db.Integer, nullable=False, default=0)
 
-    setup_minutes_override = db.Column(db.Numeric(12, 2))
-    run_minutes_per_unit_override = db.Column(db.Numeric(12, 4))
+    setup_minutes_override = db.Column(db.Numeric(26, 8))
+    run_minutes_per_unit_override = db.Column(db.Numeric(26, 8))
 
     step_name_override = db.Column(db.String(128))
 
@@ -26,4 +27,8 @@ class ProductionProductRoutingStep(db.Model):
 
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    @property
+    def effective_work_type_id_override(self) -> int:
+        return int(self.hr_work_type_id_override or self.hr_department_id_override or 0)
 

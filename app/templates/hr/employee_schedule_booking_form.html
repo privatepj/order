@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ '编辑' if row else '新建' }}人员排产时间窗 - 工厂订单系统{% endblock %}
+{% block title %}{{ "编辑" if row else "新建" }}人员排产时间窗 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '编辑' if row else '新建' }}人员排产时间窗</h2>
+<h2 class="mb-4">{{ "编辑" if row else "新建" }}人员排产时间窗</h2>
 
 <form method="post" class="row g-3">
     <div class="col-md-4">
@@ -46,21 +46,22 @@
     </div>
 
     <div class="col-md-6">
-        <label class="form-label">工位（部门）</label>
-        <select class="form-select" name="hr_department_id">
-            <option value="">不填（可后续编辑）</option>
-            {% for d in departments %}
-            <option value="{{ d.id }}" {% if row and row.hr_department_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+        <label class="form-label">实际工种</label>
+        <select class="form-select" name="work_type_id">
+            <option value="">未填写</option>
+            {% for wt in work_types %}
+            {% set selected_id = row.effective_work_type_id if row else 0 %}
+            <option value="{{ wt.id }}" {% if selected_id == wt.id %}selected{% endif %}>{{ wt.name }}</option>
             {% endfor %}
         </select>
-        {% if not departments %}
-        <div class="text-muted small mt-1">请先选择人员以加载工位。</div>
+        {% if not work_types %}
+        <div class="text-muted small mt-1">请先选择人员以加载工种。</div>
         {% endif %}
     </div>
 
     <div class="col-md-6">
         <label class="form-label">工单（成品）ID</label>
-        <input type="number" class="form-control" name="work_order_id" list="workOrderDatalist" value="{{ row.work_order_id if row and row.work_order_id else '' }}" placeholder="可直接填工单ID">
+        <input type="number" class="form-control" name="work_order_id" list="workOrderDatalist" value="{{ row.work_order_id if row and row.work_order_id else '' }}" placeholder="可直接填写工单ID">
         <datalist id="workOrderDatalist">
             {% for wo in recent_work_orders %}
             <option value="{{ wo.id }}">{{ wo.id }} - 成品ID {{ wo.parent_product_id }}</option>
@@ -79,7 +80,7 @@
     </div>
 
     <div class="col-md-6">
-        <label class="form-label">预计总产出（good+bad）</label>
+        <label class="form-label">总产出（good+bad）</label>
         <input type="text" class="form-control" value="{{ row.produced_qty|qty_plain if row else '0' }}" disabled>
     </div>
 
@@ -103,4 +104,3 @@
     </div>
 </form>
 {% endblock %}
-

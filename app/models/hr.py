@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 from app import db
 
 
 class HrDepartment(db.Model):
     __tablename__ = "hr_department"
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     company_id = db.Column(db.Integer, nullable=False, index=True)
     name = db.Column(db.String(128), nullable=False)
@@ -22,10 +25,80 @@ class HrDepartment(db.Model):
         back_populates="department",
         lazy="dynamic",
     )
+    work_type_maps = db.relationship(
+        "HrDepartmentWorkTypeMap",
+        primaryjoin="HrDepartment.id == foreign(HrDepartmentWorkTypeMap.department_id)",
+        back_populates="department",
+        lazy="dynamic",
+    )
+
+
+class HrWorkType(db.Model):
+    __tablename__ = "hr_work_type"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    company_id = db.Column(db.Integer, nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    remark = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    company = db.relationship(
+        "Company",
+        primaryjoin="foreign(HrWorkType.company_id) == Company.id",
+        backref=db.backref("hr_work_types", lazy="dynamic"),
+        lazy=True,
+    )
+    employee_links = db.relationship(
+        "HrEmployeeWorkType",
+        primaryjoin="HrWorkType.id == foreign(HrEmployeeWorkType.work_type_id)",
+        back_populates="work_type",
+        lazy="select",
+    )
+    department_maps = db.relationship(
+        "HrDepartmentWorkTypeMap",
+        primaryjoin="HrWorkType.id == foreign(HrDepartmentWorkTypeMap.work_type_id)",
+        back_populates="work_type",
+        lazy="dynamic",
+    )
+
+
+class HrDepartmentWorkTypeMap(db.Model):
+    __tablename__ = "hr_department_work_type_map"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    company_id = db.Column(db.Integer, nullable=False, index=True)
+    department_id = db.Column(db.Integer, nullable=False, index=True)
+    work_type_id = db.Column(db.Integer, nullable=False, index=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    remark = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    company = db.relationship(
+        "Company",
+        primaryjoin="foreign(HrDepartmentWorkTypeMap.company_id) == Company.id",
+        lazy=True,
+    )
+    department = db.relationship(
+        "HrDepartment",
+        primaryjoin="foreign(HrDepartmentWorkTypeMap.department_id) == HrDepartment.id",
+        back_populates="work_type_maps",
+        lazy=True,
+    )
+    work_type = db.relationship(
+        "HrWorkType",
+        primaryjoin="foreign(HrDepartmentWorkTypeMap.work_type_id) == HrWorkType.id",
+        back_populates="department_maps",
+        lazy=True,
+    )
 
 
 class HrEmployee(db.Model):
     __tablename__ = "hr_employee"
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     company_id = db.Column(db.Integer, nullable=False, index=True)
     department_id = db.Column(db.Integer, nullable=True, index=True)
@@ -35,6 +108,7 @@ class HrEmployee(db.Model):
     id_card = db.Column(db.String(32), nullable=True)
     phone = db.Column(db.String(32), nullable=True)
     job_title = db.Column(db.String(64), nullable=True)
+    main_work_type_id = db.Column(db.Integer, nullable=True, index=True)
     status = db.Column(db.String(16), nullable=False, default="active")
     hire_date = db.Column(db.Date, nullable=True)
     leave_date = db.Column(db.Date, nullable=True)
@@ -59,22 +133,90 @@ class HrEmployee(db.Model):
         primaryjoin="foreign(HrEmployee.user_id) == User.id",
         lazy=True,
     )
+    main_work_type = db.relationship(
+        "HrWorkType",
+        primaryjoin="foreign(HrEmployee.main_work_type_id) == HrWorkType.id",
+        lazy=True,
+    )
+    work_type_links = db.relationship(
+        "HrEmployeeWorkType",
+        primaryjoin="HrEmployee.id == foreign(HrEmployeeWorkType.employee_id)",
+        back_populates="employee",
+        lazy="select",
+    )
+
+    @property
+    def primary_work_type_name(self) -> str | None:
+        if self.main_work_type and self.main_work_type.name:
+            return self.main_work_type.name
+        for link in self.work_type_links or []:
+            if link.is_primary and link.work_type and link.work_type.name:
+                return link.work_type.name
+        return (self.job_title or "").strip() or None
+
+    @property
+    def secondary_work_type_names(self) -> list[str]:
+        out: list[str] = []
+        main_id = int(self.main_work_type_id or 0)
+        for link in self.work_type_links or []:
+            work_type = link.work_type
+            if not work_type or not work_type.name:
+                continue
+            if int(link.work_type_id or 0) == main_id:
+                continue
+            out.append(work_type.name)
+        return out
+
+    @property
+    def all_work_type_names(self) -> list[str]:
+        names: list[str] = []
+        primary = self.primary_work_type_name
+        if primary:
+            names.append(primary)
+        for name in self.secondary_work_type_names:
+            if name not in names:
+                names.append(name)
+        return names
+
+
+class HrEmployeeWorkType(db.Model):
+    __tablename__ = "hr_employee_work_type"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    employee_id = db.Column(db.Integer, nullable=False, index=True)
+    work_type_id = db.Column(db.Integer, nullable=False, index=True)
+    is_primary = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    employee = db.relationship(
+        "HrEmployee",
+        primaryjoin="foreign(HrEmployeeWorkType.employee_id) == HrEmployee.id",
+        back_populates="work_type_links",
+        lazy=True,
+    )
+    work_type = db.relationship(
+        "HrWorkType",
+        primaryjoin="foreign(HrEmployeeWorkType.work_type_id) == HrWorkType.id",
+        back_populates="employee_links",
+        lazy=True,
+    )
 
 
 class HrPayrollLine(db.Model):
     __tablename__ = "hr_payroll_line"
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     company_id = db.Column(db.Integer, nullable=False, index=True)
     employee_id = db.Column(db.Integer, nullable=False, index=True)
     period = db.Column(db.String(7), nullable=False)
     wage_kind = db.Column(db.String(16), nullable=False, default="monthly")
-    # 用于将月薪/时薪统一到“小时工资”，从而参与人员能力表的单件成本计算
-    work_hours = db.Column(db.Numeric(12, 2), nullable=True, default=None)
-    hourly_rate = db.Column(db.Numeric(14, 2), nullable=False, default=0)
-    base_salary = db.Column(db.Numeric(14, 2), nullable=False, default=0)
-    allowance = db.Column(db.Numeric(14, 2), nullable=False, default=0)
-    deduction = db.Column(db.Numeric(14, 2), nullable=False, default=0)
-    net_pay = db.Column(db.Numeric(14, 2), nullable=False, default=0)
+    work_hours = db.Column(db.Numeric(26, 8), nullable=True, default=None)
+    hourly_rate = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    base_salary = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    allowance = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    deduction = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    net_pay = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     remark = db.Column(db.String(500), nullable=True)
     created_by = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
@@ -94,11 +236,12 @@ class HrPayrollLine(db.Model):
 
 class HrPerformanceReview(db.Model):
     __tablename__ = "hr_performance_review"
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     company_id = db.Column(db.Integer, nullable=False, index=True)
     employee_id = db.Column(db.Integer, nullable=False, index=True)
     cycle = db.Column(db.String(32), nullable=False)
-    score = db.Column(db.Numeric(6, 2), nullable=True)
+    score = db.Column(db.Numeric(26, 8), nullable=True)
     comment = db.Column(db.Text, nullable=True)
     reviewer_user_id = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(16), nullable=False, default="draft")
@@ -118,25 +261,20 @@ class HrPerformanceReview(db.Model):
 
 
 class HrEmployeeCapability(db.Model):
-    """
-    人员能力表（按员工 + 工位/工种维度累计统计）。
-
-    注意：无 DB 外键约束；引用由应用层保证一致性。
-    """
-
     __tablename__ = "hr_employee_capability"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     company_id = db.Column(db.Integer, nullable=False, index=True)
     employee_id = db.Column(db.Integer, nullable=False, index=True)
     hr_department_id = db.Column(db.Integer, nullable=False, index=True)
+    work_type_id = db.Column(db.Integer, nullable=True, index=True)
 
-    good_qty_total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    bad_qty_total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    produced_qty_total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    good_qty_total = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    bad_qty_total = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    produced_qty_total = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     work_order_cnt_total = db.Column(db.Integer, nullable=False, default=0)
-    worked_minutes_total = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    labor_cost_total = db.Column(db.Numeric(18, 2), nullable=False, default=0)
+    worked_minutes_total = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    labor_cost_total = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     processed_to = db.Column(db.DateTime, nullable=True, index=True)
 
@@ -155,6 +293,15 @@ class HrEmployeeCapability(db.Model):
         primaryjoin="foreign(HrEmployeeCapability.hr_department_id) == HrDepartment.id",
         lazy=True,
     )
+    work_type = db.relationship(
+        "HrWorkType",
+        primaryjoin="foreign(HrEmployeeCapability.work_type_id) == HrWorkType.id",
+        lazy=True,
+    )
+
+    @property
+    def effective_work_type_id(self) -> int:
+        return int(self.work_type_id or self.hr_department_id or 0)
 
 
 class HrEmployeeScheduleTemplate(db.Model):
@@ -216,14 +363,14 @@ class HrEmployeeScheduleBooking(db.Model):
         db.DateTime, server_default=db.func.now(), onupdate=db.func.now()
     )
 
-    # 工作log（手工维护；应用层保证一致性）
     hr_department_id = db.Column(db.Integer, nullable=True, index=True)
+    work_type_id = db.Column(db.Integer, nullable=True, index=True)
     work_order_id = db.Column(db.Integer, nullable=True, index=True)
     product_id = db.Column(db.Integer, nullable=True, index=True)
     unit = db.Column(db.String(16), nullable=True)
-    good_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    bad_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    produced_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    good_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    bad_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    produced_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     employee = db.relationship(
         "HrEmployee",
@@ -241,10 +388,14 @@ class HrEmployeeScheduleBooking(db.Model):
         primaryjoin="foreign(HrEmployeeScheduleBooking.created_by) == User.id",
         lazy=True,
     )
-
     department = db.relationship(
         "HrDepartment",
         primaryjoin="foreign(HrEmployeeScheduleBooking.hr_department_id) == HrDepartment.id",
+        lazy=True,
+    )
+    work_type = db.relationship(
+        "HrWorkType",
+        primaryjoin="foreign(HrEmployeeScheduleBooking.work_type_id) == HrWorkType.id",
         lazy=True,
     )
     work_order = db.relationship(
@@ -258,4 +409,72 @@ class HrEmployeeScheduleBooking(db.Model):
         primaryjoin="foreign(HrEmployeeScheduleBooking.product_id) == Product.id",
         lazy=True,
         viewonly=True,
+    )
+
+    @property
+    def effective_work_type_id(self) -> int:
+        return int(self.work_type_id or self.hr_department_id or 0)
+
+
+class HrDepartmentPieceRate(db.Model):
+    __tablename__ = "hr_department_piece_rate"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    company_id = db.Column(db.Integer, nullable=False, index=True)
+    hr_department_id = db.Column(db.Integer, nullable=False, index=True)
+    period = db.Column(db.String(7), nullable=False)
+    rate_per_unit = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    remark = db.Column(db.String(500), nullable=True)
+    created_by = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(
+        db.DateTime, server_default=db.func.now(), onupdate=db.func.now()
+    )
+
+    company = db.relationship(
+        "Company",
+        primaryjoin="foreign(HrDepartmentPieceRate.company_id) == Company.id",
+        lazy=True,
+    )
+    department = db.relationship(
+        "HrDepartment",
+        primaryjoin="foreign(HrDepartmentPieceRate.hr_department_id) == HrDepartment.id",
+        lazy=True,
+    )
+    creator = db.relationship(
+        "User",
+        primaryjoin="foreign(HrDepartmentPieceRate.created_by) == User.id",
+        lazy=True,
+    )
+
+
+class HrWorkTypePieceRate(db.Model):
+    __tablename__ = "hr_work_type_piece_rate"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    company_id = db.Column(db.Integer, nullable=False, index=True)
+    work_type_id = db.Column(db.Integer, nullable=False, index=True)
+    period = db.Column(db.String(7), nullable=False)
+    rate_per_unit = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    remark = db.Column(db.String(500), nullable=True)
+    created_by = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(
+        db.DateTime, server_default=db.func.now(), onupdate=db.func.now()
+    )
+
+    company = db.relationship(
+        "Company",
+        primaryjoin="foreign(HrWorkTypePieceRate.company_id) == Company.id",
+        lazy=True,
+    )
+    work_type = db.relationship(
+        "HrWorkType",
+        primaryjoin="foreign(HrWorkTypePieceRate.work_type_id) == HrWorkType.id",
+        lazy=True,
+    )
+    creator = db.relationship(
+        "User",
+        primaryjoin="foreign(HrWorkTypePieceRate.created_by) == User.id",
+        lazy=True,
     )

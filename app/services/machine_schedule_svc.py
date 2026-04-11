@@ -4,9 +4,10 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import List, Set, Tuple
 
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 
 from app import db
+from app.utils.decimal_scale import quantize_decimal
 from app.models import (
     Machine,
     MachineRuntimeLog,
@@ -150,8 +151,8 @@ def generate_bookings_for_range(
                             ).first()
                             if not existing_dispatch:
                                 duration_seconds = int((end_at - start_at).total_seconds())
-                                duration_hours = (Decimal(duration_seconds) / Decimal(3600)).quantize(
-                                    Decimal("0.0001")
+                                duration_hours = quantize_decimal(
+                                    Decimal(duration_seconds) / Decimal(3600)
                                 )
                                 db.session.add(
                                     MachineScheduleDispatchLog(
@@ -190,9 +191,7 @@ def generate_bookings_for_range(
                 existing_dispatch = MachineScheduleDispatchLog.query.filter_by(booking_id=row.id).first()
                 if not existing_dispatch:
                     duration_seconds = int((end_at - start_at).total_seconds())
-                    duration_hours = (Decimal(duration_seconds) / Decimal(3600)).quantize(
-                        Decimal("0.0001")
-                    )
+                    duration_hours = quantize_decimal(Decimal(duration_seconds) / Decimal(3600))
                     db.session.add(
                         MachineScheduleDispatchLog(
                             machine_id=machine_id,

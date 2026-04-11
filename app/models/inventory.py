@@ -38,7 +38,7 @@ class InventoryDailyLine(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     header_id = db.Column(db.Integer, nullable=False)
     product_id = db.Column(db.Integer, nullable=False)
-    quantity = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    quantity = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     unit = db.Column(db.String(16))
     note = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, server_default=db.func.now())

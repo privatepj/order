@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app
-from sqlalchemy import func, text
+from sqlalchemy import case, func, text
 
 from app import db
 from app.models import (
@@ -17,6 +18,7 @@ from app.models import (
     InventoryMovement,
     InventoryMovementBatch,
     InventoryOpeningBalance,
+    InventoryReservation,
     OrderItem,
     Product,
     SemiMaterial,
@@ -28,7 +30,14 @@ INV_FINISHED = "finished"
 INV_SEMI = "semi"
 INV_MATERIAL = "material"
 SOURCE_MANUAL = "manual"
+
+# 库存预留（计划占用，非出库流水）
+RES_REF_PREPLAN = "preplan"
+RES_STATUS_ACTIVE = "active"
+RES_STATUS_RELEASED = "released"
+RES_STATUS_CONSUMED = "consumed"
 SOURCE_DELIVERY = "delivery"
+SOURCE_PROCUREMENT = "procurement"
 
 BATCH_SOURCE_FORM = "form"
 BATCH_SOURCE_EXCEL = "excel"
@@ -45,7 +54,9 @@ class DeliveryLineProduct:
     product_id: int
 
 
-def delivery_lines_with_products(delivery_id: int) -> Tuple[List[DeliveryLineProduct], Optional[str]]:
+def delivery_lines_with_products(
+    delivery_id: int,
+) -> Tuple[List[DeliveryLineProduct], Optional[str]]:
     """解析送货单行对应系统产品。任一行无法解析则返回 (partial, error_msg)。"""
     items: List[DeliveryItem] = (
         DeliveryItem.query.filter_by(delivery_id=delivery_id)
@@ -56,7 +67,10 @@ def delivery_lines_with_products(delivery_id: int) -> Tuple[List[DeliveryLinePro
     for di in items:
         oi = OrderItem.query.get(di.order_item_id)
         if not oi or not oi.customer_product_id:
-            return [], "存在无法关联到客户产品的订单行，无法标记已发（请先维护订单明细的客户产品）。"
+            return (
+                [],
+                "存在无法关联到客户产品的订单行，无法标记已发（请先维护订单明细的客户产品）。",
+            )
         cp = CustomerProduct.query.get(oi.customer_product_id)
         if not cp or not cp.product_id:
             return [], "存在无法关联到系统产品的订单行，无法标记已发。"
@@ -134,7 +148,13 @@ def create_delivery_outbound_movements(
             movement_batch_id=batch.id,
         )
         db.session.add(m)
-    related_order_ids = sorted({int(lp.delivery_item.order_id) for lp in lines if getattr(lp.delivery_item, "order_id", None)})
+    related_order_ids = sorted(
+        {
+            int(lp.delivery_item.order_id)
+            for lp in lines
+            if getattr(lp.delivery_item, "order_id", None)
+        }
+    )
     for oid in related_order_ids:
         orchestrator_engine.emit_event(
             event_type=EVENT_INVENTORY_CHANGED,
@@ -142,7 +162,9 @@ def create_delivery_outbound_movements(
             payload={
                 "order_id": oid,
                 "source_id": int(delivery.id),
-                "version": int(delivery.updated_at.timestamp()) if getattr(delivery, "updated_at", None) else int(delivery.id),
+                "version": int(delivery.updated_at.timestamp())
+                if getattr(delivery, "updated_at", None)
+                else int(delivery.id),
                 "source": "inventory_svc.create_delivery_outbound_movements",
             },
         )
@@ -168,7 +190,9 @@ def void_movement_batch(batch_id: int) -> None:
         raise ValueError("批次不存在。")
     if batch.source == BATCH_SOURCE_DELIVERY:
         raise ValueError("送货出库批次请在送货单中回退待发或标记失效，勿在库存页撤销。")
-    InventoryMovement.query.filter_by(movement_batch_id=batch_id).delete(synchronize_session=False)
+    InventoryMovement.query.filter_by(movement_batch_id=batch_id).delete(
+        synchronize_session=False
+    )
     db.session.delete(batch)
 
 
@@ -208,7 +232,9 @@ def movement_import_failed_row(
     }
 
 
-def find_product_id_by_name_spec(name: str, spec: str) -> Tuple[Optional[int], Optional[str]]:
+def find_product_id_by_name_spec(
+    name: str, spec: str
+) -> Tuple[Optional[int], Optional[str]]:
     """
     按品名 + 规格精确匹配产品。
     返回 (product_id, None) 或 (None, 简短错误说明)。
@@ -324,9 +350,7 @@ def import_semi_material_movements_from_parsed_lines(
                 if isinstance(r_raw, str)
                 else (str(r_raw).strip() if r_raw is not None else "")
             )
-            errors.append(
-                f"{movement_import_label(name_st, spec_raw)}：{reason}"
-            )
+            errors.append(f"{movement_import_label(name_st, spec_raw)}：{reason}")
             failed_rows.append(
                 movement_import_failed_row(
                     name=name_st,
@@ -499,7 +523,11 @@ def import_finished_movements_from_parsed_lines(
         return s if s else "0"
 
     for _excel_row, name, spec_raw, storage_area, qty, unit, remark in parsed_lines:
-        spec_cell = (spec_raw or "").strip() if isinstance(spec_raw, str) else str(spec_raw or "").strip()
+        spec_cell = (
+            (spec_raw or "").strip()
+            if isinstance(spec_raw, str)
+            else str(spec_raw or "").strip()
+        )
         name_st = (name or "").strip()
         area = (storage_area or "").strip()
         u_raw = unit
@@ -560,7 +588,11 @@ def import_finished_movements_from_parsed_lines(
             u = u or None
         rmk = None
         if remark is not None:
-            rmk = remark.strip()[:255] if isinstance(remark, str) else str(remark).strip()[:255]
+            rmk = (
+                remark.strip()[:255]
+                if isinstance(remark, str)
+                else str(remark).strip()[:255]
+            )
             rmk = rmk or None
 
         to_write.append((pid, area, qty, u, rmk, name_st, spec_cell))
@@ -631,7 +663,14 @@ def create_manual_movement(
     remark: Optional[str],
     created_by: int,
     movement_batch_id: Optional[int] = None,
+    source_purchase_order_id: Optional[int] = None,
+    source_purchase_receipt_id: Optional[int] = None,
 ) -> InventoryMovement:
+    source_type = (
+        SOURCE_PROCUREMENT
+        if source_purchase_order_id or source_purchase_receipt_id
+        else SOURCE_MANUAL
+    )
     m = InventoryMovement(
         category=category,
         direction=direction,
@@ -641,9 +680,11 @@ def create_manual_movement(
         quantity=quantity,
         unit=(unit.strip()[:16] if unit else None),
         biz_date=biz_date,
-        source_type=SOURCE_MANUAL,
+        source_type=source_type,
         source_delivery_id=None,
         source_delivery_item_id=None,
+        source_purchase_order_id=source_purchase_order_id,
+        source_purchase_receipt_id=source_purchase_receipt_id,
         remark=(remark.strip()[:255] if remark else None),
         created_by=created_by,
         movement_batch_id=movement_batch_id,
@@ -674,9 +715,15 @@ def suggest_storage_area_for_category_item(category: str, item_id: int) -> str:
     # 历史流水优先
     q = InventoryMovement.query.filter(InventoryMovement.storage_area != "")
     if category == INV_FINISHED:
-        q = q.filter(InventoryMovement.category == INV_FINISHED, InventoryMovement.product_id == item_id)
+        q = q.filter(
+            InventoryMovement.category == INV_FINISHED,
+            InventoryMovement.product_id == item_id,
+        )
     elif category in (INV_SEMI, INV_MATERIAL):
-        q = q.filter(InventoryMovement.category == category, InventoryMovement.material_id == item_id)
+        q = q.filter(
+            InventoryMovement.category == category,
+            InventoryMovement.material_id == item_id,
+        )
     else:
         return ""
     m = q.order_by(InventoryMovement.id.desc()).first()
@@ -824,3 +871,176 @@ LIMIT :limit OFFSET :offset
             }
         )
     return out, int(total)
+
+
+def _d_inv(val: Any) -> Decimal:
+    if val is None:
+        return Decimal(0)
+    if isinstance(val, Decimal):
+        return val
+    return Decimal(str(val))
+
+
+def _pid_mid_for_aggregate_item(category: str, item_id: int) -> Tuple[int, int]:
+    """与生产测算一致：finished 用 product_id；semi/material 用 material_id。"""
+    iid = int(item_id)
+    if category == INV_FINISHED:
+        return iid, 0
+    return 0, iid
+
+
+def ledger_qty_aggregate(category: str, item_id: int) -> Decimal:
+    """
+    台账结存（忽略仓储区）：期初 + 入 − 出，按 category + 成品/物料 id 汇总。
+    """
+    pid, mid = _pid_mid_for_aggregate_item(category, item_id)
+    opening_qty = (
+        db.session.query(
+            func.coalesce(func.sum(InventoryOpeningBalance.opening_qty), 0)
+        )
+        .filter(
+            InventoryOpeningBalance.category == category,
+            InventoryOpeningBalance.product_id == pid,
+            InventoryOpeningBalance.material_id == mid,
+        )
+        .scalar()
+    )
+    qty_in_out = (
+        db.session.query(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            InventoryMovement.direction == "in",
+                            InventoryMovement.quantity,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("qty_in"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            InventoryMovement.direction == "out",
+                            InventoryMovement.quantity,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("qty_out"),
+        )
+        .filter(
+            InventoryMovement.category == category,
+            InventoryMovement.product_id == pid,
+            InventoryMovement.material_id == mid,
+        )
+        .one()
+    )
+    return _d_inv(opening_qty) + _d_inv(qty_in_out.qty_in) - _d_inv(qty_in_out.qty_out)
+
+
+def reserved_active_qty_aggregate(category: str, item_id: int) -> Decimal:
+    """全仓汇总：status=active 的预留数量合计。"""
+    pid, mid = _pid_mid_for_aggregate_item(category, item_id)
+    total = (
+        db.session.query(func.coalesce(func.sum(InventoryReservation.reserved_qty), 0))
+        .filter(
+            InventoryReservation.status == RES_STATUS_ACTIVE,
+            InventoryReservation.category == category,
+            InventoryReservation.product_id == pid,
+            InventoryReservation.material_id == mid,
+        )
+        .scalar()
+    )
+    return _d_inv(total)
+
+
+def atp_for_item_aggregate(category: str, item_id: int) -> Decimal:
+    """可用量 ATP = max(0, 台账结存 − 有效预留)。"""
+    on_hand = ledger_qty_aggregate(category, item_id)
+    reserved = reserved_active_qty_aggregate(category, item_id)
+    atp = on_hand - reserved
+    if atp < 0:
+        return Decimal(0)
+    return atp
+
+
+def delete_reservations_for_preplan(*, preplan_id: int) -> int:
+    """删除某预计划下全部预留（重算/改草稿/删除预计划前调用）。"""
+    return int(
+        db.session.query(InventoryReservation)
+        .filter(
+            InventoryReservation.ref_type == RES_REF_PREPLAN,
+            InventoryReservation.ref_id == int(preplan_id),
+        )
+        .delete(synchronize_session=False)
+    )
+
+
+def rebuild_preplan_reservations_from_measure(
+    *, preplan_id: int, created_by: int
+) -> None:
+    """
+    按测算结果写入预留：工单父项 stock_covered + 子项 component_need.stock_covered，
+    按 (category, product_id, material_id) 合并为若干行。
+    调用前须已 delete_reservations_for_preplan（测算开头已删）。
+    """
+    from app.models import ProductionComponentNeed, ProductionWorkOrder
+
+    totals: Dict[Tuple[str, int, int], Decimal] = defaultdict(lambda: Decimal(0))
+
+    def _add(cat: str, pid: int, mid: int, qty: Any) -> None:
+        q = _d_inv(qty)
+        if q <= 0:
+            return
+        key = (cat, int(pid or 0), int(mid or 0))
+        totals[key] += q
+
+    for wo in (
+        db.session.query(ProductionWorkOrder)
+        .filter(ProductionWorkOrder.preplan_id == int(preplan_id))
+        .all()
+    ):
+        sc = wo.stock_covered_qty
+        pk = (wo.parent_kind or "").strip()
+        if pk == INV_FINISHED:
+            _add(INV_FINISHED, wo.parent_product_id, 0, sc)
+        elif pk == INV_SEMI:
+            _add(INV_SEMI, 0, wo.parent_material_id, sc)
+        elif pk == INV_MATERIAL:
+            _add(INV_MATERIAL, 0, wo.parent_material_id, sc)
+
+    for n in (
+        db.session.query(ProductionComponentNeed)
+        .filter(ProductionComponentNeed.preplan_id == int(preplan_id))
+        .all()
+    ):
+        sc = n.stock_covered_qty
+        ck = (n.child_kind or "").strip()
+        if ck == INV_FINISHED:
+            _add(INV_FINISHED, n.child_material_id, 0, sc)
+        elif ck == INV_SEMI:
+            _add(INV_SEMI, 0, n.child_material_id, sc)
+        else:
+            _add(INV_MATERIAL, 0, n.child_material_id, sc)
+
+    for (cat, pid, mid), qty in totals.items():
+        if qty <= 0:
+            continue
+        db.session.add(
+            InventoryReservation(
+                category=cat,
+                product_id=pid,
+                material_id=mid,
+                storage_area="",
+                ref_type=RES_REF_PREPLAN,
+                ref_id=int(preplan_id),
+                reserved_qty=qty,
+                status=RES_STATUS_ACTIVE,
+                remark=None,
+                created_by=int(created_by),
+            )
+        )

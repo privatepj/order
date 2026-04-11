@@ -14,7 +14,7 @@ class Customer(db.Model):
     payment_terms = db.Column(db.String(64))
     remark = db.Column(db.String(255))
     company_id = db.Column(db.Integer, nullable=False)  # 关联 company.id，不在库建外键
-    tax_point = db.Column(db.Numeric(6, 4))
+    tax_point = db.Column(db.Numeric(26, 8))
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 

@@ -19,15 +19,16 @@ class ProductionWorkOrderOperation(db.Model):
     resource_kind = db.Column(db.String(16))
     machine_type_id = db.Column(db.Integer, nullable=False, default=0)
     hr_department_id = db.Column(db.Integer, nullable=False, default=0)
+    hr_work_type_id = db.Column(db.Integer, nullable=False, default=0)
 
-    plan_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    plan_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
-    setup_minutes = db.Column(db.Numeric(12, 2), nullable=False, default=0)
-    run_minutes_per_unit = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    setup_minutes = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    run_minutes_per_unit = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
-    estimated_setup_minutes = db.Column(db.Numeric(12, 2), nullable=False, default=0)
-    estimated_run_minutes = db.Column(db.Numeric(12, 2), nullable=False, default=0)
-    estimated_total_minutes = db.Column(db.Numeric(14, 2), nullable=False, default=0)
+    estimated_setup_minutes = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    estimated_run_minutes = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    estimated_total_minutes = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     budget_machine_id = db.Column(db.Integer, nullable=False, default=0)
     budget_operator_employee_id = db.Column(db.Integer, nullable=False, default=0)
@@ -45,4 +46,8 @@ class ProductionWorkOrderOperation(db.Model):
         lazy=True,
         viewonly=True,
     )
+
+    @property
+    def effective_work_type_id(self) -> int:
+        return int(self.hr_work_type_id or self.hr_department_id or 0)
 

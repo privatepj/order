@@ -1,45 +1,43 @@
 {% extends "base.html" %}
-{% block title %}{{ '新增收货' if not row else '编辑收货' }} - 工厂订单系统{% endblock %}
+{% block title %}{{ '新增收货' if not row else '编辑收货' }}{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '新增收货' if not row else '编辑收货' }}</h2>
+<h2 class="mb-3">{{ '新增收货' if not row else '编辑收货' }}</h2>
+
 <form method="post" class="row g-3">
-    <input type="hidden" name="company_id" value="{{ company_id }}">
     <div class="col-md-8">
         <label class="form-label">采购单</label>
         <select name="purchase_order_id" class="form-select" required>
             <option value="">请选择</option>
             {% for po in orders %}
-            <option value="{{ po.id }}" {% if row and row.purchase_order_id == po.id %}selected{% endif %}>{{ po.po_no }} / {{ po.supplier_name }} / {{ po.item_name }}</option>
+            <option value="{{ po.id }}" {% if row and row.purchase_order_id == po.id %}selected{% endif %}>
+                {{ po.po_no }} / {{ po.supplier_name }} / {{ po.item_name }} / {{ po.qty }}
+            </option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <label class="form-label">收货数量</label>
-        <input type="number" step="0.01" min="0" class="form-control" name="received_qty" value="{{ row.received_qty if row else '' }}" required>
+        <input type="text" class="form-control" name="received_qty" value="{{ row.received_qty if row else '' }}">
     </div>
     <div class="col-md-4">
         <label class="form-label">收货时间</label>
-        <input type="datetime-local" class="form-control" name="received_at" value="{{ row.received_at.strftime('%Y-%m-%dT%H:%M') if row and row.received_at else '' }}" required>
+        <input type="datetime-local" class="form-control" name="received_at" value="{{ row.received_at.strftime('%Y-%m-%dT%H:%M') if row and row.received_at else '' }}">
     </div>
     <div class="col-md-3">
         <label class="form-label">状态</label>
         <select name="status" class="form-select">
-            {% for s in receipt_statuses %}
-            <option value="{{ s }}" {% if (row and row.status == s) or (not row and s == 'draft') %}selected{% endif %}>{{ s|status_zh('procurement_receipt_status') }}</option>
+            {% for status in receipt_statuses %}
+            <option value="{{ status }}" {% if (row and row.status == status) or (not row and status == 'draft') %}selected{% endif %}>{{ status|status_zh('procurement_receipt_status') }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="col-md-2">
-        <label class="form-label">入库库区</label>
-        <input type="text" class="form-control" name="storage_area" maxlength="64" placeholder="仅过账时生效">
-    </div>
     <div class="col-12">
         <label class="form-label">备注</label>
-        <textarea name="remark" rows="3" class="form-control" maxlength="500">{{ row.remark if row else '' }}</textarea>
+        <textarea class="form-control" name="remark" rows="3" maxlength="500">{{ row.remark if row else '' }}</textarea>
     </div>
     <div class="col-12">
         <button type="submit" class="btn btn-primary">保存</button>
-        <a href="{{ url_for('main.procurement_receipt_list') }}" class="btn btn-secondary">返回</a>
+        <a href="{{ url_for('main.procurement_receipt_list') }}" class="btn btn-outline-secondary">返回</a>
     </div>
 </form>
 {% endblock %}

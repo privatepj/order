@@ -4,23 +4,20 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app import db
-from app.models import HrEmployee, HrEmployeeCapability, HrEmployeeScheduleBooking, HrPayrollLine
+from app.models import (
+    HrEmployee,
+    HrEmployeeCapability,
+    HrEmployeeScheduleBooking,
+    HrPayrollLine,
+    HrWorkTypePieceRate,
+)
 
 
 def _floor_to_minute(dt: datetime) -> datetime:
     return dt.replace(second=0, microsecond=0)
-
-
-def _overlap_seconds(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> int:
-    # [a_start, a_end) 与 [b_start, b_end) 的重叠秒数（向下取整到秒；入参均为分钟粒度）
-    s = max(a_start, b_start)
-    e = min(a_end, b_end)
-    if e <= s:
-        return 0
-    return int((e - s).total_seconds())
 
 
 def _parse_period(dt: datetime) -> str:
@@ -30,116 +27,113 @@ def _parse_period(dt: datetime) -> str:
 def _hourly_wage_for_employee_month(*, payroll: HrPayrollLine) -> Decimal:
     if payroll.wage_kind == "hourly":
         return Decimal(payroll.hourly_rate or 0)
-    # monthly：按 net_pay / work_hours 换算成时薪
-    wh = payroll.work_hours or Decimal(0)
-    if wh <= 0:
+    work_hours = payroll.work_hours or Decimal(0)
+    if work_hours <= 0:
         return Decimal(0)
-    return Decimal(payroll.net_pay) / Decimal(wh)
+    return Decimal(payroll.net_pay) / Decimal(work_hours)
 
 
 def hourly_wage_for_employee_period(*, company_id: int, employee_id: int, period: str) -> Decimal:
-    """指定账期工资行换算时薪（无记录则 0）。"""
     payroll = HrPayrollLine.query.filter_by(
-        company_id=company_id, employee_id=employee_id, period=period
+        company_id=company_id,
+        employee_id=employee_id,
+        period=period,
     ).first()
     if not payroll:
         return Decimal(0)
     return _hourly_wage_for_employee_month(payroll=payroll)
 
 
-def _update_employee_capability_one_minute(*, window_end: datetime) -> Dict[str, int]:
-    """
-    处理单个分钟窗口 [window_end-1min, window_end)。
-    以 hr_employee_capability.processed_to 做增量边界，避免重复统计历史 log。
-    """
+def _resolved_work_type_id(booking: HrEmployeeScheduleBooking) -> int:
+    return int(booking.work_type_id or booking.hr_department_id or 0)
 
+
+def _booking_dimension_filter(employee_id: int, work_type_id: int):
+    return (
+        HrEmployeeScheduleBooking.employee_id == employee_id,
+        HrEmployeeScheduleBooking.state == "available",
+        HrEmployeeScheduleBooking.work_order_id.isnot(None),
+        or_(
+            HrEmployeeScheduleBooking.work_type_id == work_type_id,
+            (HrEmployeeScheduleBooking.work_type_id.is_(None) & (HrEmployeeScheduleBooking.hr_department_id == work_type_id)),
+        ),
+    )
+
+
+def _update_employee_capability_one_minute(*, window_end: datetime) -> Dict[str, int]:
     window_start = window_end - timedelta(minutes=1)
     if window_end <= window_start:
         return {"groups_updated": 0, "cap_rows_created": 0}
 
-    # 找出本分钟窗口内参与统计的 (employee_id, hr_department_id)
-    pairs = (
-        HrEmployeeScheduleBooking.query.with_entities(
-            HrEmployeeScheduleBooking.employee_id, HrEmployeeScheduleBooking.hr_department_id
-        )
-        .filter(
+    booking_rows = (
+        HrEmployeeScheduleBooking.query.filter(
             HrEmployeeScheduleBooking.state == "available",
             HrEmployeeScheduleBooking.work_order_id.isnot(None),
-            HrEmployeeScheduleBooking.hr_department_id.isnot(None),
+            or_(
+                HrEmployeeScheduleBooking.work_type_id.isnot(None),
+                HrEmployeeScheduleBooking.hr_department_id.isnot(None),
+            ),
             HrEmployeeScheduleBooking.start_at < window_end,
             HrEmployeeScheduleBooking.end_at > window_start,
         )
-        .distinct()
+        .order_by(HrEmployeeScheduleBooking.start_at.asc(), HrEmployeeScheduleBooking.id.asc())
         .all()
     )
-
-    if not pairs:
+    if not booking_rows:
         return {"groups_updated": 0, "cap_rows_created": 0}
 
-    employee_ids = {int(emp_id) for emp_id, _ in pairs if emp_id is not None}
+    pair_keys = {
+        (int(row.employee_id), _resolved_work_type_id(row))
+        for row in booking_rows
+        if int(row.employee_id or 0) > 0 and _resolved_work_type_id(row) > 0
+    }
+    if not pair_keys:
+        return {"groups_updated": 0, "cap_rows_created": 0}
+
+    employee_ids = {employee_id for employee_id, _ in pair_keys}
     employees: list[HrEmployee] = HrEmployee.query.filter(HrEmployee.id.in_(employee_ids)).all()
-    company_by_employee = {int(e.id): int(e.company_id) for e in employees}
+    company_by_employee = {int(row.id): int(row.company_id) for row in employees}
 
     groups_updated = 0
     cap_rows_created = 0
 
-    for employee_id, hr_department_id in pairs:
-        if employee_id is None or hr_department_id is None:
-            continue
-        employee_id = int(employee_id)
-        hr_department_id = int(hr_department_id)
-
+    for employee_id, work_type_id in pair_keys:
         company_id = company_by_employee.get(employee_id)
         if not company_id:
-            # 不完整数据兜底：无法确定主体则跳过
             continue
 
-        cap: Optional[HrEmployeeCapability] = (
-            HrEmployeeCapability.query.filter_by(
-                company_id=company_id, employee_id=employee_id, hr_department_id=hr_department_id
-            ).first()
-        )
-
+        cap = HrEmployeeCapability.query.filter_by(
+            company_id=company_id,
+            employee_id=employee_id,
+            work_type_id=work_type_id,
+        ).first()
         if cap:
-            # 增量边界：cap.processed_to 之前已覆盖，无需重复统计
             from_ts = cap.processed_to or window_start
             if cap.processed_to and cap.processed_to >= window_end:
                 continue
         else:
-            # 首次出现：回填该 employee+工位 的历史（直到当前 window_end）
             earliest_start = (
                 HrEmployeeScheduleBooking.query.filter(
-                    HrEmployeeScheduleBooking.employee_id == employee_id,
-                    HrEmployeeScheduleBooking.hr_department_id == hr_department_id,
-                    HrEmployeeScheduleBooking.state == "available",
-                    HrEmployeeScheduleBooking.work_order_id.isnot(None),
+                    *_booking_dimension_filter(employee_id, work_type_id),
                 )
                 .order_by(HrEmployeeScheduleBooking.start_at.asc())
                 .with_entities(HrEmployeeScheduleBooking.start_at)
                 .first()
             )
-            # .first() 在 SQLAlchemy 2 为 Row，不是 tuple；须取 [0] 得到 datetime
-            from_ts = earliest_start[0] if earliest_start is not None else None
-            if not from_ts:
-                from_ts = window_start
-
+            from_ts = earliest_start[0] if earliest_start is not None else window_start
             cap = HrEmployeeCapability(
                 company_id=company_id,
                 employee_id=employee_id,
-                hr_department_id=hr_department_id,
+                hr_department_id=work_type_id,
+                work_type_id=work_type_id,
                 processed_to=from_ts,
             )
             db.session.add(cap)
             cap_rows_created += 1
 
-        # 读取未覆盖区间上的排产工作log
-        # 条件：booking 与 [from_ts, window_end) 有重叠
-        booking_rows: list[HrEmployeeScheduleBooking] = (
+        scoped_rows = (
             HrEmployeeScheduleBooking.query.filter(
-                HrEmployeeScheduleBooking.employee_id == employee_id,
-                HrEmployeeScheduleBooking.hr_department_id == hr_department_id,
-                HrEmployeeScheduleBooking.state == "available",
-                HrEmployeeScheduleBooking.work_order_id.isnot(None),
+                *_booking_dimension_filter(employee_id, work_type_id),
                 HrEmployeeScheduleBooking.start_at < window_end,
                 HrEmployeeScheduleBooking.end_at > from_ts,
             )
@@ -151,64 +145,66 @@ def _update_employee_capability_one_minute(*, window_end: datetime) -> Dict[str,
         produced_delta = Decimal("0")
         good_delta_total = Decimal("0")
         bad_delta_total = Decimal("0")
-
-        # 工单数：仅在 booking.start_at 落入“本次增量区间”时计入，避免同一工单跨多个统计窗口重复计数
         work_order_ids_to_add = set()
 
-        for b in booking_rows:
-            booking_start = b.start_at
-            booking_end = b.end_at
+        for booking in scoped_rows:
+            booking_start = booking.start_at
+            booking_end = booking.end_at
             if booking_end <= booking_start:
                 continue
-            overlap_s = max(booking_start, from_ts)
-            overlap_e = min(booking_end, window_end)
-            if overlap_e <= overlap_s:
+            overlap_start = max(booking_start, from_ts)
+            overlap_end = min(booking_end, window_end)
+            if overlap_end <= overlap_start:
                 continue
 
-            overlap_seconds = int((overlap_e - overlap_s).total_seconds())
-            if overlap_seconds <= 0:
-                continue
+            overlap_seconds = int((overlap_end - overlap_start).total_seconds())
             booking_seconds = int((booking_end - booking_start).total_seconds())
-            if booking_seconds <= 0:
+            if overlap_seconds <= 0 or booking_seconds <= 0:
                 continue
 
             factor = Decimal(overlap_seconds) / Decimal(booking_seconds)
-            gd = Decimal(b.good_qty) * factor
-            bd = Decimal(b.bad_qty) * factor
-            pd = gd + bd
+            good_delta = Decimal(booking.good_qty or 0) * factor
+            bad_delta = Decimal(booking.bad_qty or 0) * factor
+            produced = good_delta + bad_delta
 
-            good_delta_total += gd
-            bad_delta_total += bd
-            produced_delta += pd
+            good_delta_total += good_delta
+            bad_delta_total += bad_delta
+            produced_delta += produced
             worked_seconds_delta += overlap_seconds
 
             if (
-                b.work_order_id is not None
-                and overlap_seconds > 0
-                and b.start_at >= from_ts
-                and b.start_at < window_end
+                booking.work_order_id is not None
+                and booking.start_at >= from_ts
+                and booking.start_at < window_end
             ):
-                work_order_ids_to_add.add(int(b.work_order_id))
+                work_order_ids_to_add.add(int(booking.work_order_id))
 
-        # 工时/产能为增量；若本分钟无重叠，则仅推进 processed_to
         if worked_seconds_delta > 0:
             worked_minutes_delta = Decimal(worked_seconds_delta) / Decimal(60)
-            cap.good_qty_total = Decimal(cap.good_qty_total) + good_delta_total
-            cap.bad_qty_total = Decimal(cap.bad_qty_total) + bad_delta_total
-            cap.produced_qty_total = Decimal(cap.produced_qty_total) + produced_delta
-            cap.worked_minutes_total = Decimal(cap.worked_minutes_total) + worked_minutes_delta
-
+            cap.good_qty_total = Decimal(cap.good_qty_total or 0) + good_delta_total
+            cap.bad_qty_total = Decimal(cap.bad_qty_total or 0) + bad_delta_total
+            cap.produced_qty_total = Decimal(cap.produced_qty_total or 0) + produced_delta
+            cap.worked_minutes_total = Decimal(cap.worked_minutes_total or 0) + worked_minutes_delta
             cap.work_order_cnt_total = int(cap.work_order_cnt_total or 0) + len(work_order_ids_to_add)
 
-            # 劳动力成本：按本分钟窗口起点的账期换算时薪
             payroll_period = _parse_period(window_start)
-            payroll: Optional[HrPayrollLine] = (
-                HrPayrollLine.query.filter_by(company_id=company_id, employee_id=employee_id, period=payroll_period)
-                .first()
-            )
-            hourly_wage = _hourly_wage_for_employee_month(payroll=payroll) if payroll else Decimal(0)
-            labor_cost_delta = hourly_wage * (worked_minutes_delta / Decimal(60))
-            cap.labor_cost_total = Decimal(cap.labor_cost_total) + labor_cost_delta
+            payroll: Optional[HrPayrollLine] = HrPayrollLine.query.filter_by(
+                company_id=company_id,
+                employee_id=employee_id,
+                period=payroll_period,
+            ).first()
+            if payroll and payroll.wage_kind == "piece_rate":
+                piece_rate_row = HrWorkTypePieceRate.query.filter_by(
+                    company_id=company_id,
+                    work_type_id=work_type_id,
+                    period=payroll_period,
+                ).first()
+                rate = Decimal(piece_rate_row.rate_per_unit) if piece_rate_row else Decimal(0)
+                labor_cost_delta = rate * produced_delta
+            else:
+                hourly_wage = _hourly_wage_for_employee_month(payroll=payroll) if payroll else Decimal(0)
+                labor_cost_delta = hourly_wage * (worked_minutes_delta / Decimal(60))
+            cap.labor_cost_total = Decimal(cap.labor_cost_total or 0) + labor_cost_delta
 
         cap.processed_to = window_end
         groups_updated += 1
@@ -218,18 +214,16 @@ def _update_employee_capability_one_minute(*, window_end: datetime) -> Dict[str,
 
 
 def update_employee_capability(*, to_dt: datetime, max_backfill_minutes: int = 10080) -> Dict[str, int]:
-    """
-    按分钟增量更新人员能力表。
-    单次调用会从「最早一条符合条件的排班」起，顺序处理到 to_dt 对齐的分钟（最多回溯 max_backfill_minutes 个分钟窗口），
-    避免只扫「当前这一分钟」导致手动执行时 groups_updated 恒为 0。
-    """
     last_we = _floor_to_minute(to_dt)
     min_start = (
         db.session.query(func.min(HrEmployeeScheduleBooking.start_at))
         .filter(
             HrEmployeeScheduleBooking.state == "available",
             HrEmployeeScheduleBooking.work_order_id.isnot(None),
-            HrEmployeeScheduleBooking.hr_department_id.isnot(None),
+            or_(
+                HrEmployeeScheduleBooking.work_type_id.isnot(None),
+                HrEmployeeScheduleBooking.hr_department_id.isnot(None),
+            ),
         )
         .scalar()
     )
@@ -252,4 +246,3 @@ def update_employee_capability(*, to_dt: datetime, max_backfill_minutes: int = 1
         we += timedelta(minutes=1)
 
     return {"groups_updated": total_groups, "cap_rows_created": total_created}
-

@@ -16,6 +16,7 @@ from app.services.delivery_svc import (
 )
 
 from app.openclaw import bp
+from app.utils.decimal_scale import json_decimal
 from app.utils.query import is_valid_customer_search_keyword
 
 
@@ -220,15 +221,15 @@ def pending_items():
                 "order_item_id": x["order_item"].id,
                 "order_id": x["order"].id,
                 "order_no": x["order"].order_no,
-                "product_name": x["order_item"].product_name or "",
+                "product_name": x["order_item"].display_product_name or "",
                 "product_spec": (x["order_item"].product_spec or "")[:64],
                 "customer_material_no": effective_customer_material_no(x["order_item"])[
                     :64
                 ],
-                "quantity": float(x["order_item"].quantity),
-                "delivered_qty": x["delivered_qty"],
-                "in_transit_qty": x["in_transit_qty"],
-                "remaining_qty": x["remaining_qty"],
+                "quantity": json_decimal(x["order_item"].quantity),
+                "delivered_qty": json_decimal(x["delivered_qty"]),
+                "in_transit_qty": json_decimal(x["in_transit_qty"]),
+                "remaining_qty": json_decimal(x["remaining_qty"]),
                 "unit": (x["order_item"].unit or "")[:16],
             }
             for x in items
@@ -269,7 +270,7 @@ def create_order():
 @bp.route("/deliveries/preview", methods=["POST"])
 @require_openclaw("openclaw.delivery.preview")
 def preview_delivery():
-    """不写库：校验送货单创建参数并返回摘要，用户确认后再 POST /deliveries。"""
+    """不写库：校验送货单创建参数并返回摘要，支持 delivery_method（express/self_delivery/pickup），用户确认后再 POST /deliveries。"""
     data = request.get_json(force=True, silent=True) or {}
     err, summary = preview_delivery_create(data)
     return jsonify(ok=(err is None), error=err, summary=summary)
@@ -278,7 +279,7 @@ def preview_delivery():
 @bp.route("/deliveries", methods=["POST"])
 @require_openclaw("openclaw.delivery.create")
 def create_delivery():
-    """创建送货单。Body: customer_id, lines: [{ order_item_id, quantity }]；可选 order_id（所有行须属于该订单且订单须属于该客户）；可选 self_delivery、express_company_id、waybill_no、delivery_date 等。送货单号与运单占号由服务端处理，勿自拟。"""
+    """创建送货单。Body: customer_id, lines: [{ order_item_id, quantity }]；可选 order_id（所有行须属于该订单且订单须属于该客户）；可选 delivery_method（express/self_delivery/pickup），兼容旧 self_delivery、express_company_id、waybill_no、delivery_date 等。送货单号与运单占号由服务端处理，勿自拟。"""
     data = request.get_json(force=True, silent=True) or {}
     delivery, err = create_delivery_from_data(data)
     _audit_openclaw_write({
@@ -296,5 +297,6 @@ def create_delivery():
         ok=True,
         delivery_id=delivery.id,
         delivery_no=delivery.delivery_no,
+        delivery_method=delivery.resolved_delivery_method,
         waybill_no=delivery.waybill_no,
     )

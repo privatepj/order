@@ -43,7 +43,7 @@ class InventoryOpeningBalance(db.Model):
     product_id = db.Column(db.Integer, nullable=False, default=0)
     material_id = db.Column(db.Integer, nullable=False, default=0)
     storage_area = db.Column(db.String(32), nullable=False, default="")
-    opening_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    opening_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
     unit = db.Column(db.String(16))
     remark = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, server_default=db.func.now())
@@ -73,12 +73,14 @@ class InventoryMovement(db.Model):
     product_id = db.Column(db.Integer, nullable=False, default=0)
     material_id = db.Column(db.Integer, nullable=False, default=0)
     storage_area = db.Column(db.String(32), nullable=False, default="")
-    quantity = db.Column(db.Numeric(18, 4), nullable=False)
+    quantity = db.Column(db.Numeric(26, 8), nullable=False)
     unit = db.Column(db.String(16))
     biz_date = db.Column(db.Date, nullable=False)
     source_type = db.Column(db.String(16), nullable=False, default="manual")
     source_delivery_id = db.Column(db.Integer)
     source_delivery_item_id = db.Column(db.Integer)
+    source_purchase_order_id = db.Column(db.Integer)
+    source_purchase_receipt_id = db.Column(db.Integer)
     remark = db.Column(db.String(255))
     created_by = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
@@ -100,4 +102,16 @@ class InventoryMovement(db.Model):
         "SemiMaterial",
         primaryjoin="foreign(InventoryMovement.material_id) == SemiMaterial.id",
         lazy=True,
+    )
+    purchase_order = db.relationship(
+        "PurchaseOrder",
+        primaryjoin="foreign(InventoryMovement.source_purchase_order_id) == PurchaseOrder.id",
+        lazy=True,
+        viewonly=True,
+    )
+    purchase_receipt = db.relationship(
+        "PurchaseReceipt",
+        primaryjoin="foreign(InventoryMovement.source_purchase_receipt_id) == PurchaseReceipt.id",
+        lazy=True,
+        viewonly=True,
     )

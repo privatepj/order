@@ -17,10 +17,11 @@ class ProductionProcessTemplateStep(db.Model):
     resource_kind = db.Column(db.String(16), nullable=False, default="machine_type")
     machine_type_id = db.Column(db.Integer, nullable=False, default=0)
     hr_department_id = db.Column(db.Integer, nullable=False, default=0)
+    hr_work_type_id = db.Column(db.Integer, nullable=False, default=0)
 
     # 工时口径（单位：分钟）
-    setup_minutes = db.Column(db.Numeric(12, 2), nullable=False, default=0)
-    run_minutes_per_unit = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    setup_minutes = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    run_minutes_per_unit = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     remark = db.Column(db.String(255))
 
@@ -36,4 +37,8 @@ class ProductionProcessTemplateStep(db.Model):
         lazy=True,
         viewonly=True,
     )
+
+    @property
+    def effective_work_type_id(self) -> int:
+        return int(self.hr_work_type_id or self.hr_department_id or 0)
 

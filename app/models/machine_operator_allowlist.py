@@ -12,6 +12,7 @@ class MachineOperatorAllowlist(db.Model):
     machine_id = db.Column(db.Integer, nullable=False, index=True)
     employee_id = db.Column(db.Integer, nullable=False, index=True)
     capability_hr_department_id = db.Column(db.Integer, nullable=False, default=0)
+    capability_work_type_id = db.Column(db.Integer, nullable=False, default=0)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     remark = db.Column(db.String(255))
 
@@ -28,3 +29,7 @@ class MachineOperatorAllowlist(db.Model):
         primaryjoin="foreign(MachineOperatorAllowlist.employee_id) == HrEmployee.id",
         lazy=True,
     )
+
+    @property
+    def effective_capability_work_type_id(self) -> int:
+        return int(self.capability_work_type_id or self.capability_hr_department_id or 0)

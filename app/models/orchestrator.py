@@ -55,7 +55,7 @@ class OrchestratorAiAdvice(db.Model):
     event_id = db.Column(db.BigInteger, nullable=False, index=True)
     advice_type = db.Column(db.String(64), nullable=False)
     recommended_action = db.Column(db.String(128), nullable=False)
-    confidence = db.Column(db.Numeric(5, 4), nullable=True)
+    confidence = db.Column(db.Numeric(26, 8), nullable=True)
     reason = db.Column(db.String(1000), nullable=True)
     meta = db.Column(db.JSON, nullable=True)
     is_adopted = db.Column(db.Boolean, nullable=False, default=False, index=True)
@@ -73,7 +73,7 @@ class OrchestratorAiAdviceMetric(db.Model):
     advice_type = db.Column(db.String(64), nullable=False, index=True)
     is_adopted = db.Column(db.Boolean, nullable=False, default=False, index=True)
     adopted_latency_seconds = db.Column(db.Integer, nullable=True)
-    result_score = db.Column(db.Numeric(9, 4), nullable=True)
+    result_score = db.Column(db.Numeric(26, 8), nullable=True)
     metric_note = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 

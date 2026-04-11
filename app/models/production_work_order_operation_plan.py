@@ -26,11 +26,21 @@ class ProductionWorkOrderOperationPlan(db.Model):
     resource_kind = db.Column(db.String(16))
     machine_type_id = db.Column(db.Integer, nullable=False, default=0)
     hr_department_id = db.Column(db.Integer, nullable=False, default=0)
+    hr_work_type_id = db.Column(db.Integer, nullable=False, default=0)
 
-    planned_minutes = db.Column(db.Numeric(14, 2), nullable=False, default=0)
+    planned_minutes = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     remark = db.Column(db.String(255))
 
+    confirmed_at = db.Column(db.DateTime)
+    confirmed_by = db.Column(db.Integer)
+    committed_machine_booking_id = db.Column(db.Integer, nullable=False, default=0)
+    committed_employee_booking_id = db.Column(db.Integer, nullable=False, default=0)
+
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    @property
+    def effective_work_type_id(self) -> int:
+        return int(self.hr_work_type_id or self.hr_department_id or 0)
 

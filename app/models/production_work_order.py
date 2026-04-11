@@ -17,9 +17,9 @@ class ProductionWorkOrder(db.Model):
     plan_date = db.Column(db.Date, nullable=False)
     status = db.Column(db.String(16), nullable=False, default="planned")
 
-    demand_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    stock_covered_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
-    to_produce_qty = db.Column(db.Numeric(18, 4), nullable=False, default=0)
+    demand_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    stock_covered_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
+    to_produce_qty = db.Column(db.Numeric(26, 8), nullable=False, default=0)
 
     created_by = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())

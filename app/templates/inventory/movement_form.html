@@ -22,6 +22,12 @@
     data-products-search-url="{{ url_for('main.inventory_products_search') }}"
     data-semi-materials-search-url="{{ url_for('main.inventory_semi_materials_search') }}"
     data-suggest-area-url="{{ url_for('main.inventory_suggest_storage_area') }}">
+    {% if purchase_context %}
+    <input type="hidden" name="purchase_order_id" value="{{ purchase_context.purchase_order_id }}">
+    {% if purchase_context.purchase_receipt_id %}
+    <input type="hidden" name="purchase_receipt_id" value="{{ purchase_context.purchase_receipt_id }}">
+    {% endif %}
+    {% endif %}
     <div class="row mb-3">
         <div class="col-md-4">
             <label class="form-label">类别 <span class="text-danger">*</span></label>
@@ -43,6 +49,16 @@
             <input type="date" class="form-control" name="biz_date" required value="{{ default_biz_date }}">
         </div>
     </div>
+    {% if purchase_context %}
+    <div class="alert alert-info py-2">
+        当前为采购来源入库。
+        采购单：<strong>{{ purchase_context.po_no }}</strong>
+        {% if purchase_context.receipt_no %}，收货单：<strong>{{ purchase_context.receipt_no }}</strong>{% endif %}
+        ，供应商：{{ purchase_context.supplier_name or '-' }}
+        ，物料：{{ purchase_context.item_name }}{% if purchase_context.item_spec %} / {{ purchase_context.item_spec }}{% endif %}。
+        保存后将自动回到采购对比页。
+    </div>
+    {% endif %}
     <div class="card mb-3">
         <div class="card-body py-2">
             <h6 class="card-title mb-2">Excel 批量导入</h6>

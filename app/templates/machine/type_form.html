@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ '编辑' if row else '新建' }}机台种类 - 工厂订单系统{% endblock %}
+{% block title %}{{ "编辑" if row else "新建" }}机台种类 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">{{ '编辑' if row else '新建' }}机台种类</h2>
+<h2 class="mb-4">{{ "编辑" if row else "新建" }}机台种类</h2>
 
 <form method="post" class="row g-3">
     <div class="col-md-4">
@@ -20,14 +20,14 @@
         </select>
     </div>
     <div class="col-md-8">
-        <label class="form-label">默认能力工位（对应 hr_department.id）</label>
-        <select name="default_capability_hr_department_id" class="form-select">
-            <option value="0" {% if not row or not row.default_capability_hr_department_id %}selected{% endif %}>未配置（白名单工位填 0 时仍可能跨工种择优品率）</option>
+        <label class="form-label">默认能力工种</label>
+        <select name="default_capability_work_type_id" class="form-select">
+            <option value="0" {% if not row or not row.effective_default_capability_work_type_id %}selected{% endif %}>未配置（白名单工种填 0 时仍可能从员工全部工种择优）</option>
             {% for d in hr_departments %}
-            <option value="{{ d.id }}" {% if row and row.default_capability_hr_department_id == d.id %}selected{% endif %}>{{ d.name }}（id={{ d.id }}）</option>
+            <option value="{{ d.id }}" {% if row and row.effective_default_capability_work_type_id == d.id %}selected{% endif %}>{{ d.name }}（id={{ d.id }}）</option>
             {% endfor %}
         </select>
-        <div class="form-text">该机种下各机台预算选人时，白名单「能力工位」为 0 则优先用此工种与能力表对齐。</div>
+        <div class="form-text">该机种下各机台预算选人时，白名单工种为 0 则优先使用这里配置的工种与能力表对齐。</div>
     </div>
     <div class="col-12">
         <label class="form-label">备注</label>

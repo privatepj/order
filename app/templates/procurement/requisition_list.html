@@ -1,16 +1,21 @@
 {% extends "base.html" %}
-{% block title %}采购请购 - 工厂订单系统{% endblock %}
+{% block title %}采购请购{% endblock %}
 {% block content %}
-<h2 class="mb-4">采购请购</h2>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h2 class="mb-0">采购请购</h2>
+    {% if user_can_cap('procurement_requisition.action.create') %}
+    <a href="{{ url_for('main.procurement_requisition_new') }}" class="btn btn-primary btn-sm">新增请购</a>
+    {% endif %}
+</div>
 
 <form method="get" class="row g-2 mb-3 align-items-end">
     {% if user_can_cap('procurement_requisition.filter.keyword') %}
-    <div class="col-auto">
+    <div class="col-md-4">
         <label class="form-label">关键词</label>
-        <input type="text" class="form-control form-control-sm" name="keyword" value="{{ keyword or '' }}" placeholder="请购单号/供应商/物料">
+        <input type="text" class="form-control form-control-sm" name="keyword" value="{{ keyword or '' }}" placeholder="请购单号、供应商、物料">
     </div>
     {% endif %}
-    <div class="col-auto">
+    <div class="col-md-3">
         <label class="form-label">状态</label>
         <select name="status" class="form-select form-select-sm">
             <option value="">全部</option>
@@ -20,52 +25,69 @@
         </select>
     </div>
     <div class="col-auto">
-        <button type="submit" class="btn btn-sm btn-outline-secondary">筛选</button>
+        <button type="submit" class="btn btn-outline-secondary btn-sm">筛选</button>
     </div>
-    {% if user_can_cap('procurement_requisition.action.create') %}
-    <div class="col-auto ms-auto">
-        <a href="{{ url_for('main.procurement_requisition_new') }}" class="btn btn-sm btn-primary">新增请购</a>
-    </div>
-    {% endif %}
 </form>
 
 <div class="table-responsive">
-<table class="table table-striped table-sm align-middle">
-    <thead>
-        <tr>
-            <th>请购单号</th>
-            <th>供应商</th>
-            <th>物料</th>
-            <th class="text-end">数量</th>
-            <th>期望到货</th>
-            <th>状态</th>
-            <th>操作</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for r in rows %}
-        <tr>
-            <td>{{ r.req_no }}</td>
-            <td>{{ r.supplier_name }}</td>
-            <td>{{ r.item_name }}{% if r.item_spec %} / {{ r.item_spec }}{% endif %}</td>
-            <td class="text-end">{{ r.qty }} {{ r.unit }}</td>
-            <td>{{ r.expected_date or '-' }}</td>
-            <td>{{ r.status|status_zh('procurement_requisition_status') }}</td>
-            <td class="text-nowrap">
-                {% if user_can_cap('procurement_requisition.action.edit') %}
-                <a href="{{ url_for('main.procurement_requisition_edit', req_id=r.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
-                {% endif %}
-                {% if user_can_cap('procurement_requisition.action.delete') %}
-                <form method="post" action="{{ url_for('main.procurement_requisition_delete', req_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除该请购单？');">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="text-muted">暂无数据</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+    <table class="table table-striped table-sm align-middle">
+        <thead>
+            <tr>
+                <th>请购单号</th>
+                <th>摘要</th>
+                <th>总数量</th>
+                <th>明细行</th>
+                <th>申请人</th>
+                <th>签字</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.req_no }}</td>
+                <td>{{ row.supplier_name }} / {{ row.item_name }}</td>
+                <td>{{ row.qty }} {{ row.unit }}</td>
+                <td>{{ row.lines|length }}</td>
+                <td>{{ row.requester.name if row.requester else row.requester_user_id }}</td>
+                <td>
+                    {% if row.signed_at %}
+                    {{ row.signer.name if row.signer else row.signed_by }}<br>
+                    <span class="text-muted small">{{ row.signed_at }}</span>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>{{ row.status|status_zh('procurement_requisition_status') }}</td>
+                <td class="text-nowrap">
+                    {% if user_can_cap('procurement_requisition.action.print') %}
+                    <a href="{{ url_for('main.procurement_requisition_print', req_id=row.id) }}" class="btn btn-outline-secondary btn-sm" target="_blank">打印</a>
+                    {% endif %}
+                    {% if not row.signed_at and user_can_cap('procurement_requisition.action.edit') %}
+                    <a href="{{ url_for('main.procurement_requisition_edit', req_id=row.id) }}" class="btn btn-outline-primary btn-sm">编辑</a>
+                    {% endif %}
+                    {% if not row.signed_at and user_can_cap('procurement_requisition.action.mark_signed') %}
+                    <form method="post" action="{{ url_for('main.procurement_requisition_mark_signed', req_id=row.id) }}" class="d-inline" onsubmit="return confirm('确认已完成纸质签字？');">
+                        <button type="submit" class="btn btn-outline-success btn-sm">标记签字</button>
+                    </form>
+                    {% endif %}
+                    {% if row.signed_at and user_can_cap('procurement_requisition.action.generate_orders') %}
+                    <form method="post" action="{{ url_for('main.procurement_requisition_generate_orders', req_id=row.id) }}" class="d-inline" onsubmit="return confirm('确认按明细生成采购单？');">
+                        <button type="submit" class="btn btn-outline-success btn-sm">生成采购单</button>
+                    </form>
+                    {% endif %}
+                    {% if user_can_cap('procurement_requisition.action.delete') %}
+                    <form method="post" action="{{ url_for('main.procurement_requisition_delete', req_id=row.id) }}" class="d-inline" onsubmit="return confirm('确认删除该请购单？');">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">删除</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-muted">暂无数据</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}

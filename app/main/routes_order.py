@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.utils.query import is_valid_customer_search_keyword, keyword_like_or
 from app.utils.visibility import is_admin, order_item_view
-from app.utils.payment_type import normalize_payment_type, PAYMENT_TYPE_LABELS
+from app.utils.payment_type import PAYMENT_TYPE_LABELS
 from app.services.order_svc import create_order_from_data
 from app.services.delivery_svc import order_item_shipped_and_in_transit_maps
 
@@ -201,17 +201,20 @@ def register_order_routes(bp):
         customer_product_ids = request.form.getlist("customer_product_id")
         quantities = request.form.getlist("quantity")
         is_samples = request.form.getlist("is_sample")
+        is_spares = request.form.getlist("is_spare")
         n_rows = max(
             len(customer_product_ids),
             len(quantities),
             len(order_item_ids),
             len(is_samples),
+            len(is_spares),
         )
 
         def _row_cp_qty_sample(i):
             cp_s = customer_product_ids[i] if i < len(customer_product_ids) else ""
             q_s = quantities[i] if i < len(quantities) else "0"
             s_s = is_samples[i] if i < len(is_samples) else "0"
+            sp_s = is_spares[i] if i < len(is_spares) else "0"
             try:
                 cp_id = int(cp_s) if str(cp_s).strip() else None
             except (TypeError, ValueError):
@@ -224,21 +227,26 @@ def register_order_routes(bp):
                 is_sample = int(str(s_s).strip() or "0") == 1
             except Exception:
                 is_sample = False
+            try:
+                is_spare = int(str(sp_s).strip() or "0") == 1
+            except Exception:
+                is_spare = False
             oi_id = None
             if i < len(order_item_ids) and order_item_ids[i] and str(order_item_ids[i]).strip():
                 try:
                     oi_id = int(order_item_ids[i])
                 except (TypeError, ValueError):
                     pass
-            return cp_id, qty, is_sample, oi_id
+            return cp_id, qty, is_sample, is_spare, oi_id
 
         items = []
         for i in range(n_rows):
-            cp_id, qty, is_sample, oi_id = _row_cp_qty_sample(i)
+            cp_id, qty, is_sample, is_spare, oi_id = _row_cp_qty_sample(i)
             items.append({
                 "customer_product_id": cp_id,
                 "quantity": float(qty),
                 "is_sample": is_sample,
+                "is_spare": is_spare,
                 "order_item_id": oi_id,
             })
 

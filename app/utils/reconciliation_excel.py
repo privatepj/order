@@ -11,6 +11,8 @@ from app import db
 from app.models import Customer, Delivery, DeliveryItem, OrderItem, SalesOrder
 from app.models import Company
 from app.models.product import CustomerProduct
+from app.utils.decimal_scale import quantize_decimal
+from app.utils.qty_display import format_qty_plain
 
 if TYPE_CHECKING:
     from datetime import date
@@ -37,13 +39,15 @@ def _material_no(oi: OrderItem) -> str:
     return ""
 
 
+def _display_name(oi: OrderItem, di: DeliveryItem) -> str:
+    return (di.product_name or oi.display_product_name or oi.product_name or "").strip()
+
+
 def _qty_display(q) -> str:
     if q is None:
         return ""
-    d = Decimal(str(q))
-    if d == d.to_integral_value():
-        return str(int(d))
-    return format(float(d), ".4f").rstrip("0").rstrip(".")
+    s = format_qty_plain(q)
+    return "" if s == "-" else s
 
 
 def build_reconciliation_workbook(
@@ -152,14 +156,15 @@ def build_reconciliation_workbook(
 
     total_sales = Decimal("0")
     for di, dlv, oi, so in rows:
-        price = Decimal(str(oi.price)) if oi.price is not None else Decimal("0")
+        is_zero_amount = bool(getattr(oi, "is_sample", False) or getattr(oi, "is_spare", False))
+        price = Decimal(str(oi.price)) if oi.price is not None and not is_zero_amount else Decimal("0")
         qty = Decimal(str(di.quantity)) if di.quantity is not None else Decimal("0")
-        line_amt = (price * qty).quantize(Decimal("0.01"))
+        line_amt = quantize_decimal(price * qty)
         if show_amounts:
             total_sales += line_amt
 
         mat = _material_no(oi)
-        pname = (di.product_name or oi.product_name or "") or ""
+        pname = _display_name(oi, di)
         remark = (dlv.remark or "") or ""
 
         ws.cell(r, 1, dlv.delivery_date.isoformat() if dlv.delivery_date else "")
@@ -169,8 +174,8 @@ def build_reconciliation_workbook(
         ws.cell(r, 5, _qty_display(di.quantity))
         ws.cell(r, 6, di.unit or oi.unit or "")
         if show_amounts:
-            ws.cell(r, 7, float(price))
-            ws.cell(r, 8, float(line_amt))
+            ws.cell(r, 7, quantize_decimal(price))
+            ws.cell(r, 8, line_amt)
         else:
             ws.cell(r, 7, "")
             ws.cell(r, 8, "")
@@ -204,7 +209,7 @@ def build_reconciliation_workbook(
     ws.cell(sum_row, 7).alignment = Alignment(horizontal="right", vertical="center")
     ws.cell(sum_row, 7).border = all_border
     if show_amounts:
-        ws.cell(sum_row, 8, float(total_sales))
+        ws.cell(sum_row, 8, quantize_decimal(total_sales))
     else:
         ws.cell(sum_row, 8, "")
     ws.cell(sum_row, 8).font = font_table

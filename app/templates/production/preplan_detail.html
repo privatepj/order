@@ -9,6 +9,18 @@
     <span class="text-muted small">状态：{{ preplan.status|status_zh('production_preplan_status') }}</span>
 </div>
 
+<div class="alert alert-secondary small mb-3">
+    <strong>流程说明：</strong>
+    「已测算」= 点击上方<strong>重新测算</strong>成功后，预计划状态变为已测算并生成工单与排程数据。
+    下发机台/人员排班请点击下方<strong>排程规划</strong>区域内的<strong>确认计划</strong>（需先有排程表格数据）。
+    机台与人员请在同表点击<strong>人工排程</strong>后，在「指定机台/人员」列选择，再点<strong>保存人工排程</strong>（会重算成本）。
+</div>
+{% if not user_can_cap('production.calc.action.run') %}
+<div class="alert alert-warning small mb-3">当前账号无「生产测算」权限（<code>production.calc.action.run</code>），无法使用重新测算、保存人工排程与确认计划按钮。</div>
+{% elif (schedule_plan_rows|default([])|length == 0) %}
+<div class="alert alert-info small mb-3">尚无排程表数据时不会出现「确认计划」按钮。请先<strong>重新测算</strong>；若仍为空白，请检查成品/半成品是否已配置<strong>工序路由</strong>。</div>
+{% endif %}
+
 {% if user_can_cap('production.calc.action.run') %}
 <form method="post" action="{{ url_for('main.production_preplan_measure', preplan_id=preplan.id) }}" class="mb-3">
     <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('确认重新测算并覆盖现有工作单与缺料明细？');">重新测算</button>
@@ -129,10 +141,10 @@
                     <span class="fw-semibold">{{ (preplan_total_cost_optimized if preplan_total_cost_optimized is defined else preplan_total_cost or 0)|qty_plain }}</span>
                 </div>
                 <div class="mb-1 small">
-                    <span class="text-muted">指定资源：</span>
+                    <span class="text-muted">按工序已选资源：</span>
                     <span class="fw-semibold">{{ (preplan_total_cost_assigned if preplan_total_cost_assigned is defined else 0)|qty_plain }}</span>
                 </div>
-                <div class="text-muted small">人工/机台按能力表良品率、时薪与机台费率；物料按 semi_material.standard_unit_cost；制造费用按人工+机台 20%。</div>
+                <div class="text-muted small">人工/机台按能力表良品率、时薪与机台费率；物料按 semi_material.standard_unit_cost；制造费用按人工+机台 20%。与排程表内保存的机台/人员一致。</div>
             </div>
         </div>
     </div>
@@ -141,7 +153,18 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <h5 class="mb-2">排程规划（按最早开始时间）</h5>
-        <p class="text-muted small mb-2">以下为测算生成的工序计划（<code>production_work_order_operation_plan</code>）。未指定预算机台/人员时，资源排队与排班窗按系统默认规则计算。</p>
+        <p class="text-muted small mb-2">以下为测算生成的工序计划（<code>production_work_order_operation_plan</code>）。点击<strong>人工排程</strong>后可改 ES/EF 与「指定机台/人员」；<strong>保存人工排程</strong>将校验与机台/人员排班及其它派工冲突并重算成本。<strong>确认计划</strong>将本表工序写入机台 booking+派工与人员排班。</p>
+        {% if user_can_cap('production.calc.action.run') and schedule_plan_rows|default([])|length > 0 %}
+        <div class="d-flex flex-wrap gap-2 mb-2 align-items-center">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSchedEditToggle" aria-pressed="false">人工排程</button>
+            <form method="post" action="{{ url_for('main.production_preplan_schedule_confirm', preplan_id=preplan.id) }}" class="d-inline"
+                  onsubmit="return confirm('确认后将把本表工序同步到机台/人员排班（可能切分机台可用窗）。确定继续？');">
+                <button type="submit" class="btn btn-primary btn-sm">确认计划</button>
+            </form>
+        </div>
+        <form method="post" action="{{ url_for('main.production_preplan_schedule_manual', preplan_id=preplan.id) }}" id="formScheduleManual"
+              class="js-sched-form" onsubmit="this.querySelectorAll('select.sched-select[disabled]').forEach(function(el){el.disabled=false;});">
+        {% endif %}
         <div class="table-responsive">
             <table class="table table-bordered table-sm align-middle mb-0">
                 <thead>
@@ -150,14 +173,14 @@
                     <th style="width:72px;">WO</th>
                     <th style="width:64px;">工序</th>
                     <th>工序名称</th>
-                    <th style="width:150px;">最早开始(ES)</th>
-                    <th style="width:150px;">最早完成(EF)</th>
+                    <th style="width:178px;">最早开始(ES)</th>
+                    <th style="width:178px;">最早完成(EF)</th>
                     <th style="width:100px;" class="text-end">墙钟(分)</th>
                     <th style="width:100px;" class="text-end">作业(分)</th>
                     <th style="width:64px;">资源</th>
-                    <th style="min-width:140px;">指定机台</th>
-                    <th style="min-width:140px;">指定人员</th>
-                    <th style="width:72px;">关键</th>
+                    <th style="min-width:200px;">指定机台/人员</th>
+                    <th style="width:88px;">关键</th>
+                    <th style="width:100px;">确认</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -167,14 +190,59 @@
                     <td class="text-nowrap">#{{ row.work_order_id }}</td>
                     <td class="text-nowrap">{{ row.step_no }}</td>
                     <td class="text-nowrap">{{ row.step_name }}</td>
-                    <td class="text-nowrap">{{ row.es.strftime('%Y-%m-%d %H:%M') if row.es else '-' }}</td>
-                    <td class="text-nowrap">{{ row.ef.strftime('%Y-%m-%d %H:%M') if row.ef else '-' }}</td>
+                    <td class="text-nowrap">
+                        {% if user_can_cap('production.calc.action.run') %}
+                        <input type="datetime-local" class="form-control form-control-sm sched-inp" name="es_{{ row.operation_id }}" readonly
+                               value="{{ row.es.strftime('%Y-%m-%dT%H:%M') if row.es else '' }}">
+                        {% else %}
+                        {{ row.es.strftime('%Y-%m-%d %H:%M') if row.es else '-' }}
+                        {% endif %}
+                    </td>
+                    <td class="text-nowrap">
+                        {% if user_can_cap('production.calc.action.run') %}
+                        <input type="datetime-local" class="form-control form-control-sm sched-inp" name="ef_{{ row.operation_id }}" readonly
+                               value="{{ row.ef.strftime('%Y-%m-%dT%H:%M') if row.ef else '' }}">
+                        {% else %}
+                        {{ row.ef.strftime('%Y-%m-%d %H:%M') if row.ef else '-' }}
+                        {% endif %}
+                    </td>
                     <td class="text-end">{{ row.wall_minutes|qty_plain if row.wall_minutes is not none else '-' }}</td>
                     <td class="text-end">{{ row.planned_minutes|qty_plain }}</td>
                     <td class="text-nowrap">{{ row.resource_kind_zh }}</td>
-                    <td class="text-nowrap small">{{ row.budget_machine_label }}</td>
-                    <td class="text-nowrap small">{{ row.budget_employee_label }}</td>
+                    <td class="text-nowrap small" style="min-width:200px;">
+                        {% if user_can_cap('production.calc.action.run') %}
+                            {% set oid = row.operation_id %}
+                            {% set opts = (budget_options_by_op.get(oid) if budget_options_by_op is defined else None) %}
+                            {% if row.resource_kind == 'machine_type' %}
+                            <select name="budget_pair_{{ oid }}" class="form-select form-select-sm sched-select" disabled>
+                                <option value="">（未指定）</option>
+                                {% if opts and opts.kind == 'machine_type' %}
+                                    {% for p in opts.pairs %}
+                                    <option value="{{ p.machine_id }}:{{ p.employee_id }}"
+                                      {% if p.machine_id == (row.budget_machine_id|default(0)) and p.employee_id == (row.budget_operator_employee_id|default(0)) %}selected{% endif %}
+                                    >{{ p.label }}</option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                            {% elif row.resource_kind in ['hr_department', 'hr_work_type'] %}
+                            <select name="budget_emp_{{ oid }}" class="form-select form-select-sm sched-select" disabled>
+                                <option value="">（未指定）</option>
+                                {% if opts and opts.kind == 'hr_work_type' %}
+                                    {% for e in opts.employees %}
+                                    <option value="{{ e.id }}" {% if e.id == (row.budget_operator_employee_id|default(0)) %}selected{% endif %}>{{ e.label }}</option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        {% else %}
+                        <div>{{ row.budget_machine_label }}</div>
+                        <div>{{ row.budget_employee_label }}</div>
+                        {% endif %}
+                    </td>
                     <td class="text-nowrap">{% if row.is_critical %}是{% else %}否{% endif %}</td>
+                    <td class="text-nowrap small">{% if row.confirmed_at %}<span class="text-success">已确认</span>{% else %}-{% endif %}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="12" class="text-muted">暂无排程数据，请先运行「重新测算」生成工序计划。</td></tr>
@@ -182,64 +250,12 @@
                 </tbody>
             </table>
         </div>
+        {% if user_can_cap('production.calc.action.run') and schedule_plan_rows|default([])|length > 0 %}
+        <button type="submit" class="btn btn-success btn-sm mt-2">保存人工排程</button>
+        </form>
+        {% endif %}
     </div>
 </div>
-
-{% if user_can_cap('production.calc.action.run') and work_orders %}
-<form method="post" action="{{ url_for('main.production_preplan_budget_assign', preplan_id=preplan.id) }}" class="card mb-3">
-    <div class="card-body py-2">
-        <h5 class="mb-2">指定资源（影响「指定资源」成本）</h5>
-        <div class="text-muted small mb-2">机台工序请从白名单中选择「机台+操作员」组合；人工工序选择员工。保存后仅重算成本，不重新展开 BOM。</div>
-        <div class="table-responsive">
-            <table class="table table-bordered table-sm align-middle mb-0">
-                <thead>
-                <tr>
-                    <th>WO</th>
-                    <th>工序</th>
-                    <th>指定</th>
-                </tr>
-                </thead>
-                <tbody>
-                {% for wo in work_orders %}
-                    {% for op in wo.operations or [] %}
-                    <tr>
-                        <td class="text-nowrap">#{{ wo.id }}</td>
-                        <td class="text-nowrap">{{ op.step_no }} {{ op.step_name }}</td>
-                        <td style="min-width:280px;">
-                            {% set opts = (budget_options_by_op.get(op.id) if budget_options_by_op is defined else None) %}
-                            {% if op.resource_kind == 'machine_type' %}
-                            <select name="budget_pair_{{ op.id }}" class="form-select form-select-sm">
-                                <option value="">（不指定）</option>
-                                {% if opts and opts.kind == 'machine_type' %}
-                                    {% for p in opts.pairs %}
-                                    <option value="{{ p.machine_id }}:{{ p.employee_id }}"
-                                      {% if op.budget_machine_id == p.machine_id and op.budget_operator_employee_id == p.employee_id %}selected{% endif %}>{{ p.label }}</option>
-                                    {% endfor %}
-                                {% endif %}
-                            </select>
-                            {% elif op.resource_kind == 'hr_department' %}
-                            <select name="budget_emp_{{ op.id }}" class="form-select form-select-sm">
-                                <option value="">（不指定）</option>
-                                {% if opts and opts.kind == 'hr_department' %}
-                                    {% for e in opts.employees %}
-                                    <option value="{{ e.id }}" {% if op.budget_operator_employee_id == e.id %}selected{% endif %}>{{ e.label }}</option>
-                                    {% endfor %}
-                                {% endif %}
-                            </select>
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm mt-2">保存指定并重新计算成本</button>
-    </div>
-</form>
-{% endif %}
 
 <h5 class="mb-2">工作单与缺料明细</h5>
 {% for wo in work_orders %}
@@ -276,7 +292,7 @@
                 </div>
                 <div style="width:220px;">
                     <label class="form-label mb-1">本次实际产量</label>
-                    <input type="number" step="0.0001" class="form-control form-control-sm" name="actual_produced_qty" required value="{{ wo.to_produce_qty|qty_plain }}">
+                    <input type="number" step="0.00000001" class="form-control form-control-sm" name="actual_produced_qty" required value="{{ wo.to_produce_qty|qty_plain }}">
                 </div>
                 <button type="submit" class="btn btn-outline-primary btn-sm mb-1">报工</button>
             </form>
@@ -337,8 +353,8 @@
                             <td class="text-nowrap">
                                 {% if op.resource_kind == 'machine_type' %}
                                     机台种类ID={{ op.machine_type_id }}
-                                {% elif op.resource_kind == 'hr_department' %}
-                                    部门ID={{ op.hr_department_id }}
+                                {% elif op.resource_kind in ['hr_department', 'hr_work_type'] %}
+                                    工种ID={{ op.effective_work_type_id }}
                                 {% else %}
                                     -
                                 {% endif %}
@@ -447,6 +463,32 @@
     btn.addEventListener('click', function () {
       kilo = !kilo;
       applyQtyMode(kilo);
+    });
+  }
+
+  /* 预计划排程：人工排程开关（解除 ES/EF 与下拉只读） */
+  var btnSched = document.getElementById('btnSchedEditToggle');
+  if (btnSched) {
+    var schedEditOn = false;
+    function setSchedFieldsEditable(on) {
+      schedEditOn = !!on;
+      document.querySelectorAll('.sched-inp').forEach(function (el) {
+        if (on) {
+          el.removeAttribute('readonly');
+        } else {
+          el.setAttribute('readonly', 'readonly');
+        }
+      });
+      document.querySelectorAll('.sched-select').forEach(function (el) {
+        el.disabled = !on;
+      });
+      btnSched.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btnSched.textContent = on ? '退出人工排程' : '人工排程';
+      btnSched.classList.toggle('btn-secondary', on);
+      btnSched.classList.toggle('btn-outline-secondary', !on);
+    }
+    btnSched.addEventListener('click', function () {
+      setSchedFieldsEditable(!schedEditOn);
     });
   }
 })();

@@ -1,32 +1,36 @@
 {% extends "base.html" %}
-{% block title %}工序部门与能力工位映射 - 工厂订单系统{% endblock %}
+{% block title %}部门-工种允许关系 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-3">工序部门 ↔ 能力工位映射</h2>
-<p class="text-muted small">当工艺/路由上的「部门」与人员能力表中的「工位」编码不一致时，在此建立多对多映射；未配置时按同 id 直连。</p>
+<h2 class="mb-3">部门-工种允许关系</h2>
+<p class="text-muted small">这张表只用于表单筛选、治理建议和报表视角，不参与运行时能力/成本计算。</p>
 
 {% if user_can_cap('hr_department_capability_map.edit') %}
 <form method="post" action="{{ url_for('main.hr_department_capability_map_add') }}" class="card mb-3">
     <div class="card-body py-2 row g-2 align-items-end">
         <div class="col-md-4">
-            <label class="form-label">工序/路由上的部门</label>
-            <select name="process_hr_department_id" class="form-select" required>
+            <label class="form-label">部门</label>
+            <select name="department_id" class="form-select" required>
                 <option value="">请选择</option>
                 {% for d in depts %}
-                <option value="{{ d.id }}">{{ d.name }} (id={{ d.id }})</option>
+                <option value="{{ d.id }}">{{ d.name }}</option>
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-4">
-            <label class="form-label">能力表用工位（hr_employee_capability）</label>
-            <select name="capability_hr_department_id" class="form-select" required>
+            <label class="form-label">工种</label>
+            <select name="work_type_id" class="form-select" required>
                 <option value="">请选择</option>
-                {% for d in depts %}
-                <option value="{{ d.id }}">{{ d.name }} (id={{ d.id }})</option>
+                {% for wt in work_types %}
+                <option value="{{ wt.id }}">{{ wt.name }}</option>
                 {% endfor %}
             </select>
         </div>
-        <div class="col-md-2">
-            <button type="submit" class="btn btn-primary">新增映射</button>
+        <div class="col-md-3">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-control" maxlength="255">
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary">保存</button>
         </div>
     </div>
 </form>
@@ -37,9 +41,10 @@
         <thead>
             <tr>
                 <th>ID</th>
-                <th>工序部门 id</th>
-                <th>能力工位 id</th>
+                <th>部门</th>
+                <th>工种</th>
                 <th>状态</th>
+                <th>备注</th>
                 <th style="width:100px;"></th>
             </tr>
         </thead>
@@ -47,9 +52,10 @@
             {% for r in rows %}
             <tr>
                 <td>{{ r.id }}</td>
-                <td>{{ r.process_hr_department_id }}</td>
-                <td>{{ r.capability_hr_department_id }}</td>
+                <td>{{ r.department.name if r.department else r.department_id }}</td>
+                <td>{{ r.work_type.name if r.work_type else r.work_type_id }}</td>
                 <td>{% if r.is_active %}启用{% else %}停用{% endif %}</td>
+                <td>{{ r.remark or '-' }}</td>
                 <td>
                     {% if user_can_cap('hr_department_capability_map.edit') %}
                     <form method="post" action="{{ url_for('main.hr_department_capability_map_delete', row_id=r.id) }}" class="d-inline" onsubmit="return confirm('确认删除？');">
@@ -59,7 +65,7 @@
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="5" class="text-muted">暂无映射</td></tr>
+            <tr><td colspan="6" class="text-muted">暂无数据</td></tr>
             {% endfor %}
         </tbody>
     </table>

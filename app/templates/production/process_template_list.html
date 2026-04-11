@@ -11,7 +11,7 @@
         <button type="submit" class="btn btn-outline-secondary">查询</button>
     </div>
     <div class="col-auto ms-auto">
-        <a href="{{ url_for('main.production_product_routing_list') }}" class="btn btn-outline-primary">产品路由覆写</a>
+        <a href="{{ url_for('main.production_product_routing_list') }}" class="btn btn-outline-primary">工序路由覆写</a>
     </div>
     {% if user_can_cap('production.process_template.action.create') %}
     <div class="col-auto">
@@ -45,7 +45,7 @@
                 <td class="text-nowrap">
                     <a href="{{ url_for('main.production_process_template_edit', template_id=row.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
                     {% if user_can_cap('production.process_template.action.delete') %}
-                    <form method="post" action="{{ url_for('main.production_process_template_delete', template_id=row.id) }}" class="d-inline" onsubmit="return confirm('确认删除该工序模板？若被产品路由启用将无法删除。');">
+                    <form method="post" action="{{ url_for('main.production_process_template_delete', template_id=row.id) }}" class="d-inline" onsubmit="return confirm('确认删除该工序模板？若被路由启用将无法删除。');">
                         <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
                     </form>
                     {% endif %}

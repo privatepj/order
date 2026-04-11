@@ -84,6 +84,7 @@ def order_item_view(item):
         order_id=item.order_id,
         customer_product_id=item.customer_product_id,
         product_name=item.product_name,
+        display_product_name=item.display_product_name,
         product_spec=item.product_spec,
         customer_material_no=item.customer_material_no,
         material_no=mat or "",
@@ -91,5 +92,7 @@ def order_item_view(item):
         unit=item.unit,
         price=float(pr) if admin and pr is not None else None,
         amount=float(amt) if admin and amt is not None else None,
+        is_sample=bool(getattr(item, "is_sample", False)),
+        is_spare=bool(getattr(item, "is_spare", False)),
         show_pricing=admin,
     )
