@@ -56,6 +56,35 @@ def admin_client(app):
     return client
 
 
+@pytest.fixture()
+def delivery_detail_only_client(app):
+    """有送货菜单与详情能力，但不含 delivery.filter.status（列表应固定仅待发）。"""
+    with app.app_context():
+        role = Role(
+            name="送货只详情",
+            code="delivery_detail_only",
+            allowed_menu_keys=["delivery"],
+            allowed_capability_keys=["delivery.action.detail"],
+        )
+        db.session.add(role)
+        db.session.flush()
+        user = User(
+            username="delivery_reader",
+            password_hash="x",
+            role_id=role.id,
+            is_active=True,
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    return client
+
+
 def _seed_order(with_sf_waybill: bool = False) -> dict:
     company = Company(
         name="测试主体",
@@ -270,3 +299,40 @@ def test_delivery_list_defaults_to_created_without_status_param(app, admin_clien
     body_all = r_all.get_data(as_text=True)
     assert "DL-PEND-DEFAULT" in body_all
     assert "DL-SHIPPED-DEFAULT" in body_all
+
+
+def test_delivery_list_without_status_filter_cap_forces_created(
+    app, delivery_detail_only_client
+):
+    with app.app_context():
+        seeded = _seed_order(with_sf_waybill=False)
+        cid = seeded["customer"].id
+        db.session.add_all(
+            [
+                Delivery(
+                    delivery_no="DL-PEND-NOFILTER",
+                    delivery_date=date(2026, 4, 7),
+                    customer_id=cid,
+                    status="created",
+                ),
+                Delivery(
+                    delivery_no="DL-SHIP-NOFILTER",
+                    delivery_date=date(2026, 4, 7),
+                    customer_id=cid,
+                    status="shipped",
+                ),
+            ]
+        )
+        db.session.commit()
+
+    r = delivery_detail_only_client.get("/deliveries")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "DL-PEND-NOFILTER" in body
+    assert "DL-SHIP-NOFILTER" not in body
+
+    r_bypass = delivery_detail_only_client.get("/deliveries?status=shipped")
+    assert r_bypass.status_code == 200
+    body_b = r_bypass.get_data(as_text=True)
+    assert "DL-PEND-NOFILTER" in body_b
+    assert "DL-SHIP-NOFILTER" not in body_b

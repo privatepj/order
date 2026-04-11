@@ -162,7 +162,8 @@ def delivery_list_read_filters():
     if not current_user_can_cap("delivery.filter.customer"):
         customer_id = None
     if not current_user_can_cap("delivery.filter.status"):
-        status = ""
+        # 无状态下拉权限：列表固定仅待发（忽略 URL 中的 status）
+        status = "created"
     elif "status" not in request.args:
         status = "created"
     if not current_user_can_cap("delivery.filter.keyword"):

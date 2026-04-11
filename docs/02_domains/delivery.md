@@ -19,8 +19,9 @@
 
 ## 送货列表筛选
 
-- 具备 `delivery.filter.status` 时，打开送货列表（查询串**不含** `status` 参数）默认按 **待发**（`created`）筛选；在列表上选择「全部状态」并提交后仍可查全部状态。
-- 不具备 `delivery.filter.status` 时，不按状态过滤（与列表页不展示状态下拉一致）。
+- 打开送货列表（查询串**不含** `status` 参数）默认按 **待发**（`created`）筛选。
+- 具备 `delivery.filter.status` 时，可在列表上选「全部状态」等并提交（带 `status=` 或具体值）改变筛选。
+- 不具备 `delivery.filter.status` 时，后台仍**固定**按待发（`created`）筛选，与是否带 `status` 查询参数无关（列表页不展示状态下拉）。
 
 ## 典型流程
 
