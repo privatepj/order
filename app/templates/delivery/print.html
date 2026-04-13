@@ -16,6 +16,7 @@
         table.delivery-table th { font-size: calc(10px * var(--delivery-print-scale)); font-weight: normal; text-align: center; vertical-align: middle; }
         table.delivery-table td { font-size: calc(12px * var(--delivery-print-scale)); vertical-align: middle; }
         table.delivery-table td.col-qty { text-align: right; }
+        table.delivery-table td.col-name-spec { white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
         table.delivery-table tr { page-break-inside: avoid; }
         .company-name { font-size: calc(20px * var(--delivery-print-scale)); margin: 8px 0; }
         .address-tel { font-size: calc(12px * var(--delivery-print-scale)); margin: 4px 0; }
@@ -74,7 +75,7 @@
                 <tr>
                     <td>{{ r.liao }}</td>
                     <td>{{ r.material_no }}</td>
-                    <td>{{ r.name_spec }}</td>
+                    <td class="col-name-spec">{{ r.name_spec }}</td>
                     <td class="col-qty">{{ r.order_qty_str }}</td>
                     <td class="col-qty">{{ r.ship_qty_str }}</td>
                     <td class="col-qty">{{ r.remaining_str }}</td>

@@ -8,8 +8,11 @@
     background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
 }
-.inv-product-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-product-dd .list-group-item,
+.inv-product-dd .list-group-item-action {
+    cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
+    white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
 .inv-product-dd .list-group-item:hover { background: #f8f9fa; }
 </style>
 {% endblock %}
@@ -54,9 +57,9 @@
             <tr class="line-row">
                 <td class="inv-product-cell">
                     <input type="hidden" name="line_product_id" class="inv-product-id" value="{{ line.product_id }}">
-                    <input type="text" class="form-control inv-product-search" autocomplete="off"
+                    <textarea class="form-control name-search-textarea inv-product-search" rows="1" autocomplete="off"
                         placeholder="输入关键字搜索产品…"
-                        value="{% if line.product %}{{ line.product.product_code }} — {{ line.product.name }}{% if line.product.spec %}（{{ line.product.spec }}）{% endif %}{% endif %}">
+                    >{% if line.product %}{{ line.product.product_code }} — {{ line.product.name }}{% if line.product.spec %}（{{ line.product.spec }}）{% endif %}{% endif %}</textarea>
                     <div class="inv-product-dd list-group d-none"></div>
                 </td>
                 <td><input type="text" class="form-control" name="line_quantity" value="{{ line.quantity }}" required inputmode="decimal"></td>
@@ -69,7 +72,7 @@
             <tr class="line-row">
                 <td class="inv-product-cell">
                     <input type="hidden" name="line_product_id" class="inv-product-id" value="">
-                    <input type="text" class="form-control inv-product-search" autocomplete="off" placeholder="输入关键字搜索产品…" value="">
+                    <textarea class="form-control name-search-textarea inv-product-search" rows="1" autocomplete="off" placeholder="输入关键字搜索产品…"></textarea>
                     <div class="inv-product-dd list-group d-none"></div>
                 </td>
                 <td><input type="text" class="form-control" name="line_quantity" value="0" inputmode="decimal"></td>
@@ -92,7 +95,7 @@
     <tr class="line-row">
         <td class="inv-product-cell">
             <input type="hidden" name="line_product_id" class="inv-product-id" value="">
-            <input type="text" class="form-control inv-product-search" autocomplete="off" placeholder="输入关键字搜索产品…" value="">
+            <textarea class="form-control name-search-textarea inv-product-search" rows="1" autocomplete="off" placeholder="输入关键字搜索产品…"></textarea>
             <div class="inv-product-dd list-group d-none"></div>
         </td>
         <td><input type="text" class="form-control" name="line_quantity" value="0" inputmode="decimal"></td>
@@ -110,6 +113,16 @@
     var body = document.getElementById('linesBody');
     var tpl = document.getElementById('rowTpl');
     var debounceTimers = new WeakMap();
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function hideAllInvDd() {
         document.querySelectorAll('.inv-product-dd').forEach(function (el) {
@@ -130,15 +143,21 @@
             ddMaxH = Math.min(maxH, window.innerHeight - margin * 2);
             top = window.innerHeight - ddMaxH - margin;
         }
+        var w = Math.min(Math.max(rect.width, 480), Math.max(280, window.innerWidth - rect.left - margin));
+        var left = rect.left;
+        if (left + w > window.innerWidth - margin) {
+            left = Math.max(margin, window.innerWidth - margin - w);
+        }
         dd.style.position = 'fixed';
-        dd.style.left = rect.left + 'px';
-        dd.style.width = rect.width + 'px';
+        dd.style.left = left + 'px';
+        dd.style.width = w + 'px';
         dd.style.top = Math.max(margin, top) + 'px';
         dd.style.maxHeight = ddMaxH + 'px';
     }
 
     function renderDd(dd, items, anchor) {
         dd.innerHTML = '';
+        autoResize(anchor);
         placeDropdown(dd, anchor);
         if (!items || items.length === 0) {
             var empty = document.createElement('div');
@@ -169,7 +188,7 @@
 
     function fetchProducts(q, cell, dd) {
         if (!searchUrl) return;
-        var url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20';
+        var url = searchUrl + '?q=' + encodeURIComponent(normalizeQuery(q)) + '&limit=20';
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -187,16 +206,25 @@
         if (!search || !dd) return;
 
         search.addEventListener('input', function () {
+            autoResize(search);
             if (hid) hid.value = '';
             var t = debounceTimers.get(search);
             if (t) clearTimeout(t);
-            t = setTimeout(function () { fetchProducts(search.value.trim(), cell, dd); }, 250);
+            t = setTimeout(function () { fetchProducts(search.value, cell, dd); }, 250);
             debounceTimers.set(search, t);
         });
 
         search.addEventListener('focus', function () {
-            fetchProducts(search.value.trim(), cell, dd);
+            autoResize(search);
+            fetchProducts(search.value, cell, dd);
         });
+        search.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            var first = dd.querySelector('button.list-group-item-action');
+            if (first) first.click();
+        });
+        autoResize(search);
     }
 
     function bindAllCells() {

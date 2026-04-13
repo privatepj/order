@@ -4,7 +4,11 @@
 <style>
 .cp-dd { position: absolute; left: 0; right: 0; top: 100%; z-index: 1050; max-height: 220px; overflow-y: auto;
   background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem; box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1); }
-.cp-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem; }
+.cp-dd .list-group-item,
+.cp-dd .list-group-item-action {
+    cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
+    white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
 .picker-wrap { position: relative; }
 </style>
 {% endblock %}

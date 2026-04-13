@@ -16,6 +16,19 @@
 5. 若涉及表结构/SQL，读 [db_rules_and_patterns.md](db_rules_and_patterns.md)。  
 6. 改完后：更新域文档 + 本目录相关子页 + 必要时 `docs/changes/` 记录。
 
+## Web UI：长品名与规格（textarea）
+
+业务表单里**易被截断**的「品名关键字搜索」「只读规格」「主数据规格」统一为：
+
+- **样式**：`textarea` + 全局类 `name-search-textarea`（`app/static/css/app.css`），`rows="1"` 起步；与 `.name-wrap` 配合可完整换行展示。
+- **脚本**：与品名搜索一致时，查询串用 `normalizeQuery`（空白/换行压成单空格）；`input`/`回填`/`清空` 后对相关 `textarea` 调 **`autoResize`**（高度约 32–96px，超出纵向滚动），避免长文本只见一行。
+- **已覆盖页面（维护新表单时请对齐）**  
+  - 库存进出：`app/templates/inventory/movement_form.html`（品名搜索 + 规格只读）  
+  - 订单明细：`app/templates/order/form.html`（品名搜索 + 规格只读）  
+  - 采购：`app/templates/procurement/order_form.html`、`requisition_form.html`（供应商/物料搜索 + 规格只读）  
+  - 主数据规格可编辑：`app/templates/product/form.html`、`semi_material/form.html`、`procurement/material_form.html`  
+  - 其他已用品名 textarea 的库存页：`inventory/daily_form.html`、`inventory/opening_form.html` 等（与 movement 同套路）
+
 ## 子文档索引
 
 | 文件 | 用途 |

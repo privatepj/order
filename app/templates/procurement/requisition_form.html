@@ -13,6 +13,12 @@
     border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
 }
+.req-dd .list-group-item,
+.req-dd .list-group-item-action {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -60,15 +66,15 @@
                 <tr class="req-row">
                     <td class="req-cell">
                         <input type="hidden" name="line_supplier_id" class="req-supplier-id" value="{{ line.supplier_id if line else '' }}">
-                        <input type="text" class="form-control form-control-sm req-supplier-search" value="{{ line.supplier_name if line else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+                        <textarea class="form-control form-control-sm name-search-textarea req-supplier-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索">{{ line.supplier_name if line else '' }}</textarea>
                         <div class="req-dd req-supplier-dd list-group d-none"></div>
                     </td>
                     <td class="req-cell">
                         <input type="hidden" name="line_material_id" class="req-material-id" value="{{ line.material_id if line else '' }}">
-                        <input type="text" class="form-control form-control-sm req-material-search" value="{{ line.item_name if line else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+                        <textarea class="form-control form-control-sm name-search-textarea req-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索">{{ line.item_name if line else '' }}</textarea>
                         <div class="req-dd req-material-dd list-group d-none"></div>
                     </td>
-                    <td><input type="text" class="form-control form-control-sm req-spec" value="{{ line.item_spec if line else '' }}" readonly></td>
+                    <td><textarea class="form-control form-control-sm name-search-textarea req-spec" rows="1" readonly>{{ line.item_spec if line else '' }}</textarea></td>
                     <td><input type="text" class="form-control form-control-sm req-unit" name="line_unit" value="{{ line.unit if line else '' }}" maxlength="16"></td>
                     <td><input type="text" class="form-control form-control-sm req-price" value="" readonly placeholder="自动带出"></td>
                     <td><input type="text" class="form-control form-control-sm" name="line_qty" value="{{ line.qty if line else '' }}"></td>
@@ -96,15 +102,15 @@
     <tr class="req-row">
         <td class="req-cell">
             <input type="hidden" name="line_supplier_id" class="req-supplier-id" value="">
-            <input type="text" class="form-control form-control-sm req-supplier-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+            <textarea class="form-control form-control-sm name-search-textarea req-supplier-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索"></textarea>
             <div class="req-dd req-supplier-dd list-group d-none"></div>
         </td>
         <td class="req-cell">
             <input type="hidden" name="line_material_id" class="req-material-id" value="">
-            <input type="text" class="form-control form-control-sm req-material-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+            <textarea class="form-control form-control-sm name-search-textarea req-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索"></textarea>
             <div class="req-dd req-material-dd list-group d-none"></div>
         </td>
-        <td><input type="text" class="form-control form-control-sm req-spec" value="" readonly></td>
+        <td><textarea class="form-control form-control-sm name-search-textarea req-spec" rows="1" readonly></textarea></td>
         <td><input type="text" class="form-control form-control-sm req-unit" name="line_unit" value="" maxlength="16"></td>
         <td><input type="text" class="form-control form-control-sm req-price" value="" readonly placeholder="自动带出"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_qty" value=""></td>
@@ -124,6 +130,16 @@
     var materialSuppliersUrl = form.getAttribute('data-material-suppliers-url');
     var body = document.getElementById('reqBody');
     var tpl = document.getElementById('reqRowTpl');
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function hideAll() {
         document.querySelectorAll('.req-dd').forEach(function (el) {
@@ -133,10 +149,17 @@
     }
 
     function place(dd, input) {
+        autoResize(input);
         var rect = input.getBoundingClientRect();
-        dd.style.left = rect.left + 'px';
+        var m = 8;
+        var w = Math.min(Math.max(rect.width, 480), Math.max(240, window.innerWidth - rect.left - m));
+        var left = rect.left;
+        if (left + w > window.innerWidth - m) {
+            left = Math.max(m, window.innerWidth - m - w);
+        }
+        dd.style.left = left + 'px';
         dd.style.top = rect.bottom + 'px';
-        dd.style.width = Math.max(rect.width, 220) + 'px';
+        dd.style.width = w + 'px';
     }
 
     function render(dd, input, items, onSelect) {
@@ -190,6 +213,7 @@
         function setSupplier(item) {
             supplierId.value = item ? (item.supplier_id || item.id || '') : '';
             supplierInput.value = item ? (item.label || item.name || '') : '';
+            autoResize(supplierInput);
             if (item && item.last_unit_price) {
                 price.value = item.last_unit_price;
             }
@@ -203,6 +227,7 @@
         function setMaterial(item) {
             materialId.value = item ? (item.material_id || item.id || '') : '';
             materialInput.value = item ? (item.label || item.name || '') : '';
+            autoResize(materialInput);
             spec.value = item ? (item.spec || '') : '';
             if (item) {
                 unit.value = item.base_unit || unit.value || '';
@@ -212,6 +237,7 @@
                 spec.value = '';
                 price.value = '';
             }
+            autoResize(spec);
         }
 
         function loadSuppliersForMaterial(options) {
@@ -245,7 +271,7 @@
         }
 
         function fetchSuppliers() {
-            var q = (supplierInput.value || '').trim();
+            var q = normalizeQuery(supplierInput.value);
             var url = supplierSearchUrl + '?q=' + encodeURIComponent(q);
             if (materialId.value) {
                 url = materialSuppliersUrl + '?material_id=' + encodeURIComponent(materialId.value) + '&q=' + encodeURIComponent(q);
@@ -260,7 +286,7 @@
         }
 
         function fetchMaterials() {
-            var q = (materialInput.value || '').trim();
+            var q = normalizeQuery(materialInput.value);
             var url = materialSearchUrl + '?q=' + encodeURIComponent(q);
             if (supplierId.value) {
                 url = supplierMaterialsUrl + '?supplier_id=' + encodeURIComponent(supplierId.value) + '&q=' + encodeURIComponent(q);
@@ -276,24 +302,30 @@
         }
 
         supplierInput.addEventListener('input', function () {
+            autoResize(supplierInput);
             supplierId.value = '';
             if (supplierTimer) clearTimeout(supplierTimer);
             supplierTimer = setTimeout(fetchSuppliers, 200);
         });
-        supplierInput.addEventListener('focus', fetchSuppliers);
+        supplierInput.addEventListener('focus', function () { autoResize(supplierInput); fetchSuppliers(); });
         materialInput.addEventListener('input', function () {
+            autoResize(materialInput);
             materialId.value = '';
             spec.value = '';
+            autoResize(spec);
             price.value = '';
             clearSupplier();
             if (materialTimer) clearTimeout(materialTimer);
             materialTimer = setTimeout(fetchMaterials, 200);
         });
-        materialInput.addEventListener('focus', fetchMaterials);
+        materialInput.addEventListener('focus', function () { autoResize(materialInput); fetchMaterials(); });
 
         if (materialId.value) {
             loadSuppliersForMaterial({ preserveCurrentSupplier: true });
         }
+        autoResize(supplierInput);
+        autoResize(materialInput);
+        autoResize(spec);
     }
 
     body.querySelectorAll('.req-row').forEach(bindRow);

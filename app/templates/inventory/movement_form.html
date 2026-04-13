@@ -5,7 +5,7 @@
 .mov-line-table .inv-product-cell { position: relative; min-width: 200px; max-width: 320px; }
 .inv-product-dd {
     position: fixed; z-index: 1050; max-height: 240px; overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: visible;
     background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
     box-sizing: border-box;
@@ -22,14 +22,13 @@
     font-size: 0.875rem;
     line-height: 1.45;
     min-height: 2.5rem;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     text-align: left;
     width: 100%;
     border: 0;
     background: transparent;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 .inv-product-dd .list-group-item:hover,
 .inv-product-dd button.list-group-item-action:hover { background: #f8f9fa; }
@@ -120,10 +119,10 @@
                 <td class="inv-product-cell">
                     <input type="hidden" name="line_product_id" class="inv-line-product-id" value="">
                     <input type="hidden" name="line_material_id" class="inv-line-material-id" value="">
-                    <input type="text" class="form-control form-control-sm inv-line-product-search" autocomplete="off" placeholder="关键字搜索…">
+                    <textarea class="form-control form-control-sm name-search-textarea inv-line-product-search" rows="1" autocomplete="off" placeholder="关键字搜索…"></textarea>
                     <div class="inv-product-dd list-group d-none"></div>
                 </td>
-                <td><input type="text" class="form-control form-control-sm inv-line-spec" readonly placeholder="选产品后显示"></td>
+                <td><textarea class="form-control form-control-sm name-search-textarea inv-line-spec" rows="1" readonly placeholder="选产品后显示"></textarea></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_unit" maxlength="16" placeholder="默认单位"></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_storage_area" maxlength="32" placeholder="如 B18"></td>
                 <td><input type="text" class="form-control form-control-sm js-line-qty" name="line_quantity" inputmode="decimal" placeholder="入库≥0 / 出库&gt;0"></td>
@@ -167,10 +166,10 @@
         <td class="inv-product-cell">
             <input type="hidden" name="line_product_id" class="inv-line-product-id" value="">
             <input type="hidden" name="line_material_id" class="inv-line-material-id" value="">
-            <input type="text" class="form-control form-control-sm inv-line-product-search" autocomplete="off" placeholder="关键字搜索…">
+            <textarea class="form-control form-control-sm name-search-textarea inv-line-product-search" rows="1" autocomplete="off" placeholder="关键字搜索…"></textarea>
             <div class="inv-product-dd list-group d-none"></div>
         </td>
-        <td><input type="text" class="form-control form-control-sm inv-line-spec" readonly placeholder="选产品后显示"></td>
+        <td><textarea class="form-control form-control-sm name-search-textarea inv-line-spec" rows="1" readonly placeholder="选产品后显示"></textarea></td>
         <td><input type="text" class="form-control form-control-sm" name="line_unit" maxlength="16" placeholder="默认单位"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_storage_area" maxlength="32" placeholder="如 B18"></td>
         <td><input type="text" class="form-control form-control-sm js-line-qty" name="line_quantity" inputmode="decimal" placeholder="入库≥0 / 出库&gt;0"></td>
@@ -191,6 +190,16 @@
     var categorySel = document.getElementById('invCategory');
     var btnSubmit = document.getElementById('btnSubmit');
     var debounceByInput = new WeakMap();
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function restoreDdToCell(dd) {
         var cell = dd._movParentCell;
@@ -218,14 +227,20 @@
 
     function placeDropdown(dd, anchor) {
         var rect = anchor.getBoundingClientRect();
-        var w = Math.max(rect.width, 280);
+        var m = 8;
+        var w = Math.min(Math.max(rect.width, 480), Math.max(280, window.innerWidth - rect.left - m));
+        var left = rect.left;
+        if (left + w > window.innerWidth - m) {
+            left = Math.max(m, window.innerWidth - m - w);
+        }
         dd.style.cssText =
-            'position:fixed;z-index:1050;left:' + rect.left + 'px;width:' + w + 'px;top:' + rect.bottom + 'px;max-height:240px;overflow:auto;box-sizing:border-box';
+            'position:fixed;z-index:1050;left:' + left + 'px;width:' + w + 'px;top:' + rect.bottom + 'px;max-height:240px;overflow-y:auto;overflow-x:visible;box-sizing:border-box';
     }
 
     function renderDd(dd, items, anchor, row) {
         dd.innerHTML = '';
         attachDdToBody(dd, row);
+        autoResize(anchor);
         placeDropdown(dd, anchor);
         if (!items || !items.length) {
             var empty = document.createElement('div');
@@ -249,7 +264,12 @@
                 if (pidInput) pidInput.value = isFinished ? String(it.id) : '';
                 if (midInput) midInput.value = isFinished ? '' : String(it.id);
                 row.querySelector('.inv-line-product-search').value = it.label || '';
-                row.querySelector('.inv-line-spec').value = it.spec || '';
+                autoResize(row.querySelector('.inv-line-product-search'));
+                var specEl = row.querySelector('.inv-line-spec');
+                if (specEl) {
+                    specEl.value = it.spec || '';
+                    autoResize(specEl);
+                }
                 var u = row.querySelector('[name="line_unit"]');
                 if (u && !u.value) u.value = it.base_unit || '';
                 hideAllDd();
@@ -281,15 +301,16 @@
     function fetchItems(q, row, dd) {
         var kind = categorySel.value;
         var anchor = row.querySelector('.inv-line-product-search');
+        var query = normalizeQuery(q);
         var url = null;
         if (kind === 'finished') {
             if (!searchUrl) return;
-            url = searchUrl + '?q=' + encodeURIComponent(q || '') + '&limit=20';
+            url = searchUrl + '?q=' + encodeURIComponent(query) + '&limit=20';
         } else {
             if (!semiSearchUrl) return;
             url =
                 semiSearchUrl
-                + '?q=' + encodeURIComponent(q || '')
+                + '?q=' + encodeURIComponent(query)
                 + '&limit=20&kind=' + encodeURIComponent(kind);
         }
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
@@ -306,17 +327,30 @@
         if (!search || !dd) return;
 
         search.addEventListener('input', function () {
+            autoResize(search);
             if (pidInput) pidInput.value = '';
             if (midInput) midInput.value = '';
-            row.querySelector('.inv-line-spec').value = '';
+            var specC = row.querySelector('.inv-line-spec');
+            if (specC) {
+                specC.value = '';
+                autoResize(specC);
+            }
             var t = debounceByInput.get(search);
             if (t) clearTimeout(t);
-            t = setTimeout(function () { fetchItems(search.value.trim(), row, dd); }, 250);
+            t = setTimeout(function () { fetchItems(search.value, row, dd); }, 250);
             debounceByInput.set(search, t);
         });
         search.addEventListener('focus', function () {
-            fetchItems(search.value.trim(), row, dd);
+            autoResize(search);
+            fetchItems(search.value, row, dd);
         });
+        search.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            var first = dd.querySelector('button.list-group-item-action');
+            if (first) first.click();
+        });
+        autoResize(search);
     }
 
     function bindAllRows() {
@@ -353,7 +387,10 @@
             if (pid) pid.value = '';
             if (mid) mid.value = '';
             var spec = tr.querySelector('.inv-line-spec');
-            if (spec) spec.value = '';
+            if (spec) {
+                spec.value = '';
+                autoResize(spec);
+            }
         });
     });
 

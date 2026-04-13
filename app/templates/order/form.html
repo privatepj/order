@@ -8,9 +8,16 @@
     max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #dee2e6;
     border-radius: 0.25rem; box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
 }
-.cp-dropdown .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-dropdown .list-group-item,
+.cp-dropdown .list-group-item-action {
+    cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
+    white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
 .cp-dropdown .list-group-item:hover { background: #f8f9fa; }
+#customerDropdown .list-group-item,
+#customerDropdown .list-group-item-action {
+    white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
 .cp-search.locked { background-color: #e9ecef; }
 .ro-field { background-color: #f8f9fa !important; }
 .item-row.is-spare-row { background-color: #fff8e8; }
@@ -105,9 +112,9 @@
                     <input type="text" class="form-control form-control-sm cp-search locked" readonly
                         value="{{ item.product_name }}{% if item.product_spec %} / {{ item.product_spec }}{% endif %}">
                     {% else %}
-                    <input type="text" class="form-control form-control-sm cp-search" autocomplete="off" placeholder="输入关键字搜索…">
+                    <textarea class="form-control form-control-sm name-search-textarea cp-search" rows="1" autocomplete="off" placeholder="输入关键字搜索…"></textarea>
                     <div class="cp-dropdown d-none"></div>
-                    <div class="cp-selected-label small text-muted text-truncate" style="max-width:300px" title=""></div>
+                    <div class="cp-selected-label name-wrap small text-muted" style="max-width:300px" title=""></div>
                     {% endif %}
                     <div class="row-kind small mt-1">{% if item.is_spare %}<span class="badge text-bg-warning">备品</span>{% endif %}</div>
                 </td>
@@ -120,7 +127,7 @@
                 </td>
                 <td><input type="text" class="form-control form-control-sm ro-field cm-no" readonly value="{{ item.customer_material_no or '' }}"></td>
                 <td><input type="text" class="form-control form-control-sm ro-field mat-no" readonly value="{{ item.customer_product.product.product_code if item.customer_product and item.customer_product.product else '' }}"></td>
-                <td><input type="text" class="form-control form-control-sm ro-field spec-inp" readonly value="{{ item.product_spec or '' }}"></td>
+                <td><textarea class="form-control form-control-sm ro-field name-search-textarea spec-inp" rows="1" readonly>{{ item.product_spec or '' }}</textarea></td>
                 <td><input type="text" class="form-control form-control-sm ro-field unit-inp" readonly value="{{ item.unit or '' }}"></td>
                 <td><input type="text" class="form-control form-control-sm ro-field price-inp" readonly value="{{ item.price if item.price is not none else '' }}"></td>
                 <td><input type="number" step="0.00000001" class="form-control form-control-sm qty" name="quantity" value="{{ item.quantity }}"></td>
@@ -134,9 +141,9 @@
                 <input type="hidden" name="customer_product_id" class="cp-id-input" value="">
                 <input type="hidden" name="is_spare" class="is-spare-input" value="0">
                 <td class="cp-picker-cell">
-                    <input type="text" class="form-control form-control-sm cp-search" autocomplete="off" placeholder="输入关键字搜索…">
+                    <textarea class="form-control form-control-sm name-search-textarea cp-search" rows="1" autocomplete="off" placeholder="输入关键字搜索…"></textarea>
                     <div class="cp-dropdown d-none"></div>
-                    <div class="cp-selected-label small text-muted text-truncate" style="max-width:300px"></div>
+                    <div class="cp-selected-label name-wrap small text-muted" style="max-width:300px"></div>
                     <div class="row-kind small mt-1"></div>
                 </td>
                 <td>
@@ -147,7 +154,7 @@
                 </td>
                 <td><input type="text" class="form-control form-control-sm ro-field cm-no" readonly value=""></td>
                 <td><input type="text" class="form-control form-control-sm ro-field mat-no" readonly value=""></td>
-                <td><input type="text" class="form-control form-control-sm ro-field spec-inp" readonly value=""></td>
+                <td><textarea class="form-control form-control-sm ro-field name-search-textarea spec-inp" rows="1" readonly></textarea></td>
                 <td><input type="text" class="form-control form-control-sm ro-field unit-inp" readonly value=""></td>
                 <td><input type="text" class="form-control form-control-sm ro-field price-inp" readonly value=""></td>
                 <td><input type="number" step="0.00000001" class="form-control form-control-sm qty" name="quantity" value="0"></td>
@@ -180,6 +187,16 @@
     var customerSearchApiUrl = '/api/orders/customers-search';
     var customerFilterTimer = null;
     var filterTimer = null;
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function esc(s) {
         if (!s) return '';
@@ -216,7 +233,10 @@
             var mat = tr.querySelector('.mat-no');
             if (mat) mat.value = '';
             var spec = tr.querySelector('.spec-inp');
-            if (spec) spec.value = '';
+            if (spec) {
+                spec.value = '';
+                autoResize(spec);
+            }
             var unit = tr.querySelector('.unit-inp');
             if (unit) unit.value = '';
             var price = tr.querySelector('.price-inp');
@@ -254,12 +274,17 @@
         tr.querySelector('.cp-id-input').value = cp.id;
         var label = cp.product_code + ' — ' + cp.product_name + (cp.product_spec ? ' / ' + cp.product_spec : '');
         var sel = tr.querySelector('.cp-selected-label');
-        if (sel) { sel.textContent = label.length > 48 ? label.slice(0, 45) + '…' : label; sel.setAttribute('title', label); }
+        if (sel) { sel.textContent = label; sel.setAttribute('title', label); }
         var s = tr.querySelector('.cp-search');
         if (s && !s.classList.contains('locked')) s.value = '';
+        autoResize(s);
         tr.querySelector('.cm-no').value = cp.customer_material_no || '';
         tr.querySelector('.mat-no').value = cp.product_code || '';
-        tr.querySelector('.spec-inp').value = cp.product_spec || '';
+        var specInp = tr.querySelector('.spec-inp');
+        if (specInp) {
+            specInp.value = cp.product_spec || '';
+            autoResize(specInp);
+        }
         tr.querySelector('.unit-inp').value = cp.unit || '';
         var pr = cp.price != null ? String(cp.price) : '';
         tr.dataset.cpPrice = pr;
@@ -303,10 +328,15 @@
                 top = window.innerHeight - ddMaxH - margin;
             }
 
+            var w = Math.min(Math.max(rect.width, 480), Math.max(280, window.innerWidth - rect.left - margin));
+            var left = rect.left;
+            if (left + w > window.innerWidth - margin) {
+                left = Math.max(margin, window.innerWidth - margin - w);
+            }
             dd.style.position = 'fixed';
-            dd.style.left = rect.left + 'px';
+            dd.style.left = left + 'px';
             dd.style.right = 'auto';
-            dd.style.width = rect.width + 'px';
+            dd.style.width = w + 'px';
             dd.style.top = Math.max(margin, top) + 'px';
             dd.style.maxHeight = (ddMaxH > 0 ? ddMaxH : maxH) + 'px';
         }
@@ -322,7 +352,7 @@
             btn.type = 'button';
             btn.className = 'list-group-item list-group-item-action';
             btn.setAttribute('title', label);
-            btn.textContent = label.length > 60 ? label.slice(0, 57) + '…' : label;
+            btn.textContent = label;
             btn.addEventListener('click', function(){
                 fillRowFromCp(tr, cp);
                 dd.classList.add('d-none');
@@ -334,7 +364,7 @@
 
     function fetchCp(customerId, q, cb) {
         if (!customerId) { cb([]); return; }
-        fetch(apiUrl + '?customer_id=' + customerId + '&q=' + encodeURIComponent(q || ''))
+        fetch(apiUrl + '?customer_id=' + customerId + '&q=' + encodeURIComponent(normalizeQuery(q)))
             .then(function(r){ return r.json(); })
             .then(function(d){ cb(d.items || []); });
     }
@@ -345,25 +375,34 @@
         var dd = tr.querySelector('.cp-dropdown');
         if (!search || !dd) return;
         search.addEventListener('focus', function(){
+            autoResize(search);
             // 只隐藏：避免“悬停/聚焦”就把该客户所有产品列表展开
             dd.classList.add('d-none');
             dd.innerHTML = '';
         });
         search.addEventListener('input', function(){
+            autoResize(search);
             clearTimeout(filterTimer);
             var cid = customerIdHidden && customerIdHidden.value;
             if (!cid) return;
-            var q = search.value.trim();
+            var q = normalizeQuery(search.value);
             if (!q) { dd.classList.add('d-none'); dd.innerHTML = ''; return; }
             filterTimer = setTimeout(function(){
-                var q2 = search.value.trim();
+                var q2 = normalizeQuery(search.value);
                 if (!q2) { dd.classList.add('d-none'); dd.innerHTML = ''; return; }
                 fetchCp(cid, q2, function(items){ showDropdown(dd, items, tr); });
             }, 250);
         });
+        search.addEventListener('keydown', function(e){
+            if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            var first = dd.querySelector('button.list-group-item-action');
+            if (first) first.click();
+        });
         search.addEventListener('blur', function(){
             setTimeout(function(){ dd.classList.add('d-none'); }, 200);
         });
+        autoResize(search);
         var qty = tr.querySelector('.qty');
         if (qty && isAdmin) qty.addEventListener('input', function(){ recalcAmount(tr); });
         var ss = tr.querySelector('.is-sample');
@@ -444,6 +483,8 @@
     document.querySelectorAll('#itemsTable tbody tr').forEach(function(tr){
         if (tr.id === 'rowTemplate') return;
         bindRow(tr);
+        var spec0 = tr.querySelector('.spec-inp');
+        if (spec0) autoResize(spec0);
         var cpId = tr.querySelector('.cp-id-input');
         if (cpId && cpId.value && customerIdHidden && customerIdHidden.value && tr.querySelector('.cp-search') && !tr.querySelector('.cp-search').classList.contains('locked')) {
             fetch(apiOneBase + cpId.value + '?customer_id=' + customerIdHidden.value)

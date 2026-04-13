@@ -17,7 +17,7 @@
     </div>
     <div class="mb-3">
         <label for="spec" class="form-label">规格</label>
-        <input type="text" class="form-control" id="spec" name="spec" value="{{ product.spec if product else '' }}">
+        <textarea class="form-control name-search-textarea" id="spec" name="spec" rows="1">{{ product.spec if product else '' }}</textarea>
     </div>
     <div class="mb-3">
         <label for="base_unit" class="form-label">基础单位</label>
@@ -30,4 +30,21 @@
     <button type="submit" class="btn btn-primary">保存</button>
     <a href="{{ url_for('main.product_list') }}" class="btn btn-secondary">取消</a>
 </form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
+    var el = document.getElementById('spec');
+    if (!el) return;
+    el.addEventListener('input', function () { autoResize(el); });
+    autoResize(el);
+})();
+</script>
 {% endblock %}

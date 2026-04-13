@@ -1601,6 +1601,7 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('inventory_ops_finished.api.suggest_storage_area', '成品录入：仓储区建议接口', 'inventory_ops_finished', '成品录入', 20),
 ('inventory_ops_finished.movement.list', '成品录入：库存批次列表', 'inventory_ops_finished', '成品录入', 25),
 ('inventory_ops_finished.movement.create', '成品录入：手工出入库', 'inventory_ops_finished', '成品录入', 30),
+('inventory_ops_finished.movement.export', '成品录入：导出进出明细', 'inventory_ops_finished', '成品录入', 35),
 ('inventory_ops_finished.movement.delete', '成品录入：删除进出明细', 'inventory_ops_finished', '成品录入', 40),
 ('inventory_ops_finished.movement_batch.void', '成品录入：撤销手工/导入批次', 'inventory_ops_finished', '成品录入', 45),
 ('inventory_ops_finished.opening.list', '成品录入：期初列表', 'inventory_ops_finished', '成品录入', 50),
@@ -1616,6 +1617,7 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('inventory_ops_semi.api.suggest_storage_area', '半成品录入：仓储区建议接口', 'inventory_ops_semi', '半成品录入', 20),
 ('inventory_ops_semi.movement.list', '半成品录入：库存批次列表', 'inventory_ops_semi', '半成品录入', 25),
 ('inventory_ops_semi.movement.create', '半成品录入：手工出入库', 'inventory_ops_semi', '半成品录入', 30),
+('inventory_ops_semi.movement.export', '半成品录入：导出进出明细', 'inventory_ops_semi', '半成品录入', 35),
 ('inventory_ops_semi.movement.delete', '半成品录入：删除进出明细', 'inventory_ops_semi', '半成品录入', 40),
 ('inventory_ops_semi.movement_batch.void', '半成品录入：撤销手工/导入批次', 'inventory_ops_semi', '半成品录入', 45),
 ('inventory_ops_semi.opening.list', '半成品录入：期初列表', 'inventory_ops_semi', '半成品录入', 50),
@@ -1631,6 +1633,7 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('inventory_ops_material.api.suggest_storage_area', '材料录入：仓储区建议接口', 'inventory_ops_material', '材料录入', 20),
 ('inventory_ops_material.movement.list', '材料录入：库存批次列表', 'inventory_ops_material', '材料录入', 25),
 ('inventory_ops_material.movement.create', '材料录入：手工出入库', 'inventory_ops_material', '材料录入', 30),
+('inventory_ops_material.movement.export', '材料录入：导出进出明细', 'inventory_ops_material', '材料录入', 35),
 ('inventory_ops_material.movement.delete', '材料录入：删除进出明细', 'inventory_ops_material', '材料录入', 40),
 ('inventory_ops_material.movement_batch.void', '材料录入：撤销手工/导入批次', 'inventory_ops_material', '材料录入', 45),
 ('inventory_ops_material.opening.list', '材料录入：期初列表', 'inventory_ops_material', '材料录入', 50),
@@ -1664,6 +1667,7 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('bom.action.edit', 'BOM：编辑', 'bom', 'BOM', 30),
 ('bom.action.delete', 'BOM：删除', 'bom', 'BOM', 40),
 ('bom.action.import', 'BOM：Excel 导入', 'bom', 'BOM', 50),
+('bom.action.export', 'BOM：Excel 导出', 'bom', 'BOM', 60),
 -- 预生产计划 / 生产事故
 ('production.preplan.action.create', '预生产计划：新建', 'production_preplan', '预生产计划', 10),
 ('production.preplan.action.edit', '预生产计划：编辑', 'production_preplan', '预生产计划', 20),
@@ -1837,6 +1841,11 @@ INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
 SELECT `role_id`, 'inventory_ops_material.movement_batch.void'
 FROM `role_allowed_capability`
 WHERE `cap_code` = 'inventory_ops_material.movement.delete';
+
+INSERT IGNORE INTO `role_allowed_capability` (`role_id`, `cap_code`)
+SELECT `role_id`, 'bom.action.export'
+FROM `role_allowed_capability`
+WHERE `cap_code` = 'bom.action.import';
 
 -- ----------------------------
 -- 机台排班模块：RBAC 种子（machine_schedule + 能力键 + warehouse 可访问）

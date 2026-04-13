@@ -14,7 +14,7 @@ from app import db
 from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.models import BomHeader, BomLine, Product, SemiMaterial
-from app.services import bom_svc
+from app.services import bom_multilevel_excel, bom_svc
 from app.utils.query import keyword_like_or
 
 
@@ -98,6 +98,69 @@ def _bom_parent_ids(parent_kind: str, parent_id: int) -> Tuple[int, int]:
     return 0, parent_id
 
 
+def _create_bom_version(*, parent_kind: str, parent_id: int, lines: List[Dict[str, Any]], remark: Optional[str] = None) -> None:
+    parent_product_id, parent_material_id = _bom_parent_ids(parent_kind, parent_id)
+    BomHeader.query.filter(
+        BomHeader.is_active.is_(True),
+        BomHeader.parent_kind == parent_kind,
+        BomHeader.parent_product_id == parent_product_id,
+        BomHeader.parent_material_id == parent_material_id,
+    ).update({"is_active": False}, synchronize_session=False)
+
+    max_ver = (
+        BomHeader.query.filter(
+            BomHeader.parent_kind == parent_kind,
+            BomHeader.parent_product_id == parent_product_id,
+            BomHeader.parent_material_id == parent_material_id,
+        )
+        .with_entities(func.max(BomHeader.version_no))
+        .scalar()
+    )
+    next_ver = int(max_ver or 0) + 1
+
+    header = BomHeader(
+        parent_kind=parent_kind,
+        parent_product_id=parent_product_id,
+        parent_material_id=parent_material_id,
+        version_no=next_ver,
+        is_active=True,
+        remark=(remark or "").strip()[:255] or None,
+    )
+    db.session.add(header)
+    db.session.flush()
+    for ln in lines:
+        db.session.add(
+            BomLine(
+                bom_header_id=header.id,
+                line_no=ln["line_no"],
+                child_kind=ln["child_kind"],
+                child_material_id=ln["child_material_id"],
+                quantity=ln["quantity"],
+                unit=ln.get("unit"),
+                remark=ln.get("remark"),
+            )
+        )
+
+
+def _import_groups_with_order(
+    *,
+    groups: Dict[Tuple[str, int], List[Dict[str, Any]]],
+    ordered_keys: Optional[List[Tuple[str, int]]] = None,
+) -> int:
+    if not groups:
+        return 0
+    keys = ordered_keys if ordered_keys is not None else list(groups.keys())
+    success_cnt = 0
+    for pk, pid in keys:
+        glines = groups.get((pk, pid)) or []
+        if not glines:
+            continue
+        bom_svc.validate_bom_lines(parent_kind=pk, parent_id=pid, lines=glines)
+        _create_bom_version(parent_kind=pk, parent_id=pid, lines=glines, remark=None)
+        success_cnt += 1
+    return success_cnt
+
+
 def register_bom_routes(bp):
     # ----- 列表 -----
     @bp.route("/boms")
@@ -171,49 +234,12 @@ def register_bom_routes(bp):
                 # 补齐子项 kind（来自表单）并做校验
                 bom_svc.validate_bom_lines(parent_kind=parent_kind, parent_id=parent_id, lines=lines)
 
-                # 反激活旧版本（仅允许一个 active）
-                parent_product_id, parent_material_id = _bom_parent_ids(parent_kind, parent_id)
-                BomHeader.query.filter(
-                    BomHeader.is_active.is_(True),
-                    BomHeader.parent_kind == parent_kind,
-                    BomHeader.parent_product_id == parent_product_id,
-                    BomHeader.parent_material_id == parent_material_id,
-                ).update({"is_active": False}, synchronize_session=False)
-
-                max_ver = (
-                    BomHeader.query.filter(
-                        BomHeader.parent_kind == parent_kind,
-                        BomHeader.parent_product_id == parent_product_id,
-                        BomHeader.parent_material_id == parent_material_id,
-                    )
-                    .with_entities(func.max(BomHeader.version_no))
-                    .scalar()
-                )
-                next_ver = int(max_ver or 0) + 1
-
-                header = BomHeader(
+                _create_bom_version(
                     parent_kind=parent_kind,
-                    parent_product_id=parent_product_id,
-                    parent_material_id=parent_material_id,
-                    version_no=next_ver,
-                    is_active=True,
-                    remark=(request.form.get("remark") or "").strip()[:255] or None,
+                    parent_id=parent_id,
+                    lines=lines,
+                    remark=request.form.get("remark"),
                 )
-                db.session.add(header)
-                db.session.flush()
-
-                for ln in lines:
-                    db.session.add(
-                        BomLine(
-                            bom_header_id=header.id,
-                            line_no=ln["line_no"],
-                            child_kind=ln["child_kind"],
-                            child_material_id=ln["child_material_id"],
-                            quantity=ln["quantity"],
-                            unit=ln.get("unit"),
-                            remark=ln.get("remark"),
-                        )
-                    )
                 db.session.commit()
                 flash("BOM 已保存并生效。", "success")
                 return redirect(url_for("main.bom_list", parent_kind=parent_kind))
@@ -253,49 +279,12 @@ def register_bom_routes(bp):
 
                 bom_svc.validate_bom_lines(parent_kind=parent_kind, parent_id=parent_id, lines=lines)
 
-                # 反激活旧版本（仅允许一个 active）
-                parent_product_id, parent_material_id = _bom_parent_ids(parent_kind, parent_id)
-                BomHeader.query.filter(
-                    BomHeader.is_active.is_(True),
-                    BomHeader.parent_kind == parent_kind,
-                    BomHeader.parent_product_id == parent_product_id,
-                    BomHeader.parent_material_id == parent_material_id,
-                ).update({"is_active": False}, synchronize_session=False)
-
-                max_ver = (
-                    BomHeader.query.filter(
-                        BomHeader.parent_kind == parent_kind,
-                        BomHeader.parent_product_id == parent_product_id,
-                        BomHeader.parent_material_id == parent_material_id,
-                    )
-                    .with_entities(func.max(BomHeader.version_no))
-                    .scalar()
-                )
-                next_ver = int(max_ver or 0) + 1
-
-                new_header = BomHeader(
+                _create_bom_version(
                     parent_kind=parent_kind,
-                    parent_product_id=parent_product_id,
-                    parent_material_id=parent_material_id,
-                    version_no=next_ver,
-                    is_active=True,
-                    remark=(request.form.get("remark") or "").strip()[:255] or None,
+                    parent_id=parent_id,
+                    lines=lines,
+                    remark=request.form.get("remark"),
                 )
-                db.session.add(new_header)
-                db.session.flush()
-
-                for ln in lines:
-                    db.session.add(
-                        BomLine(
-                            bom_header_id=new_header.id,
-                            line_no=ln["line_no"],
-                            child_kind=ln["child_kind"],
-                            child_material_id=ln["child_material_id"],
-                            quantity=ln["quantity"],
-                            unit=ln.get("unit"),
-                            remark=ln.get("remark"),
-                        )
-                    )
 
                 db.session.commit()
                 flash("BOM 已更新并生效（新版本）。", "success")
@@ -383,7 +372,7 @@ def register_bom_routes(bp):
         flash("BOM 版本已删除。", "success")
         return redirect(url_for("main.bom_list", parent_kind=parent_kind))
 
-    # ----- Excel：导入模板下载 -----
+    # ----- Excel：扁平模板下载 -----
     @bp.route("/boms/export-import-template", methods=["GET"])
     @login_required
     @menu_required("bom")
@@ -400,13 +389,11 @@ def register_bom_routes(bp):
             "单位（可空）",
             "子项备注（可空）",
         ]
-
         wb = Workbook()
         ws = wb.active
         ws.title = "BOM 导入模板"
         for col, h in enumerate(headers, start=1):
             ws.cell(1, col, h)
-
         buf = BytesIO()
         wb.save(buf)
         buf.seek(0)
@@ -417,36 +404,75 @@ def register_bom_routes(bp):
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    # ----- Excel：导入 -----
+    # ----- Excel：多级模板下载 -----
+    @bp.route("/boms/export-multilevel-template", methods=["GET"])
+    @login_required
+    @menu_required("bom")
+    @capability_required("bom.action.import")
+    def bom_export_multilevel_template():
+        buf = bom_multilevel_excel.build_multilevel_template_workbook()
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name="BOM多级导入模板.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    # ----- Excel：导入页 -----
     @bp.route("/boms/import", methods=["GET", "POST"])
     @login_required
     @menu_required("bom")
     @capability_required("bom.action.import")
     def bom_import():
         result: Optional[Dict[str, Any]] = None
-
+        mode = "flat"
         if request.method == "POST":
+            mode = (request.form.get("mode") or "flat").strip()
             file = request.files.get("file")
             if not file or not (file.filename or "").strip():
                 flash("请先选择要上传的 Excel 文件（.xlsx）。", "danger")
-                return render_template("bom/import.html", result=None)
+                return render_template("bom/import.html", result=None, mode=mode)
 
             try:
                 from openpyxl import load_workbook
             except ImportError:
                 flash("服务器缺少 openpyxl 依赖，无法导入。", "danger")
-                return render_template("bom/import.html", result=None)
+                return render_template("bom/import.html", result=None, mode=mode)
 
             try:
                 wb = load_workbook(file, data_only=True)
                 ws = wb.active
             except Exception:
                 flash("Excel 文件无法读取，请确认格式为 .xlsx。", "danger")
-                return render_template("bom/import.html", result=None)
+                return render_template("bom/import.html", result=None, mode=mode)
+
+            if mode == "multilevel":
+                parse_result = bom_multilevel_excel.parse_multilevel_sheet(ws)
+                errors = list(parse_result.errors)
+                success_cnt = 0
+                try:
+                    if parse_result.groups and not errors:
+                        bom_svc.validate_bom_import_batch(groups=parse_result.groups)
+                        ordered_keys = bom_multilevel_excel.topological_parent_order(parse_result.groups)
+                        success_cnt = _import_groups_with_order(groups=parse_result.groups, ordered_keys=ordered_keys)
+                        if success_cnt:
+                            db.session.commit()
+                        else:
+                            db.session.rollback()
+                    else:
+                        db.session.rollback()
+                except ValueError as e:
+                    db.session.rollback()
+                    errors.append(f"导入校验失败：{e}")
+                except IntegrityError:
+                    db.session.rollback()
+                    errors.append("导入失败：数据冲突。")
+
+                result = {"success": success_cnt, "errors": errors}
+                return render_template("bom/import.html", result=result, mode=mode)
 
             errors: List[str] = []
             groups: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
-
             product_cache: Dict[str, Optional[int]] = {}
             semi_cache: Dict[Tuple[str, str], Optional[int]] = {}
 
@@ -465,7 +491,6 @@ def register_bom_routes(bp):
                 semi_cache[key] = sm.id if sm else None
                 return semi_cache[key]
 
-            # Excel 从第 2 行开始
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 (
                     parent_kind_raw,
@@ -476,15 +501,12 @@ def register_bom_routes(bp):
                     unit_raw,
                     remark_raw,
                 ) = (tuple(row) + (None,) * 7)[:7]
-
                 parent_kind = (str(parent_kind_raw).strip() if parent_kind_raw is not None else "").strip()
                 parent_code = (str(parent_code_raw).strip() if parent_code_raw is not None else "").strip()
                 child_kind = (str(child_kind_raw).strip() if child_kind_raw is not None else "").strip()
                 child_code = (str(child_code_raw).strip() if child_code_raw is not None else "").strip()
-
                 if not any([parent_kind, parent_code, child_kind, child_code, qty_raw, unit_raw, remark_raw]):
                     continue
-
                 if parent_kind not in (bom_svc.PARENT_FINISHED, bom_svc.PARENT_SEMI, bom_svc.PARENT_MATERIAL):
                     errors.append(f"第 {idx} 行：父项类别无效。")
                     continue
@@ -497,7 +519,6 @@ def register_bom_routes(bp):
                 if not child_code:
                     errors.append(f"第 {idx} 行：子项编号不能为空。")
                     continue
-
                 qty = None
                 try:
                     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
@@ -506,31 +527,20 @@ def register_bom_routes(bp):
                 if qty is None or qty <= 0:
                     errors.append(f"第 {idx} 行：用量数量须大于 0。")
                     continue
-
                 unit = (str(unit_raw).strip() if unit_raw is not None else "").strip() or None
                 if unit:
                     unit = unit[:16]
-
                 remark = (str(remark_raw).strip() if remark_raw is not None else "").strip() or None
                 if remark:
                     remark = remark[:255]
-
-                # resolve parent id
-                parent_id = None
-                if parent_kind == bom_svc.PARENT_FINISHED:
-                    parent_id = resolve_product_code(parent_code)
-                else:
-                    parent_id = resolve_semi_kind_code(parent_kind, parent_code)
+                parent_id = resolve_product_code(parent_code) if parent_kind == bom_svc.PARENT_FINISHED else resolve_semi_kind_code(parent_kind, parent_code)
                 if not parent_id:
                     errors.append(f"第 {idx} 行：未找到父项（{parent_kind} / {parent_code}）。")
                     continue
-
-                # resolve child id
                 child_id = resolve_semi_kind_code(child_kind, child_code)
                 if not child_id:
                     errors.append(f"第 {idx} 行：未找到子项（{child_kind} / {child_code}）。")
                     continue
-
                 key = (parent_kind, parent_id)
                 line_no = len(groups.get(key, [])) + 1
                 groups.setdefault(key, []).append(
@@ -543,59 +553,10 @@ def register_bom_routes(bp):
                         "remark": remark,
                     }
                 )
-
-            # 逐组校验并写入
             success_cnt = 0
             try:
-                for (pk, pid), glines in groups.items():
-                    bom_svc.validate_bom_lines(parent_kind=pk, parent_id=pid, lines=glines)
-
-                    parent_product_id, parent_material_id = _bom_parent_ids(pk, pid)
-                    BomHeader.query.filter(
-                        BomHeader.is_active.is_(True),
-                        BomHeader.parent_kind == pk,
-                        BomHeader.parent_product_id == parent_product_id,
-                        BomHeader.parent_material_id == parent_material_id,
-                    ).update({"is_active": False}, synchronize_session=False)
-
-                    max_ver = (
-                        BomHeader.query.filter(
-                            BomHeader.parent_kind == pk,
-                            BomHeader.parent_product_id == parent_product_id,
-                            BomHeader.parent_material_id == parent_material_id,
-                        )
-                        .with_entities(func.max(BomHeader.version_no))
-                        .scalar()
-                    )
-                    next_ver = int(max_ver or 0) + 1
-
-                    header = BomHeader(
-                        parent_kind=pk,
-                        parent_product_id=parent_product_id,
-                        parent_material_id=parent_material_id,
-                        version_no=next_ver,
-                        is_active=True,
-                        remark=None,
-                    )
-                    db.session.add(header)
-                    db.session.flush()
-
-                    for ln in glines:
-                        db.session.add(
-                            BomLine(
-                                bom_header_id=header.id,
-                                line_no=ln["line_no"],
-                                child_kind=ln["child_kind"],
-                                child_material_id=ln["child_material_id"],
-                                quantity=ln["quantity"],
-                                unit=ln.get("unit"),
-                                remark=ln.get("remark"),
-                            )
-                        )
-
-                    success_cnt += 1
-
-                if success_cnt:
+                if groups and not errors:
+                    success_cnt = _import_groups_with_order(groups=groups)
                     db.session.commit()
                 else:
                     db.session.rollback()
@@ -605,8 +566,30 @@ def register_bom_routes(bp):
             except IntegrityError:
                 db.session.rollback()
                 errors.append("导入失败：数据冲突。")
-
             result = {"success": success_cnt, "errors": errors}
+        return render_template("bom/import.html", result=result, mode=mode)
 
-        return render_template("bom/import.html", result=result)
+    @bp.route("/boms/export-multilevel", methods=["GET"])
+    @login_required
+    @menu_required("bom")
+    @capability_required("bom.action.export")
+    def bom_export_multilevel():
+        parent_kind = (request.args.get("parent_kind") or bom_svc.PARENT_FINISHED).strip()
+        if parent_kind not in (bom_svc.PARENT_FINISHED, bom_svc.PARENT_SEMI, bom_svc.PARENT_MATERIAL):
+            parent_kind = bom_svc.PARENT_FINISHED
+        parent_id = request.args.get("parent_id", type=int) or 0
+        if parent_id <= 0:
+            flash("导出失败：请选择有效的父项。", "danger")
+            return redirect(url_for("main.bom_list", parent_kind=parent_kind))
+        try:
+            buf, filename = bom_multilevel_excel.build_multilevel_workbook(parent_kind=parent_kind, parent_id=parent_id)
+        except ValueError as e:
+            flash(str(e), "danger")
+            return redirect(url_for("main.bom_list", parent_kind=parent_kind))
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 

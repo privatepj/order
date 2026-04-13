@@ -126,6 +126,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
         "成品录入",
     ),
     (
+        "inventory_ops_finished.movement.export",
+        "成品录入：导出进出明细",
+        "inventory_ops_finished",
+        "成品录入",
+    ),
+    (
         "inventory_ops_finished.movement.delete",
         "成品录入：删除进出明细",
         "inventory_ops_finished",
@@ -216,6 +222,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
         "半成品录入",
     ),
     (
+        "inventory_ops_semi.movement.export",
+        "半成品录入：导出进出明细",
+        "inventory_ops_semi",
+        "半成品录入",
+    ),
+    (
         "inventory_ops_semi.movement.delete",
         "半成品录入：删除进出明细",
         "inventory_ops_semi",
@@ -302,6 +314,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
     (
         "inventory_ops_material.movement.create",
         "材料录入：手工出入库",
+        "inventory_ops_material",
+        "材料录入",
+    ),
+    (
+        "inventory_ops_material.movement.export",
+        "材料录入：导出进出明细",
         "inventory_ops_material",
         "材料录入",
     ),

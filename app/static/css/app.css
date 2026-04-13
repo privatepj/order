@@ -211,6 +211,21 @@ body.app-body {
   margin-bottom: 0;
 }
 
+/* 长文本（如品名）统一换行展示，避免被截断 */
+.name-wrap {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.name-search-textarea {
+  min-height: 2rem;
+  max-height: 6rem;
+  line-height: 1.35;
+  overflow-y: hidden;
+  resize: none;
+}
+
 /* 打印时隐藏导航与操作区，仅保留送货单内容 */
 @media print {
   .app-navbar,

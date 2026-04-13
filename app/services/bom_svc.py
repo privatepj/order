@@ -60,13 +60,13 @@ def validate_bom_lines(
         raise ValueError("lines 格式错误。")
 
     parsed: List[Dict[str, Any]] = []
-    for idx, l in enumerate(lines, start=1):
-        if not isinstance(l, dict):
+    for idx, line_item in enumerate(lines, start=1):
+        if not isinstance(line_item, dict):
             raise ValueError("lines 元素格式错误。")
-        child_kind = (l.get("child_kind") or "").strip()
-        child_material_id = l.get("child_material_id") or 0
-        quantity = l.get("quantity") or 0
-        line_no = l.get("line_no") or idx
+        child_kind = (line_item.get("child_kind") or "").strip()
+        child_material_id = line_item.get("child_material_id") or 0
+        quantity = line_item.get("quantity") or 0
+        line_no = line_item.get("line_no") or idx
 
         if child_kind not in CHILD_KINDS:
             raise ValueError("子项类别只能是 semi/material。")
@@ -243,4 +243,62 @@ def expand_bom_to_leaves(
             }
         )
     return out
+
+
+def validate_bom_import_batch(
+    *,
+    groups: Dict[Tuple[str, int], List[Dict[str, Any]]],
+    max_depth: int = 20,
+) -> None:
+    """校验整批导入 groups（含“本批覆盖 + 现网沿用”）是否会形成循环引用。"""
+    if not groups:
+        return
+
+    for (pk, pid), lines in groups.items():
+        validate_bom_lines(parent_kind=pk, parent_id=pid, lines=lines, max_depth=max_depth)
+
+    header_cache: Dict[Tuple[str, int], Optional[BomHeader]] = {}
+    visiting: Set[Tuple[str, int]] = set()
+    visiting_stack: List[Tuple[str, int]] = []
+
+    def _db_lines(kind: str, pid: int) -> List[Dict[str, Any]]:
+        key = _parent_key(kind, pid)
+        if key in header_cache:
+            header = header_cache[key]
+        else:
+            header = get_active_bom_header(parent_kind=key[0], parent_id=key[1])
+            header_cache[key] = header
+        if not header or not header.lines:
+            return []
+        return [
+            {
+                "child_kind": ln.child_kind,
+                "child_material_id": ln.child_material_id,
+            }
+            for ln in sorted(list(header.lines), key=lambda x: x.line_no)
+        ]
+
+    def dfs(node_kind: str, node_id: int, depth: int) -> None:
+        if depth > max_depth:
+            raise ValueError("BOM 展开层级超过上限，请检查是否存在异常层级或循环引用。")
+        nk, ni = _parent_key(node_kind, node_id)
+        node = (nk, ni)
+        if node in visiting:
+            cycle_seq = visiting_stack[visiting_stack.index(node) :] + [node]
+            cycle_seq_s = " -> ".join([f"{k}:{i}" for k, i in cycle_seq])
+            raise ValueError(f"检测到 BOM 循环引用：{cycle_seq_s}")
+
+        visiting.add(node)
+        visiting_stack.append(node)
+        if node in groups:
+            lines = groups[node]
+        else:
+            lines = _db_lines(nk, ni)
+        for ln in lines:
+            dfs(ln.get("child_kind"), ln.get("child_material_id"), depth + 1)
+        visiting_stack.pop()
+        visiting.remove(node)
+
+    for pk, pid in groups.keys():
+        dfs(pk, pid, depth=0)
 

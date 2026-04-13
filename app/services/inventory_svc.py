@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app
-from sqlalchemy import case, func, text
+from sqlalchemy import and_, case, func, or_, text
 
 from app import db
 from app.models import (
@@ -767,6 +767,137 @@ def _like_pat(kw: str) -> str:
         return ""
     esc = s.replace("%", r"\%").replace("_", r"\_")
     return f"%{esc}%"
+
+
+def query_movement_export_rows(
+    *,
+    categories: List[str],
+    start_date,
+    end_date,
+    category: str = "",
+    direction: str = "",
+    storage_area_kw: str = "",
+    name_spec_kw: str = "",
+    limit: int = 50000,
+) -> Tuple[List[dict[str, Any]], bool]:
+    """查询库存进出明细导出行；返回 (rows, exceeded_limit)。"""
+    valid_scope = [c for c in categories if c in (INV_FINISHED, INV_SEMI, INV_MATERIAL)]
+    if not valid_scope:
+        return [], False
+
+    q = (
+        db.session.query(
+            InventoryMovement.id.label("movement_id"),
+            InventoryMovement.category,
+            InventoryMovement.direction,
+            InventoryMovement.biz_date,
+            InventoryMovement.storage_area,
+            InventoryMovement.quantity,
+            InventoryMovement.unit,
+            InventoryMovement.source_type,
+            InventoryMovement.source_delivery_id,
+            InventoryMovement.source_purchase_order_id,
+            InventoryMovement.source_purchase_receipt_id,
+            InventoryMovement.remark,
+            InventoryMovement.created_at,
+            Product.product_code.label("f_code"),
+            Product.name.label("f_name"),
+            Product.spec.label("f_spec"),
+            SemiMaterial.code.label("m_code"),
+            SemiMaterial.name.label("m_name"),
+            SemiMaterial.spec.label("m_spec"),
+        )
+        .outerjoin(
+            Product,
+            and_(
+                InventoryMovement.category == INV_FINISHED,
+                InventoryMovement.product_id == Product.id,
+            ),
+        )
+        .outerjoin(
+            SemiMaterial,
+            and_(
+                InventoryMovement.category.in_([INV_SEMI, INV_MATERIAL]),
+                InventoryMovement.material_id == SemiMaterial.id,
+            ),
+        )
+        .filter(InventoryMovement.category.in_(valid_scope))
+        .filter(InventoryMovement.biz_date >= start_date)
+        .filter(InventoryMovement.biz_date <= end_date)
+    )
+
+    if category in (INV_FINISHED, INV_SEMI, INV_MATERIAL):
+        q = q.filter(InventoryMovement.category == category)
+    if direction in ("in", "out"):
+        q = q.filter(InventoryMovement.direction == direction)
+    if storage_area_kw.strip():
+        q = q.filter(
+            InventoryMovement.storage_area.like(
+                _like_pat(storage_area_kw), escape="\\"
+            )
+        )
+    if name_spec_kw.strip():
+        name_spec_pat = _like_pat(name_spec_kw)
+        q = q.filter(
+            or_(
+                and_(
+                    InventoryMovement.category == INV_FINISHED,
+                    or_(
+                        Product.product_code.like(name_spec_pat, escape="\\"),
+                        Product.name.like(name_spec_pat, escape="\\"),
+                        func.coalesce(Product.spec, "").like(name_spec_pat, escape="\\"),
+                    ),
+                ),
+                and_(
+                    InventoryMovement.category.in_([INV_SEMI, INV_MATERIAL]),
+                    or_(
+                        SemiMaterial.code.like(name_spec_pat, escape="\\"),
+                        SemiMaterial.name.like(name_spec_pat, escape="\\"),
+                        func.coalesce(SemiMaterial.spec, "").like(
+                            name_spec_pat, escape="\\"
+                        ),
+                    ),
+                ),
+            )
+        )
+
+    fetch_limit = max(1, int(limit)) + 1
+    rows = (
+        q.order_by(InventoryMovement.biz_date.desc(), InventoryMovement.id.desc())
+        .limit(fetch_limit)
+        .all()
+    )
+    exceeded = len(rows) > int(limit)
+    if exceeded:
+        rows = rows[: int(limit)]
+
+    out: List[dict[str, Any]] = []
+    for r in rows:
+        is_finished = r.category == INV_FINISHED
+        code = r.f_code if is_finished else r.m_code
+        name = r.f_name if is_finished else r.m_name
+        spec = r.f_spec if is_finished else r.m_spec
+        out.append(
+            {
+                "movement_id": int(r.movement_id),
+                "biz_date": r.biz_date,
+                "category": r.category,
+                "direction": r.direction,
+                "storage_area": r.storage_area or "",
+                "item_code": code or "",
+                "item_name": name or "",
+                "item_spec": spec or "",
+                "quantity": r.quantity,
+                "unit": r.unit or "",
+                "source_type": r.source_type or "",
+                "source_delivery_id": r.source_delivery_id,
+                "source_purchase_order_id": r.source_purchase_order_id,
+                "source_purchase_receipt_id": r.source_purchase_receipt_id,
+                "remark": r.remark or "",
+                "created_at": r.created_at,
+            }
+        )
+    return out, exceeded
 
 
 def query_stock_aggregate(

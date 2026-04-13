@@ -13,6 +13,12 @@
     border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
 }
+.order-dd .list-group-item,
+.order-dd .list-group-item-action {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -52,18 +58,18 @@
     <div class="col-md-4 order-cell">
         <label class="form-label">供应商</label>
         <input type="hidden" name="supplier_id" id="orderSupplierId" value="{{ row.supplier_id if row else '' }}">
-        <input type="text" class="form-control" id="orderSupplierSearch" value="{{ row.supplier_name if row else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+        <textarea class="form-control name-search-textarea" id="orderSupplierSearch" rows="1" autocomplete="off" placeholder="输入后模糊搜索">{{ row.supplier_name if row else '' }}</textarea>
         <div class="order-dd list-group d-none" id="orderSupplierDd"></div>
     </div>
     <div class="col-md-4 order-cell">
         <label class="form-label">物料</label>
         <input type="hidden" name="material_id" id="orderMaterialId" value="{{ row.material_id if row else '' }}">
-        <input type="text" class="form-control" id="orderMaterialSearch" value="{{ row.item_name if row else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+        <textarea class="form-control name-search-textarea" id="orderMaterialSearch" rows="1" autocomplete="off" placeholder="输入后模糊搜索">{{ row.item_name if row else '' }}</textarea>
         <div class="order-dd list-group d-none" id="orderMaterialDd"></div>
     </div>
     <div class="col-md-3">
         <label class="form-label">规格</label>
-        <input type="text" class="form-control" id="orderSpec" value="{{ row.item_spec if row else '' }}" readonly>
+        <textarea class="form-control name-search-textarea" id="orderSpec" rows="1" readonly>{{ row.item_spec if row else '' }}</textarea>
     </div>
     <div class="col-md-2">
         <label class="form-label">单位</label>
@@ -127,6 +133,16 @@
     var expectedDateInput = document.getElementById('orderExpectedDate');
     var supplierTimer = null;
     var materialTimer = null;
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function hideAll() {
         [supplierDd, materialDd].forEach(function (el) {
@@ -136,10 +152,17 @@
     }
 
     function place(dd, input) {
+        autoResize(input);
         var rect = input.getBoundingClientRect();
-        dd.style.left = rect.left + 'px';
+        var m = 8;
+        var w = Math.min(Math.max(rect.width, 480), Math.max(240, window.innerWidth - rect.left - m));
+        var left = rect.left;
+        if (left + w > window.innerWidth - m) {
+            left = Math.max(m, window.innerWidth - m - w);
+        }
+        dd.style.left = left + 'px';
         dd.style.top = rect.bottom + 'px';
-        dd.style.width = Math.max(rect.width, 220) + 'px';
+        dd.style.width = w + 'px';
     }
 
     function render(dd, input, items, onSelect) {
@@ -178,6 +201,7 @@
     function setSupplier(item, syncPrice) {
         supplierId.value = item ? (item.supplier_id || item.id || '') : '';
         supplierInput.value = item ? (item.label || item.name || '') : '';
+        autoResize(supplierInput);
         if (item && item.last_unit_price) {
             refPriceInput.value = item.last_unit_price;
             if (syncPrice) {
@@ -196,6 +220,7 @@
     function setMaterial(item, syncPrice) {
         materialId.value = item ? (item.material_id || item.id || '') : '';
         materialInput.value = item ? (item.label || item.name || '') : '';
+        autoResize(materialInput);
         specInput.value = item ? (item.spec || '') : '';
         if (item) {
             unitInput.value = item.base_unit || unitInput.value || '';
@@ -208,6 +233,7 @@
             specInput.value = '';
             refPriceInput.value = '';
         }
+        autoResize(specInput);
     }
 
     function fetchJson(url) {
@@ -247,7 +273,7 @@
 
     function fetchSuppliers() {
         if (supplierInput.readOnly) return;
-        var q = (supplierInput.value || '').trim();
+        var q = normalizeQuery(supplierInput.value);
         var url = supplierSearchUrl + '?q=' + encodeURIComponent(q);
         if (materialId.value) {
             url = materialSuppliersUrl + '?material_id=' + encodeURIComponent(materialId.value) + '&q=' + encodeURIComponent(q);
@@ -263,7 +289,7 @@
 
     function fetchMaterials() {
         if (materialInput.readOnly) return;
-        var q = (materialInput.value || '').trim();
+        var q = normalizeQuery(materialInput.value);
         var url = materialSearchUrl + '?q=' + encodeURIComponent(q);
         if (supplierId.value) {
             url = supplierMaterialsUrl + '?supplier_id=' + encodeURIComponent(supplierId.value) + '&q=' + encodeURIComponent(q);
@@ -279,23 +305,26 @@
     }
 
     supplierInput.addEventListener('input', function () {
+        autoResize(supplierInput);
         if (supplierInput.readOnly) return;
         supplierId.value = '';
         if (supplierTimer) window.clearTimeout(supplierTimer);
         supplierTimer = window.setTimeout(fetchSuppliers, 200);
     });
-    supplierInput.addEventListener('focus', fetchSuppliers);
+    supplierInput.addEventListener('focus', function () { autoResize(supplierInput); fetchSuppliers(); });
 
     materialInput.addEventListener('input', function () {
+        autoResize(materialInput);
         if (materialInput.readOnly) return;
         materialId.value = '';
         specInput.value = '';
+        autoResize(specInput);
         refPriceInput.value = '';
         clearSupplier();
         if (materialTimer) window.clearTimeout(materialTimer);
         materialTimer = window.setTimeout(fetchMaterials, 200);
     });
-    materialInput.addEventListener('focus', fetchMaterials);
+    materialInput.addEventListener('focus', function () { autoResize(materialInput); fetchMaterials(); });
 
     requisitionLineSelect.addEventListener('change', function () {
         var option = requisitionLineSelect.options[requisitionLineSelect.selectedIndex];
@@ -306,6 +335,7 @@
             materialId.value = option.getAttribute('data-material-id') || '';
             materialInput.value = option.getAttribute('data-material-name') || '';
             specInput.value = option.getAttribute('data-material-spec') || '';
+            autoResize(specInput);
             unitInput.value = option.getAttribute('data-unit') || unitInput.value || '';
             if (!qtyInput.value) {
                 qtyInput.value = option.getAttribute('data-qty') || '';
@@ -331,6 +361,9 @@
     } else if (materialId.value) {
         loadSuppliersForMaterial({ preserveCurrentSupplier: true, syncPrice: true });
     }
+    autoResize(supplierInput);
+    autoResize(materialInput);
+    autoResize(specInput);
 
     document.addEventListener('click', function (e) {
         if (!e.target.closest('.order-cell')) hideAll();

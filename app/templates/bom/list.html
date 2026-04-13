@@ -54,6 +54,9 @@
             <td>v{{ b.version_no }}</td>
             <td>{{ b.remark or '-' }}</td>
             <td>
+                {% if user_can_cap('bom.action.export') and (parent_kind == 'finished' or parent_kind == 'semi' or parent_kind == 'material') %}
+                <a href="{{ url_for('main.bom_export_multilevel', parent_kind=parent_kind, parent_id=(b.parent_product_id if parent_kind == 'finished' else b.parent_material_id)) }}" class="btn btn-sm btn-outline-secondary">导出</a>
+                {% endif %}
                 {% if user_can_cap('bom.action.edit') %}
                 <a href="{{ url_for('main.bom_edit', header_id=b.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>
                 {% endif %}

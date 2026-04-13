@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from io import BytesIO
@@ -39,6 +39,7 @@ _INVENTORY_CAP_SUFFIXES = (
     "api.suggest_storage_area",
     "movement.list",
     "movement.create",
+    "movement.export",
     "movement.delete",
     "movement_batch.void",
     "opening.list",
@@ -313,6 +314,70 @@ def _parse_movement_import_excel(ws):
             continue
         parsed.append((0, name_s, spec_s, area_s, qty, unit_s or None, remark_s or None))
     return parsed, errors, failed_rows
+
+
+def _resolve_movement_export_date_range(preset: str, start_raw: str, end_raw: str):
+    """解析周/月/自定义导出区间。"""
+    preset_norm = (preset or "week").strip().lower()
+    today = date.today()
+    if preset_norm in ("week", "month") and start_raw and end_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+            end_date = date.fromisoformat(end_raw)
+        except ValueError as exc:
+            raise ValueError("日期格式无效，请使用 YYYY-MM-DD。") from exc
+        return preset_norm, start_date, end_date
+
+    if preset_norm == "week":
+        start_date = today - timedelta(days=today.weekday())
+        end_date = start_date + timedelta(days=6)
+        return preset_norm, start_date, end_date
+    if preset_norm == "month":
+        start_date = today.replace(day=1)
+        if start_date.month == 12:
+            next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
+        else:
+            next_month = start_date.replace(month=start_date.month + 1, day=1)
+        end_date = next_month - timedelta(days=1)
+        return preset_norm, start_date, end_date
+    if preset_norm == "custom":
+        if not start_raw or not end_raw:
+            raise ValueError("自定义导出必须同时选择开始日期和结束日期。")
+        try:
+            start_date = date.fromisoformat(start_raw)
+            end_date = date.fromisoformat(end_raw)
+        except ValueError as exc:
+            raise ValueError("日期格式无效，请使用 YYYY-MM-DD。") from exc
+        return preset_norm, start_date, end_date
+    raise ValueError("导出周期无效。")
+
+
+def _movement_source_label(row: dict) -> str:
+    st = (row.get("source_type") or "").strip()
+    if st == inventory_svc.SOURCE_DELIVERY:
+        did = row.get("source_delivery_id")
+        return f"送货出库#{did}" if did else "送货出库"
+    if st == inventory_svc.SOURCE_PROCUREMENT:
+        po = row.get("source_purchase_order_id")
+        rcpt = row.get("source_purchase_receipt_id")
+        if po and rcpt:
+            return f"采购入库(采购单#{po}/收货单#{rcpt})"
+        if po:
+            return f"采购入库(采购单#{po})"
+        if rcpt:
+            return f"采购入库(收货单#{rcpt})"
+        return "采购入库"
+    return "手工录入"
+
+
+def _inventory_category_label(category: str) -> str:
+    if category == inventory_svc.INV_FINISHED:
+        return "成品"
+    if category == inventory_svc.INV_SEMI:
+        return "半成品"
+    if category == inventory_svc.INV_MATERIAL:
+        return "物料"
+    return category or ""
 
 
 def _dedupe_movement_import_parsed(parsed):
@@ -866,6 +931,132 @@ def register_inventory_routes(bp):
             pagination=pagination,
             creators=users,
             list_category=list_category,
+        )
+
+    @bp.route("/inventory/movement/export", methods=["GET"])
+    @login_required
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    @capability_required(*INVENTORY_CAP_KEYS["movement.export"])
+    def inventory_movement_export():
+        category = (request.args.get("category") or "").strip()
+        direction = (request.args.get("direction") or "").strip()
+        preset = (request.args.get("preset") or "week").strip().lower()
+        start_raw = (request.args.get("start_date") or "").strip()
+        end_raw = (request.args.get("end_date") or "").strip()
+        name_spec_kw = (request.args.get("name_spec") or "").strip()
+        storage_area_kw = (request.args.get("storage_area") or "").strip()
+
+        allowed_menu_cats = _user_allowed_inventory_categories()
+        allowed_export_cats = [
+            cat
+            for cat in allowed_menu_cats
+            if current_user_can_cap(f"{_menu_code_for_category(cat)}.movement.export")
+        ]
+        if not allowed_export_cats:
+            abort(403)
+
+        if category:
+            if category not in _INVENTORY_CATEGORY_SET:
+                abort(404)
+            if category not in allowed_export_cats:
+                abort(403)
+            query_cats = [category]
+        else:
+            query_cats = list(allowed_export_cats)
+
+        try:
+            preset_norm, start_date, end_date = _resolve_movement_export_date_range(
+                preset, start_raw, end_raw
+            )
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            if category:
+                return redirect(url_for("main.inventory_list", category=category))
+            return redirect(url_for("main.inventory_list"))
+
+        if start_date > end_date:
+            flash("开始日期不能晚于结束日期。", "danger")
+            if category:
+                return redirect(url_for("main.inventory_list", category=category))
+            return redirect(url_for("main.inventory_list"))
+
+        max_days = 92
+        if (end_date - start_date).days + 1 > max_days:
+            flash(f"导出时间范围不能超过 {max_days} 天，请缩小范围后重试。", "danger")
+            if category:
+                return redirect(url_for("main.inventory_list", category=category))
+            return redirect(url_for("main.inventory_list"))
+
+        max_rows = 50000
+        rows, exceeded = inventory_svc.query_movement_export_rows(
+            categories=query_cats,
+            start_date=start_date,
+            end_date=end_date,
+            category=category,
+            direction=direction,
+            storage_area_kw=storage_area_kw,
+            name_spec_kw=name_spec_kw,
+            limit=max_rows,
+        )
+        if exceeded:
+            flash(f"导出结果超过 {max_rows} 行，请缩小范围后重试。", "danger")
+            if category:
+                return redirect(url_for("main.inventory_list", category=category))
+            return redirect(url_for("main.inventory_list"))
+
+        from openpyxl import Workbook
+
+        headers = [
+            "业务日期",
+            "类别",
+            "方向",
+            "仓储区",
+            "编号",
+            "品名",
+            "规格",
+            "数量",
+            "单位",
+            "来源",
+            "备注",
+            "创建时间",
+        ]
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "库存进出明细"
+        for col_idx, header in enumerate(headers, start=1):
+            ws.cell(1, col_idx, header)
+        for row_idx, row in enumerate(rows, start=2):
+            ws.cell(row_idx, 1, row["biz_date"].isoformat() if row.get("biz_date") else "")
+            ws.cell(row_idx, 2, _inventory_category_label(row.get("category") or ""))
+            ws.cell(row_idx, 3, "入库" if row.get("direction") == "in" else "出库")
+            ws.cell(row_idx, 4, row.get("storage_area") or "")
+            ws.cell(row_idx, 5, row.get("item_code") or "")
+            ws.cell(row_idx, 6, row.get("item_name") or "")
+            ws.cell(row_idx, 7, row.get("item_spec") or "")
+            ws.cell(row_idx, 8, row.get("quantity"))
+            ws.cell(row_idx, 9, row.get("unit") or "")
+            ws.cell(row_idx, 10, _movement_source_label(row))
+            ws.cell(row_idx, 11, row.get("remark") or "")
+            created_at = row.get("created_at")
+            ws.cell(
+                row_idx,
+                12,
+                created_at.strftime("%Y-%m-%d %H:%M:%S")
+                if getattr(created_at, "strftime", None)
+                else "",
+            )
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = (
+            f"库存进出明细_{preset_norm}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.xlsx"
+        )
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=fname,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     @bp.route("/inventory/batch/<int:batch_id>")

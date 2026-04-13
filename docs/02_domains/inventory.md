@@ -29,6 +29,17 @@
 - **越权**：`category` 与本人菜单不一致时返回 **403**；非法取值 **404**。
 - **批次详情 / 撤销 / 删单条流水**：按批次或流水上的 `category` 校验对应 `movement.list`、`movement_batch.void`、`movement.delete`（不再仅凭「任一品类能力」覆盖他类数据）。
 
+## 进出明细导出（周/月/自定义）
+
+- **入口**：`GET /inventory/movement/export`（按钮位于 `inventory/movement_list.html`）。
+- **周期参数**：
+  - `preset=week|month|custom`
+  - `custom` 必填 `start_date` + `end_date`（`YYYY-MM-DD`）
+  - `week/month` 未传日期时后端自动回填本周/本月区间
+- **可选筛选**：`category`、`direction`、`storage_area`、`name_spec`。
+- **权限**：按类别校验 `inventory_ops_*.movement.export`（并叠加菜单可见范围）。
+- **保护阈值**：单次导出日期跨度最多 92 天，结果最多 50,000 行，超限需缩小范围。
+
 
 ## 数量展示与录入校验
 
@@ -47,6 +58,7 @@
 能力键按菜单前缀展开，例如：
 
 - `inventory_ops_finished.movement.create`、`inventory_ops_semi.movement.create`、`inventory_ops_material.movement.create`（三者之一或组合，见 `INVENTORY_CAP_KEYS`）。
+- `inventory_ops_finished.movement.export`、`inventory_ops_semi.movement.export`、`inventory_ops_material.movement.export`（库存进出明细导出）。
 - 同类还有 `movement.delete`、`movement_batch.void`、`opening.*`、`daily.*` 等。
 
 **查询**：菜单 `inventory_query`（与 `inventory_stock_query_read_filters` 配合）。

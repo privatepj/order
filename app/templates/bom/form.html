@@ -8,8 +8,11 @@
     background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
 }
-.bom-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bom-dd .list-group-item,
+.bom-dd .list-group-item-action {
+    cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
+    white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
 .bom-dd .list-group-item:hover { background: #f8f9fa; }
 </style>
 {% endblock %}
@@ -29,8 +32,8 @@
         </div>
         <div class="col-md-4">
             <label class="form-label">父项（搜索） <span class="text-danger">*</span></label>
-            <input type="text" id="bomParentSearch" class="form-control" autocomplete="off" placeholder="请输入编号/名称/规格…"
-                value="{{ parent_label or '' }}" {% if header %}disabled{% endif %}>
+            <textarea id="bomParentSearch" class="form-control name-search-textarea" rows="1" autocomplete="off" placeholder="请输入编号/名称/规格…"
+                {% if header %}disabled{% endif %}>{{ parent_label or '' }}</textarea>
             <input type="hidden" name="parent_id" id="bomParentId" value="{{ parent_id or '' }}">
             <div id="bomParentDd" class="bom-dd d-none"></div>
         </div>
@@ -75,8 +78,8 @@
                         </td>
                         <td>
                             <input type="hidden" name="line_child_material_id" class="bom-line-child-id" value="{{ ln.child_material_id }}">
-                            <input type="text" class="form-control form-control-sm bom-line-child-search" autocomplete="off"
-                                placeholder="搜索子项…" value="{{ (ln.child_code ~ ' — ' ~ ln.child_name) if ln.child_code and ln.child_name else '' }}">
+                            <textarea class="form-control form-control-sm name-search-textarea bom-line-child-search" rows="1" autocomplete="off"
+                                placeholder="搜索子项…">{{ (ln.child_code ~ ' — ' ~ ln.child_name) if ln.child_code and ln.child_name else '' }}</textarea>
                             <div class="bom-dd bom-child-dd d-none"></div>
                         </td>
                         <td>
@@ -103,7 +106,7 @@
                         </td>
                         <td>
                             <input type="hidden" name="line_child_material_id" class="bom-line-child-id" value="">
-                            <input type="text" class="form-control form-control-sm bom-line-child-search" autocomplete="off" placeholder="搜索子项…">
+                            <textarea class="form-control form-control-sm name-search-textarea bom-line-child-search" rows="1" autocomplete="off" placeholder="搜索子项…"></textarea>
                             <div class="bom-dd bom-child-dd d-none"></div>
                         </td>
                         <td>
@@ -142,7 +145,7 @@
         </td>
         <td>
             <input type="hidden" name="line_child_material_id" class="bom-line-child-id" value="">
-            <input type="text" class="form-control form-control-sm bom-line-child-search" autocomplete="off" placeholder="搜索子项…">
+            <textarea class="form-control form-control-sm name-search-textarea bom-line-child-search" rows="1" autocomplete="off" placeholder="搜索子项…"></textarea>
             <div class="bom-dd bom-child-dd d-none"></div>
         </td>
         <td>
@@ -178,6 +181,16 @@
 
     var prodSearchUrl = "{{ url_for('main.inventory_products_search') }}";
     var semiSearchUrl = "{{ url_for('main.inventory_semi_materials_search') }}";
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function hideAllDd() {
         parentDd.classList.add('d-none');
@@ -188,8 +201,15 @@
     }
 
     function placeDd(dd, anchor) {
+        autoResize(anchor);
         var rect = anchor.getBoundingClientRect();
-        dd.style.cssText = 'left:' + rect.left + 'px;width:' + Math.max(rect.width, 240) + 'px;top:' + (rect.bottom + 4) + 'px;max-height:240px;overflow:auto';
+        var m = 8;
+        var w = Math.min(Math.max(rect.width, 480), Math.max(240, window.innerWidth - rect.left - m));
+        var left = rect.left;
+        if (left + w > window.innerWidth - m) {
+            left = Math.max(m, window.innerWidth - m - w);
+        }
+        dd.style.cssText = 'position:fixed;z-index:1050;left:' + left + 'px;width:' + w + 'px;top:' + (rect.bottom + 4) + 'px;max-height:240px;overflow-y:auto';
     }
 
     function renderDd(dd, items, onPick) {
@@ -214,13 +234,14 @@
     // ---------- 父项搜索 ----------
     function fetchParentItems(q) {
         var kind = parentKindSel.value;
-        if (!q) return Promise.resolve([]);
+        var query = normalizeQuery(q);
+        if (!query) return Promise.resolve([]);
         if (kind === 'finished') {
-            return fetch(prodSearchUrl + '?q=' + encodeURIComponent(q) + '&limit=20')
+            return fetch(prodSearchUrl + '?q=' + encodeURIComponent(query) + '&limit=20')
                 .then(function (r) { return r.json(); })
                 .then(function (d) { return d.items || []; });
         }
-        return fetch(semiSearchUrl + '?q=' + encodeURIComponent(q) + '&kind=' + encodeURIComponent(kind) + '&limit=20')
+        return fetch(semiSearchUrl + '?q=' + encodeURIComponent(query) + '&kind=' + encodeURIComponent(kind) + '&limit=20')
             .then(function (r) { return r.json(); })
             .then(function (d) { return d.items || []; });
     }
@@ -228,7 +249,8 @@
     var parentTimer = null;
     if (parentSearch && !parentSearch.disabled) {
         parentSearch.addEventListener('input', function () {
-            var q = parentSearch.value.trim();
+            autoResize(parentSearch);
+            var q = normalizeQuery(parentSearch.value);
             if (parentTimer) clearTimeout(parentTimer);
             parentTimer = setTimeout(function () {
                 hideAllDd();
@@ -257,8 +279,9 @@
 
     // ---------- 子项搜索（事件委托） ----------
     function fetchChildItems(kind, q) {
-        if (!q) return Promise.resolve([]);
-        return fetch(semiSearchUrl + '?q=' + encodeURIComponent(q) + '&kind=' + encodeURIComponent(kind) + '&limit=20')
+        var query = normalizeQuery(q);
+        if (!query) return Promise.resolve([]);
+        return fetch(semiSearchUrl + '?q=' + encodeURIComponent(query) + '&kind=' + encodeURIComponent(kind) + '&limit=20')
             .then(function (r) { return r.json(); })
             .then(function (d) { return d.items || []; });
     }
@@ -276,6 +299,7 @@
         if (!kindSel || !idInput || !unitInput || !dd) return;
 
         var q = target.value.trim();
+        autoResize(target);
         if (childTimers.has(target)) clearTimeout(childTimers.get(target));
         if (!q) {
             dd.classList.add('d-none');
@@ -295,6 +319,7 @@
                 renderDd(dd, items, function (it) {
                     idInput.value = it.id;
                     target.value = it.label || '';
+                    autoResize(target);
                     if (!unitInput.value) unitInput.value = it.base_unit || '';
                     dd.classList.add('d-none');
                     dd.innerHTML = '';
@@ -331,6 +356,8 @@
         if (!row) return;
         row.remove();
     });
+    if (parentSearch) autoResize(parentSearch);
+    linesBody.querySelectorAll('.bom-line-child-search').forEach(autoResize);
 })();
 </script>
 {% endblock %}

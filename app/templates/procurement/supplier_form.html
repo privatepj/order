@@ -13,6 +13,12 @@
     border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
 }
+.map-dd .list-group-item,
+.map-dd .list-group-item-action {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -72,7 +78,7 @@
                 <tr class="map-row">
                     <td class="map-cell">
                         <input type="hidden" name="map_material_id" class="map-material-id" value="{{ item.material_id }}">
-                        <input type="text" class="form-control form-control-sm map-material-search" value="{{ item.material.name if item.material else '' }}" autocomplete="off" placeholder="输入后模糊搜索">
+                        <textarea class="form-control form-control-sm name-search-textarea map-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索">{{ item.material.name if item.material else '' }}</textarea>
                         <div class="map-dd list-group d-none"></div>
                     </td>
                     <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value="{{ item.last_unit_price if item.last_unit_price is not none else '' }}"></td>
@@ -84,7 +90,7 @@
                 <tr class="map-row">
                     <td class="map-cell">
                         <input type="hidden" name="map_material_id" class="map-material-id" value="">
-                        <input type="text" class="form-control form-control-sm map-material-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+                        <textarea class="form-control form-control-sm name-search-textarea map-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索"></textarea>
                         <div class="map-dd list-group d-none"></div>
                     </td>
                     <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value=""></td>
@@ -106,7 +112,7 @@
     <tr class="map-row">
         <td class="map-cell">
             <input type="hidden" name="map_material_id" class="map-material-id" value="">
-            <input type="text" class="form-control form-control-sm map-material-search" value="" autocomplete="off" placeholder="输入后模糊搜索">
+            <textarea class="form-control form-control-sm name-search-textarea map-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索"></textarea>
             <div class="map-dd list-group d-none"></div>
         </td>
         <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value=""></td>
@@ -121,6 +127,16 @@
     var searchUrl = {{ material_search_url|tojson }};
     var body = document.getElementById('mapBody');
     var tpl = document.getElementById('mapRowTpl');
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
 
     function hideAll() {
         document.querySelectorAll('.map-dd').forEach(function (el) {
@@ -130,10 +146,17 @@
     }
 
     function place(dd, input) {
+        autoResize(input);
         var rect = input.getBoundingClientRect();
-        dd.style.left = rect.left + 'px';
+        var m = 8;
+        var w = Math.min(Math.max(rect.width, 480), Math.max(240, window.innerWidth - rect.left - m));
+        var left = rect.left;
+        if (left + w > window.innerWidth - m) {
+            left = Math.max(m, window.innerWidth - m - w);
+        }
+        dd.style.left = left + 'px';
         dd.style.top = rect.bottom + 'px';
-        dd.style.width = Math.max(rect.width, 220) + 'px';
+        dd.style.width = w + 'px';
     }
 
     function render(dd, input, items) {
@@ -157,6 +180,7 @@
                 var row = dd.closest('.map-row');
                 row.querySelector('.map-material-id').value = item.material_id || item.id || '';
                 row.querySelector('.map-material-search').value = item.label || '';
+                autoResize(row.querySelector('.map-material-search'));
                 hideAll();
             });
             dd.appendChild(btn);
@@ -173,10 +197,11 @@
         var timer = null;
         if (!input || !dd) return;
         input.addEventListener('input', function () {
+            autoResize(input);
             hidden.value = '';
             if (timer) window.clearTimeout(timer);
             timer = window.setTimeout(function () {
-                fetch(searchUrl + '?q=' + encodeURIComponent(input.value || ''), {
+                fetch(searchUrl + '?q=' + encodeURIComponent(normalizeQuery(input.value)), {
                     credentials: 'same-origin',
                     headers: { 'Accept': 'application/json' }
                 })
@@ -186,10 +211,12 @@
             }, 200);
         });
         input.addEventListener('focus', function () {
+            autoResize(input);
             if ((input.value || '').trim()) {
                 input.dispatchEvent(new Event('input'));
             }
         });
+        autoResize(input);
     }
 
     body.querySelectorAll('.map-row').forEach(bindRow);

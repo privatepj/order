@@ -23,7 +23,7 @@
     </div>
     <div class="mb-3">
         <label class="form-label">规格</label>
-        <input type="text" class="form-control" name="spec" value="{{ item.spec if item else '' }}">
+        <textarea class="form-control name-search-textarea" name="spec" rows="1">{{ item.spec if item else '' }}</textarea>
     </div>
     <div class="mb-3">
         <label class="form-label">基础单位</label>
@@ -44,4 +44,21 @@
     <button type="submit" class="btn btn-primary">保存</button>
     <a href="{{ url_for('main.semi_material_list') }}" class="btn btn-outline-secondary">返回</a>
 </form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    function autoResize(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight || 0, 96);
+        el.style.height = Math.max(32, h) + 'px';
+        el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
+    var el = document.querySelector('textarea[name="spec"]');
+    if (!el) return;
+    el.addEventListener('input', function () { autoResize(el); });
+    autoResize(el);
+})();
+</script>
 {% endblock %}
