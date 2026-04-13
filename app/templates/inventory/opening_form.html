@@ -53,7 +53,7 @@
     <div class="mb-3">
         <label class="form-label">期初数量 <span class="text-danger">*</span></label>
         <input type="text" class="form-control" name="opening_qty" required inputmode="decimal"
-            value="{{ row.opening_qty if row else '' }}">
+            value="{{ (row.opening_qty|qty_plain) if row else '' }}">
     </div>
     <div class="mb-3">
         <label class="form-label">单位</label>

@@ -290,5 +290,6 @@ def test_warehouse_nav_and_material_entry_survive_mixed_mode_rbac(app):
     material_html = material_page.get_data(as_text=True)
 
     assert material_page.status_code == 200
-    assert material_page.request.path == "/inventory/movement/new"
-    assert "库存录入" in material_html
+    assert material_page.request.path == "/inventory"
+    assert material_page.request.args.get("category") == "material"
+    assert "库存批次" in material_html

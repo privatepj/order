@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app import db
 from app.auth.capabilities import current_user_can_cap, inventory_stock_query_read_filters
 from app.auth.decorators import capability_required, menu_required
+from app.auth.menus import current_user_can_menu
 from app.models import (
     InventoryDailyLine,
     InventoryDailyRecord,
@@ -26,6 +27,7 @@ from app.models import (
 )
 from app.services import inventory_svc
 from app.utils.query import keyword_like_or
+from app.utils.qty_display import format_qty_plain as _movement_import_qty_display
 
 INVENTORY_OPS_MENU_CODES = (
     "inventory_ops_finished",
@@ -54,6 +56,13 @@ INVENTORY_CAP_KEYS = {
     for suffix in _INVENTORY_CAP_SUFFIXES
 }
 
+_INVENTORY_CATEGORY_ORDER = (
+    inventory_svc.INV_FINISHED,
+    inventory_svc.INV_SEMI,
+    inventory_svc.INV_MATERIAL,
+)
+_INVENTORY_CATEGORY_SET = frozenset(_INVENTORY_CATEGORY_ORDER)
+
 
 def _menu_code_for_category(category: str) -> str:
     if category == inventory_svc.INV_SEMI:
@@ -61,6 +70,48 @@ def _menu_code_for_category(category: str) -> str:
     if category == inventory_svc.INV_MATERIAL:
         return "inventory_ops_material"
     return "inventory_ops_finished"
+
+
+def _user_allowed_inventory_categories():
+    """当前用户可访问的库存类别（按侧栏菜单）；admin 视为全部。"""
+    if getattr(current_user, "role_code", None) == "admin":
+        return list(_INVENTORY_CATEGORY_ORDER)
+    out = []
+    for cat in _INVENTORY_CATEGORY_ORDER:
+        if current_user_can_menu(_menu_code_for_category(cat)):
+            out.append(cat)
+    return out
+
+
+def _inventory_list_scope():
+    """
+    解析列表过滤范围与 URL 中的 category= 保留策略。
+    返回 (sql_in_filter_tuple, list_category_for_urls_or_none)。
+    """
+    allowed = _user_allowed_inventory_categories()
+    if not allowed:
+        abort(403)
+    raw = (request.args.get("category") or "").strip()
+    if raw:
+        if raw not in _INVENTORY_CATEGORY_SET:
+            abort(404)
+        if raw not in allowed:
+            abort(403)
+        return (raw,), raw
+    if len(allowed) == 1:
+        return (tuple(allowed), allowed[0])
+    return (tuple(allowed), None)
+
+
+def _movement_form_list_category(*, query_cat, form_cat, purchase_cat):
+    """录入页「返回批次列表」链接上带的 category。"""
+    for c in (query_cat, form_cat, purchase_cat):
+        if c in _INVENTORY_CATEGORY_SET:
+            return c
+    al = _user_allowed_inventory_categories()
+    if len(al) == 1:
+        return al[0]
+    return None
 
 
 def _parse_line_rows():
@@ -119,8 +170,10 @@ def _validate_semi_materials(kind: str, item_ids):
         raise ValueError(f"存在无效的{kind}主数据。")
 
 
-def _parse_movement_line_rows():
-    """解析批量手工出入库行：(product_id, storage_area, quantity, unit, remark)；非法时 raise ValueError。"""
+def _parse_movement_line_rows(direction: str):
+    """解析批量手工出入库行：(product_id, storage_area, quantity, unit, remark)；非法时 raise ValueError。
+    direction 为 in 时数量允许 0（须 ≥0）；为 out 时数量须 >0。
+    """
     pids = request.form.getlist("line_product_id")
     areas = request.form.getlist("line_storage_area")
     qtys = request.form.getlist("line_quantity")
@@ -145,8 +198,10 @@ def _parse_movement_line_rows():
             qty = Decimal(qraw)
         except InvalidOperation:
             raise ValueError("数量格式不正确。")
-        if qty <= 0:
-            raise ValueError("每一行数量须大于 0。")
+        if qty < 0:
+            raise ValueError("每一行数量不能为负数。")
+        if direction == "out" and qty <= 0:
+            raise ValueError("出库时每一行数量须大于 0。")
         unit = (units[i] if i < len(units) else None) or None
         if unit:
             unit = unit.strip()[:16] or None
@@ -157,8 +212,10 @@ def _parse_movement_line_rows():
     return rows
 
 
-def _parse_movement_material_line_rows():
-    """解析批量手工半成品/物料出入库行：(material_id, storage_area, quantity, unit, remark)。"""
+def _parse_movement_material_line_rows(direction: str):
+    """解析批量手工半成品/物料出入库行：(material_id, storage_area, quantity, unit, remark)。
+    direction 为 in 时数量允许 0（须 ≥0）；为 out 时数量须 >0。
+    """
     pids = request.form.getlist("line_material_id")
     areas = request.form.getlist("line_storage_area")
     qtys = request.form.getlist("line_quantity")
@@ -183,8 +240,10 @@ def _parse_movement_material_line_rows():
             qty = Decimal(qraw)
         except InvalidOperation:
             raise ValueError("数量格式不正确。")
-        if qty <= 0:
-            raise ValueError("每一行数量须大于 0。")
+        if qty < 0:
+            raise ValueError("每一行数量不能为负数。")
+        if direction == "out" and qty <= 0:
+            raise ValueError("出库时每一行数量须大于 0。")
         unit = (units[i] if i < len(units) else None) or None
         if unit:
             unit = unit.strip()[:16] or None
@@ -201,11 +260,6 @@ def _cell_str_movement_import(val):
     if isinstance(val, str):
         return val.strip()
     return str(val).strip()
-
-
-def _movement_import_qty_display(qty: Decimal) -> str:
-    s = format(qty, "f").rstrip("0").rstrip(".")
-    return s if s else "0"
 
 
 def _parse_movement_import_excel(ws):
@@ -317,19 +371,19 @@ def register_inventory_routes(bp):
     @login_required
     @menu_required("inventory_ops_finished")
     def inventory_finished_entry():
-        return redirect(url_for("main.inventory_movement_new", category=inventory_svc.INV_FINISHED))
+        return redirect(url_for("main.inventory_list", category=inventory_svc.INV_FINISHED))
 
     @bp.route("/inventory/semi")
     @login_required
     @menu_required("inventory_ops_semi")
     def inventory_semi_entry():
-        return redirect(url_for("main.inventory_movement_new", category=inventory_svc.INV_SEMI))
+        return redirect(url_for("main.inventory_list", category=inventory_svc.INV_SEMI))
 
     @bp.route("/inventory/material")
     @login_required
     @menu_required("inventory_ops_material")
     def inventory_material_entry():
-        return redirect(url_for("main.inventory_movement_new", category=inventory_svc.INV_MATERIAL))
+        return redirect(url_for("main.inventory_list", category=inventory_svc.INV_MATERIAL))
 
     # ----- API：产品搜索（库存录入用） -----
     @bp.route("/api/inventory/products-search", methods=["GET"])
@@ -668,6 +722,11 @@ def register_inventory_routes(bp):
                             "warning",
                         )
                     today = date.today().isoformat()
+                    ex_list_cat = _movement_form_list_category(
+                        query_cat=category_from_query or None,
+                        form_cat=(request.form.get("category") or "").strip() or None,
+                        purchase_cat=purchase_category,
+                    )
                     return render_template(
                         "inventory/movement_form.html",
                         default_biz_date=rd or today,
@@ -675,10 +734,11 @@ def register_inventory_routes(bp):
                         form_direction=request.form.get("direction"),
                         import_result=import_result,
                         purchase_context=purchase_context,
+                        list_category=ex_list_cat,
                     )
 
                 if cat == inventory_svc.INV_FINISHED:
-                    line_rows = _parse_movement_line_rows()
+                    line_rows = _parse_movement_line_rows(direction)
                     if not line_rows:
                         raise ValueError("请至少录入一行有效的产品、仓储区与数量。")
                     _validate_products([r[0] for r in line_rows])
@@ -710,7 +770,7 @@ def register_inventory_routes(bp):
                             source_purchase_receipt_id=purchase_receipt_id,
                         )
                 else:
-                    line_rows = _parse_movement_material_line_rows()
+                    line_rows = _parse_movement_material_line_rows(direction)
                     if not line_rows:
                         raise ValueError("请至少录入一行有效的半成品/物料、仓储区与数量。")
                     _validate_semi_materials(cat, [r[0] for r in line_rows])
@@ -747,7 +807,7 @@ def register_inventory_routes(bp):
                     return redirect(url_for("main.procurement_receipt_compare", receipt_id=purchase_receipt_id))
                 if purchase_order_id:
                     return redirect(url_for("main.procurement_order_detail", po_id=purchase_order_id))
-                return redirect(url_for("main.inventory_list"))
+                return redirect(url_for("main.inventory_list", category=cat))
             except ValueError as e:
                 db.session.rollback()
                 flash(str(e), "danger")
@@ -759,17 +819,24 @@ def register_inventory_routes(bp):
                 flash("保存失败：数据冲突。", "danger")
         today = date.today().isoformat()
         bd = (request.form.get("biz_date") or today) if request.method == "POST" else today
+        form_cat_res = (
+            request.form.get("category")
+            if request.method == "POST"
+            else category_from_query or purchase_category or None
+        )
+        list_cat = _movement_form_list_category(
+            query_cat=category_from_query or None,
+            form_cat=(request.form.get("category") or "").strip() if request.method == "POST" else None,
+            purchase_cat=purchase_category,
+        )
         return render_template(
             "inventory/movement_form.html",
             default_biz_date=bd,
-            form_category=(
-                request.form.get("category")
-                if request.method == "POST"
-                else category_from_query or purchase_category or None
-            ),
+            form_category=form_cat_res,
             form_direction=request.form.get("direction") if request.method == "POST" else ("in" if purchase_context else None),
             import_result=import_result,
             purchase_context=purchase_context,
+            list_category=list_cat,
         )
 
     # ----- 库存批次列表（主「库存」入口） -----
@@ -777,10 +844,11 @@ def register_inventory_routes(bp):
     @login_required
     @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_list():
+        filter_cats, list_category = _inventory_list_scope()
         page = request.args.get("page", 1, type=int)
         q = InventoryMovementBatch.query.options(
             selectinload(InventoryMovementBatch.delivery),
-        ).order_by(
+        ).filter(InventoryMovementBatch.category.in_(filter_cats)).order_by(
             InventoryMovementBatch.id.desc(),
         )
         pagination = q.paginate(page=page, per_page=30)
@@ -797,17 +865,21 @@ def register_inventory_routes(bp):
             "inventory/movement_list.html",
             pagination=pagination,
             creators=users,
+            list_category=list_category,
         )
 
     @bp.route("/inventory/batch/<int:batch_id>")
     @login_required
     @menu_required(*INVENTORY_OPS_MENU_CODES)
     def inventory_batch_detail(batch_id):
-        if not any(current_user_can_cap(k) for k in INVENTORY_CAP_KEYS["movement.list"]):
-            abort(403)
         batch = InventoryMovementBatch.query.options(
             selectinload(InventoryMovementBatch.delivery),
         ).get_or_404(batch_id)
+        if getattr(current_user, "role_code", None) != "admin":
+            if batch.category not in _user_allowed_inventory_categories():
+                abort(403)
+        if not current_user_can_cap(f"{_menu_code_for_category(batch.category)}.movement.list"):
+            abort(403)
         movements = (
             InventoryMovement.query.options(
                 selectinload(InventoryMovement.product),
@@ -824,6 +896,7 @@ def register_inventory_routes(bp):
             batch=batch,
             movements=movements,
             creator_name=creator_name,
+            list_category=batch.category,
         )
 
     @bp.route("/inventory/batch/<int:batch_id>/void", methods=["POST"])
@@ -831,6 +904,17 @@ def register_inventory_routes(bp):
     @menu_required(*INVENTORY_OPS_MENU_CODES)
     @capability_required(*INVENTORY_CAP_KEYS["movement_batch.void"])
     def inventory_batch_void(batch_id):
+        batch = InventoryMovementBatch.query.get(batch_id)
+        if not batch:
+            flash("批次不存在。", "warning")
+            return redirect(url_for("main.inventory_list"))
+        if getattr(current_user, "role_code", None) != "admin":
+            if batch.category not in _user_allowed_inventory_categories():
+                abort(403)
+        if not current_user_can_cap(f"{_menu_code_for_category(batch.category)}.movement_batch.void"):
+            flash("您没有撤销该类批次的权限。", "danger")
+            return redirect(url_for("main.inventory_list", category=batch.category))
+        cat = batch.category
         try:
             inventory_svc.void_movement_batch(batch_id)
             db.session.commit()
@@ -838,7 +922,7 @@ def register_inventory_routes(bp):
         except ValueError as e:
             db.session.rollback()
             flash(str(e), "warning")
-        return redirect(url_for("main.inventory_list"))
+        return redirect(url_for("main.inventory_list", category=cat))
 
     @bp.route("/inventory/movement/<int:movement_id>/delete", methods=["POST"])
     @login_required
@@ -846,16 +930,22 @@ def register_inventory_routes(bp):
     @capability_required(*INVENTORY_CAP_KEYS["movement.delete"])
     def inventory_movement_delete(movement_id):
         m = InventoryMovement.query.get_or_404(movement_id)
+        if getattr(current_user, "role_code", None) != "admin":
+            if m.category not in _user_allowed_inventory_categories():
+                abort(403)
+        if not current_user_can_cap(f"{_menu_code_for_category(m.category)}.movement.delete"):
+            flash("您没有删除该类流水的权限。", "danger")
+            return redirect(url_for("main.inventory_list", category=m.category))
         if m.source_type != inventory_svc.SOURCE_MANUAL:
             flash("仅可删除手工录入的流水。", "warning")
-            return redirect(url_for("main.inventory_list"))
+            return redirect(url_for("main.inventory_list", category=m.category))
         if m.movement_batch_id is not None:
             flash("已归入批次的明细请使用「撤销整批」，勿单条删除。", "warning")
-            return redirect(url_for("main.inventory_list"))
+            return redirect(url_for("main.inventory_list", category=m.category))
         db.session.delete(m)
         db.session.commit()
         flash("已删除该条流水。", "success")
-        return redirect(url_for("main.inventory_list"))
+        return redirect(url_for("main.inventory_list", category=m.category))
 
     # ----- 期初结存维护 -----
     @bp.route("/inventory/opening")

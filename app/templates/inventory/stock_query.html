@@ -69,10 +69,10 @@
             <td>{{ r.product_code or '-' }}</td>
             <td>{{ r.product_name or '-' }}</td>
             <td>{{ r.product_spec or '-' }}</td>
-            <td class="text-end inv-stock-qty" data-raw="{{ r.opening_qty }}">{{ r.opening_qty }}</td>
-            <td class="text-end inv-stock-qty" data-raw="{{ r.qty_in }}">{{ r.qty_in }}</td>
-            <td class="text-end inv-stock-qty" data-raw="{{ r.qty_out }}">{{ r.qty_out }}</td>
-            <td class="text-end fw-semibold inv-stock-qty" data-raw="{{ r.closing_qty }}">{{ r.closing_qty }}</td>
+            <td class="text-end inv-stock-qty" data-raw="{{ r.opening_qty|qty_plain }}">{{ r.opening_qty|qty_plain }}</td>
+            <td class="text-end inv-stock-qty" data-raw="{{ r.qty_in|qty_plain }}">{{ r.qty_in|qty_plain }}</td>
+            <td class="text-end inv-stock-qty" data-raw="{{ r.qty_out|qty_plain }}">{{ r.qty_out|qty_plain }}</td>
+            <td class="text-end fw-semibold inv-stock-qty" data-raw="{{ r.closing_qty|qty_plain }}">{{ r.closing_qty|qty_plain }}</td>
         </tr>
         {% else %}
         <tr><td colspan="9">无数据（无期初且无流水时不会出现在此表）</td></tr>
@@ -99,9 +99,13 @@
 (function () {
     var LS_KEY = 'inventoryStockQueryQtyCompact';
 
-    function trimNumStr(s) {
-        if (s.indexOf('.') === -1) return s;
-        return s.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1').replace(/\.$/, '');
+    function formatQtyPlainFromNum(n) {
+        if (!Number.isFinite(n)) return '';
+        if (Object.is(n, -0) || n === 0) return '0';
+        var neg = n < 0;
+        var s = Math.abs(n).toFixed(12);
+        if (s.indexOf('.') !== -1) s = s.replace(/\.?0+$/, '');
+        return (neg ? '-' : '') + s;
     }
 
     function formatCompact(rawStr) {
@@ -112,10 +116,12 @@
         var sign = n < 0 ? '-' : '';
         var v = Math.abs(n);
         if (v < 1000) {
-            return String(rawStr);
+            return formatQtyPlainFromNum(n);
         }
         var scaled = v / 1e3;
-        return sign + trimNumStr(scaled.toFixed(10)) + 'K';
+        var t = scaled.toFixed(12);
+        if (t.indexOf('.') !== -1) t = t.replace(/\.?0+$/, '');
+        return sign + t + 'K';
     }
 
     function applyDisplay(compact) {

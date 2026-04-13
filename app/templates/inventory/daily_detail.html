@@ -24,7 +24,7 @@
             <td>{{ line.product.product_code if line.product else '-' }}</td>
             <td>{{ line.product.name if line.product else '-' }}</td>
             <td>{% if line.product %}{{ line.product.spec or '-' }}{% else %}-{% endif %}</td>
-            <td>{{ line.quantity }}</td>
+            <td>{{ line.quantity|qty_plain }}</td>
             <td>{{ line.unit or (line.product.base_unit if line.product else '') or '-' }}</td>
             <td>{{ line.note or '-' }}</td>
         </tr>

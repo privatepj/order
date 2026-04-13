@@ -33,9 +33,18 @@
                         <a class="nav-link{% if ep == node.endpoint %} active{% endif %}" href="{{ url_for(node.endpoint) }}"{% if ep == node.endpoint %} aria-current="page"{% endif %}>{{ node.title }}</a>
                     </li>
                     {% elif node.children %}
+                    {% set icat = request.args.get('category') %}
+                    {% set inv_eps = ['main.inventory_list', 'main.inventory_movement_new', 'main.inventory_batch_detail'] %}
                     {% set dd_active = namespace(found=false) %}
                     {% for ch in node.children %}
                         {% if ch.endpoint == ep %}{% set dd_active.found = true %}{% endif %}
+                        {% if node.code == 'nav_warehouse' and ep in inv_eps %}
+                            {% if (ch.code == 'inventory_ops_finished' and icat == 'finished')
+                                or (ch.code == 'inventory_ops_semi' and icat == 'semi')
+                                or (ch.code == 'inventory_ops_material' and icat == 'material') %}
+                                {% set dd_active.found = true %}
+                            {% endif %}
+                        {% endif %}
                     {% endfor %}
                     <li class="nav-item dropdown nav-dropdown-hover">
                         <a class="nav-link dropdown-toggle{% if dd_active.found %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">{{ node.title }}</a>
@@ -44,7 +53,7 @@
                             {% if node.code == 'nav_base' and ch.code == 'company' and not loop.first %}
                             <li><hr class="dropdown-divider"></li>
                             {% endif %}
-                            <li><a class="dropdown-item{% if ep == ch.endpoint %} active{% endif %}" href="{{ url_for(ch.endpoint) }}">{{ ch.title }}</a></li>
+                            <li><a class="dropdown-item{% if ep == ch.endpoint or (node.code == 'nav_warehouse' and ep in inv_eps and ((ch.code == 'inventory_ops_finished' and icat == 'finished') or (ch.code == 'inventory_ops_semi' and icat == 'semi') or (ch.code == 'inventory_ops_material' and icat == 'material'))) %} active{% endif %}" href="{{ url_for(ch.endpoint) }}">{{ ch.title }}</a></li>
                             {% endfor %}
                         </ul>
                     </li>

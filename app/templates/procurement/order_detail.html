@@ -26,7 +26,7 @@
             <div class="col-md-4"><strong>电话：</strong>{{ row.supplier_phone or '-' }}</div>
             <div class="col-md-4"><strong>物料：</strong>{{ row.item_name }}</div>
             <div class="col-md-4"><strong>规格：</strong>{{ row.item_spec or '-' }}</div>
-            <div class="col-md-4"><strong>数量：</strong>{{ row.qty }} {{ row.unit }}</div>
+            <div class="col-md-4"><strong>数量：</strong>{{ row.qty|qty_plain }} {{ row.unit }}</div>
             <div class="col-md-4"><strong>单价：</strong>{{ row.unit_price }}</div>
             <div class="col-md-4"><strong>金额：</strong>{{ row.amount }}</div>
             <div class="col-md-4"><strong>到货日期：</strong>{{ row.expected_date or '-' }}</div>
@@ -42,9 +42,9 @@
     <div class="card-body">
         <h5 class="card-title">收货与仓库汇总</h5>
         <div class="row g-2">
-            <div class="col-md-4"><strong>采购数量：</strong>{{ compare_summary.ordered_qty }}</div>
-            <div class="col-md-4"><strong>累计收货：</strong>{{ compare_summary.received_qty }}</div>
-            <div class="col-md-4"><strong>仓库入库：</strong>{{ compare_summary.warehouse_qty }}</div>
+            <div class="col-md-4"><strong>采购数量：</strong>{{ compare_summary.ordered_qty|qty_plain }}</div>
+            <div class="col-md-4"><strong>累计收货：</strong>{{ compare_summary.received_qty|qty_plain }}</div>
+            <div class="col-md-4"><strong>仓库入库：</strong>{{ compare_summary.warehouse_qty|qty_plain }}</div>
         </div>
     </div>
 </div>
@@ -70,7 +70,7 @@
             {% for receipt in receipts %}
             <tr>
                 <td>{{ receipt.receipt_no }}</td>
-                <td>{{ receipt.received_qty }}</td>
+                <td>{{ receipt.received_qty|qty_plain }}</td>
                 <td>{{ receipt.received_at }}</td>
                 <td>{{ receipt.status|status_zh('procurement_receipt_status') }}</td>
                 <td>

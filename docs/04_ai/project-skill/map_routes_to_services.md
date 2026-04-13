@@ -15,7 +15,7 @@
 | `routes_user.py` | 用户、pending 审批 | [rbac_and_menus.md](rbac_and_menus.md) |
 | `routes_role.py` | 角色授权、`invalidate_rbac_cache` | [rbac_and_menus.md](rbac_and_menus.md) |
 | `routes_audit.py` | 审计 UI 上报 | [architecture.md](../../00_overview/architecture.md) |
-| `routes_inventory.py` | `inventory_svc` | [inventory.md](../../02_domains/inventory.md) |
+| `routes_inventory.py` | `inventory_svc`；批次列表 `GET /inventory` 支持 `?category=finished` / `semi` / `material`（与三录入菜单一致，见 inventory 域文档） | [inventory.md](../../02_domains/inventory.md) |
 | `routes_semi_material.py` | 半成品/物料页面 | [semi-material.md](../../02_domains/semi-material.md) |
 | `routes_bom.py` | `bom_svc` | [bom.md](../../02_domains/bom.md) |
 | `routes_production.py` | `production_svc`、`production_schedule_svc`、`production_cost_svc`、`production_preplan_schedule_manual_svc`（预计划人工排程/确认）等 | [production.md](../../02_domains/production.md) |

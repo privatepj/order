@@ -38,7 +38,7 @@
                 —
                 {% endif %}
             </td>
-            <td class="text-end">{{ m.quantity }}</td>
+            <td class="text-end">{{ m.quantity|qty_plain }}</td>
             <td>{{ m.unit or '—' }}</td>
             <td>{% if m.source_type == 'delivery' %}送货单{% else %}手工{% endif %}</td>
             <td>{{ m.remark or '—' }}</td>
@@ -49,12 +49,12 @@
     </tbody>
 </table>
 </div>
-{% if batch.source in ('form', 'excel') and (user_can_cap('inventory_ops_finished.movement_batch.void') or user_can_cap('inventory_ops_semi.movement_batch.void') or user_can_cap('inventory_ops_material.movement_batch.void')) %}
+{% if batch.source in ('form', 'excel') and ((batch.category == 'finished' and user_can_cap('inventory_ops_finished.movement_batch.void')) or (batch.category == 'semi' and user_can_cap('inventory_ops_semi.movement_batch.void')) or (batch.category == 'material' and user_can_cap('inventory_ops_material.movement_batch.void'))) %}
 <form method="post" action="{{ url_for('main.inventory_batch_void', batch_id=batch.id) }}" class="d-inline" onsubmit="return confirm('确定撤销本批次？将删除全部明细且不可恢复。');">
     <button type="submit" class="btn btn-danger">撤销整批</button>
 </form>
 {% elif batch.source == 'delivery' %}
 <p class="text-muted small">送货出库批次请在送货单使用「回退待发」或「失效」以删除对应出库明细。</p>
 {% endif %}
-<p class="mt-3"><a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回批次列表</a></p>
+<p class="mt-3"><a href="{{ url_for('main.inventory_list', category=list_category) if list_category else url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回批次列表</a></p>
 {% endblock %}

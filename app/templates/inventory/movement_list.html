@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}库存录入 - 工厂订单系统{% endblock %}
 {% block content %}
-<h2 class="mb-4">库存批次</h2>
+<h2 class="mb-4">{% if list_category == 'finished' %}库存批次（成品）{% elif list_category == 'semi' %}库存批次（半成品）{% elif list_category == 'material' %}库存批次（物料）{% else %}库存批次{% endif %}</h2>
 <p class="d-flex flex-wrap gap-2 align-items-center">
     {% if user_can_cap('inventory_ops_finished.movement.create') or user_can_cap('inventory_ops_semi.movement.create') or user_can_cap('inventory_ops_material.movement.create') %}
-    <a href="{{ url_for('main.inventory_movement_new') }}" class="btn btn-success">新增录入</a>
+    <a href="{{ url_for('main.inventory_movement_new', category=list_category) if list_category else url_for('main.inventory_movement_new') }}" class="btn btn-success">新增录入</a>
     {% endif %}
     <a href="{{ url_for('main.inventory_stock_query') }}" class="btn btn-outline-primary">库存查询</a>
     {% if user_can_cap('inventory_ops_finished.opening.list') or user_can_cap('inventory_ops_semi.opening.list') or user_can_cap('inventory_ops_material.opening.list') %}
@@ -22,7 +22,7 @@
         <tr>
             <th>批次号</th>
             <th>业务日期</th>
-            <th>类别</th>
+            {% if not list_category %}<th>类别</th>{% endif %}
             <th>方向</th>
             <th>来源</th>
             <th class="text-end">明细行数</th>
@@ -36,9 +36,11 @@
         <tr>
             <td>#{{ b.id }}</td>
             <td>{{ b.biz_date.isoformat() }}</td>
+            {% if not list_category %}
             <td>
                 {% if b.category == 'finished' %}成品{% elif b.category == 'semi' %}半成品{% elif b.category == 'material' %}物料{% else %}{{ b.category }}{% endif %}
             </td>
+            {% endif %}
             <td>{{ '入库' if b.direction == 'in' else '出库' }}</td>
             <td>
                 {% if b.source == 'form' %}
@@ -59,8 +61,8 @@
             <td>{{ creators.get(b.created_by, b.created_by) }}</td>
             <td class="text-nowrap small">{{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '—' }}</td>
             <td>
-                <a href="{{ url_for('main.inventory_batch_detail', batch_id=b.id) }}" class="btn btn-sm btn-outline-primary">详情</a>
-                {% if b.source in ('form', 'excel') and (user_can_cap('inventory_ops_finished.movement_batch.void') or user_can_cap('inventory_ops_semi.movement_batch.void') or user_can_cap('inventory_ops_material.movement_batch.void')) %}
+                <a href="{{ url_for('main.inventory_batch_detail', batch_id=b.id, category=b.category) }}" class="btn btn-sm btn-outline-primary">详情</a>
+                {% if b.source in ('form', 'excel') and ((b.category == 'finished' and user_can_cap('inventory_ops_finished.movement_batch.void')) or (b.category == 'semi' and user_can_cap('inventory_ops_semi.movement_batch.void')) or (b.category == 'material' and user_can_cap('inventory_ops_material.movement_batch.void'))) %}
                 <form method="post" action="{{ url_for('main.inventory_batch_void', batch_id=b.id) }}" class="d-inline" onsubmit="return confirm('确定撤销本批次？将删除该批下全部 {{ b.line_count }} 条明细，且不可恢复。');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">撤销批次</button>
                 </form>
@@ -70,7 +72,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="9">暂无批次</td></tr>
+        <tr><td colspan="{{ 8 if list_category else 9 }}">暂无批次</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -79,10 +81,10 @@
 <nav>
     <ul class="pagination">
         {% if pagination.has_prev %}
-        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_list', page=pagination.prev_num) }}">上一页</a></li>
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_list', page=pagination.prev_num, category=list_category) if list_category else url_for('main.inventory_list', page=pagination.prev_num) }}">上一页</a></li>
         {% endif %}
         {% if pagination.has_next %}
-        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_list', page=pagination.next_num) }}">下一页</a></li>
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_list', page=pagination.next_num, category=list_category) if list_category else url_for('main.inventory_list', page=pagination.next_num) }}">下一页</a></li>
         {% endif %}
     </ul>
 </nav>

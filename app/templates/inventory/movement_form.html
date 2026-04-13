@@ -5,12 +5,34 @@
 .mov-line-table .inv-product-cell { position: relative; min-width: 200px; max-width: 320px; }
 .inv-product-dd {
     position: fixed; z-index: 1050; max-height: 240px; overflow-y: auto;
+    overflow-x: hidden;
     background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0.25rem 0;
 }
-.inv-product-dd .list-group-item { cursor: pointer; padding: 0.35rem 0.5rem; font-size: 0.875rem;
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inv-product-dd .list-group-item:hover { background: #f8f9fa; }
+.inv-product-dd .list-group-item,
+.inv-product-dd button.list-group-item-action {
+    flex: 0 0 auto;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    min-height: 2.5rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    width: 100%;
+    border: 0;
+    background: transparent;
+}
+.inv-product-dd .list-group-item:hover,
+.inv-product-dd button.list-group-item-action:hover { background: #f8f9fa; }
 </style>
 {% endblock %}
 {% block content %}
@@ -63,7 +85,7 @@
         <div class="card-body py-2">
             <h6 class="card-title mb-2">Excel 批量导入</h6>
             <p class="text-muted small mb-2">
-                类别、方向、业务日期仍使用上方表单。Excel 自第 2 行为数据，列顺序：<strong>品名</strong>、<strong>规格</strong>（与产品主数据规格一致，可空）、<strong>仓储区</strong>、<strong>数量</strong>（须大于 0）、<strong>单位</strong>（可空，默认取产品基础单位）、<strong>备注</strong>。
+                类别、方向、业务日期仍使用上方表单。Excel 自第 2 行为数据，列顺序：<strong>品名</strong>、<strong>规格</strong>（与产品主数据规格一致，可空）、<strong>仓储区</strong>、<strong>数量</strong>（入库可填 0，出库须大于 0）、<strong>单位</strong>（可空，默认取产品基础单位）、<strong>备注</strong>。
                 成品按「品名 + 规格」与产品表精确匹配；未匹配或匹配多条的行会跳过，并在下方列出原因（提示中含品名与规格，不写行号）。
                 同一文件中若多行上述六列内容经规范化后<strong>完全相同</strong>，视为重复：仅第一条会导入，其余跳过。
             </p>
@@ -104,7 +126,7 @@
                 <td><input type="text" class="form-control form-control-sm inv-line-spec" readonly placeholder="选产品后显示"></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_unit" maxlength="16" placeholder="默认单位"></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_storage_area" maxlength="32" placeholder="如 B18"></td>
-                <td><input type="text" class="form-control form-control-sm" name="line_quantity" inputmode="decimal" placeholder="&gt;0"></td>
+                <td><input type="text" class="form-control form-control-sm js-line-qty" name="line_quantity" inputmode="decimal" placeholder="入库≥0 / 出库&gt;0"></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_remark" maxlength="255"></td>
                 <td><button type="button" class="btn btn-sm btn-outline-danger btn-mov-remove" title="删除本行">删</button></td>
             </tr>
@@ -113,7 +135,7 @@
     </div>
     <div class="mt-3">
         <button type="submit" class="btn btn-primary" id="btnSubmit">保存</button>
-        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回</a>
+        <a href="{{ url_for('main.inventory_list', category=list_category) if list_category else url_for('main.inventory_list') }}" class="btn btn-outline-secondary">返回</a>
     </div>
 </form>
 
@@ -151,7 +173,7 @@
         <td><input type="text" class="form-control form-control-sm inv-line-spec" readonly placeholder="选产品后显示"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_unit" maxlength="16" placeholder="默认单位"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_storage_area" maxlength="32" placeholder="如 B18"></td>
-        <td><input type="text" class="form-control form-control-sm" name="line_quantity" inputmode="decimal" placeholder="&gt;0"></td>
+        <td><input type="text" class="form-control form-control-sm js-line-qty" name="line_quantity" inputmode="decimal" placeholder="入库≥0 / 出库&gt;0"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_remark" maxlength="255"></td>
         <td><button type="button" class="btn btn-sm btn-outline-danger btn-mov-remove" title="删除本行">删</button></td>
     </tr>
@@ -170,20 +192,40 @@
     var btnSubmit = document.getElementById('btnSubmit');
     var debounceByInput = new WeakMap();
 
+    function restoreDdToCell(dd) {
+        var cell = dd._movParentCell;
+        if (cell && dd.parentNode === document.body) {
+            cell.appendChild(dd);
+        }
+    }
+
     function hideAllDd() {
         document.querySelectorAll('.inv-product-dd').forEach(function (el) {
+            restoreDdToCell(el);
             el.classList.add('d-none');
             el.innerHTML = '';
         });
     }
 
-    function placeDropdown(dd, anchor) {
-        var rect = anchor.getBoundingClientRect();
-        dd.style.cssText = 'position:fixed;z-index:1050;left:' + rect.left + 'px;width:' + Math.max(rect.width, 200) + 'px;top:' + rect.bottom + 'px;max-height:240px;overflow:auto';
+    function attachDdToBody(dd, row) {
+        var cell = row.querySelector('.inv-product-cell');
+        if (!cell) return;
+        dd._movParentCell = cell;
+        if (dd.parentNode !== document.body) {
+            document.body.appendChild(dd);
+        }
     }
 
-    function renderDd(dd, items, anchor) {
+    function placeDropdown(dd, anchor) {
+        var rect = anchor.getBoundingClientRect();
+        var w = Math.max(rect.width, 280);
+        dd.style.cssText =
+            'position:fixed;z-index:1050;left:' + rect.left + 'px;width:' + w + 'px;top:' + rect.bottom + 'px;max-height:240px;overflow:auto;box-sizing:border-box';
+    }
+
+    function renderDd(dd, items, anchor, row) {
         dd.innerHTML = '';
+        attachDdToBody(dd, row);
         placeDropdown(dd, anchor);
         if (!items || !items.length) {
             var empty = document.createElement('div');
@@ -200,7 +242,6 @@
             btn.textContent = it.label || '';
             btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
             btn.addEventListener('click', function () {
-                var row = dd.closest('.mov-line-row');
                 if (!row) return;
                 var isFinished = categorySel.value === 'finished';
                 var pidInput = row.querySelector('.inv-line-product-id');
@@ -253,8 +294,8 @@
         }
         fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })
-            .then(function (data) { renderDd(dd, data.items || [], anchor); })
-            .catch(function () { renderDd(dd, [], anchor); });
+            .then(function (data) { renderDd(dd, data.items || [], anchor, row); })
+            .catch(function () { renderDd(dd, [], anchor, row); });
     }
 
     function bindRow(row) {
@@ -292,15 +333,19 @@
         if (e.target.classList.contains('btn-mov-remove')) {
             var rows = body.querySelectorAll('.mov-line-row');
             if (rows.length <= 1) return;
+            hideAllDd();
             e.target.closest('tr').remove();
         }
     });
 
     document.addEventListener('click', function (e) {
-        if (!e.target.closest('.inv-product-cell')) hideAllDd();
+        if (!e.target.closest('.inv-product-cell') && !e.target.closest('.inv-product-dd')) {
+            hideAllDd();
+        }
     });
 
     categorySel.addEventListener('change', function () {
+        hideAllDd();
         btnSubmit.disabled = false;
         body.querySelectorAll('.mov-line-row').forEach(function (tr) {
             var pid = tr.querySelector('.inv-line-product-id');

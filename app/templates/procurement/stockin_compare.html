@@ -16,7 +16,7 @@
             <div class="col-md-4"><strong>采购单号：</strong>{{ row.purchase_order.po_no if row.purchase_order else '-' }}</div>
             <div class="col-md-4"><strong>供应商：</strong>{{ row.purchase_order.supplier_name if row.purchase_order else '-' }}</div>
             <div class="col-md-4"><strong>物料：</strong>{{ row.purchase_order.item_name if row.purchase_order else '-' }}</div>
-            <div class="col-md-4"><strong>收货数量：</strong>{{ row.received_qty }}</div>
+            <div class="col-md-4"><strong>收货数量：</strong>{{ row.received_qty|qty_plain }}</div>
             <div class="col-md-4"><strong>收货状态：</strong>{{ row.status|status_zh('procurement_receipt_status') }}</div>
         </div>
     </div>
@@ -24,13 +24,13 @@
 
 <div class="row g-3 mb-3">
     <div class="col-md-4">
-        <div class="card h-100"><div class="card-body"><div class="text-muted">采购单数量</div><div class="fs-4">{{ summary.ordered_qty }}</div></div></div>
+        <div class="card h-100"><div class="card-body"><div class="text-muted">采购单数量</div><div class="fs-4">{{ summary.ordered_qty|qty_plain }}</div></div></div>
     </div>
     <div class="col-md-4">
-        <div class="card h-100"><div class="card-body"><div class="text-muted">累计收货数量</div><div class="fs-4">{{ summary.received_qty }}</div></div></div>
+        <div class="card h-100"><div class="card-body"><div class="text-muted">累计收货数量</div><div class="fs-4">{{ summary.received_qty|qty_plain }}</div></div></div>
     </div>
     <div class="col-md-4">
-        <div class="card h-100"><div class="card-body"><div class="text-muted">仓库实际入库</div><div class="fs-4">{{ summary.warehouse_qty }}</div></div></div>
+        <div class="card h-100"><div class="card-body"><div class="text-muted">仓库实际入库</div><div class="fs-4">{{ summary.warehouse_qty|qty_plain }}</div></div></div>
     </div>
 </div>
 
@@ -38,7 +38,7 @@
     {% if summary.is_matched %}
     系统对比结果一致，可直接确认。
     {% else %}
-    系统对比结果不一致：本次收货关联入库 {{ summary.receipt_warehouse_qty }}，累计差异 {{ summary.variance_qty }}。确认时必须填写差异说明。
+    系统对比结果不一致：本次收货关联入库 {{ summary.receipt_warehouse_qty|qty_plain }}，累计差异 {{ summary.variance_qty|qty_plain }}。确认时必须填写差异说明。
     {% endif %}
 </div>
 

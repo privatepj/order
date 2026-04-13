@@ -367,7 +367,7 @@ def import_semi_material_movements_from_parsed_lines(
             has_other = bool(
                 normalize_spec_for_match(spec_raw)
                 or area
-                or qty > 0
+                or qty != 0
                 or (unit and str(unit).strip())
                 or (remark and str(remark).strip())
             )
@@ -384,8 +384,11 @@ def import_semi_material_movements_from_parsed_lines(
             _append_fail("仓储区不能为空")
             continue
 
-        if qty <= 0:
-            _append_fail("数量须大于 0")
+        if qty < 0:
+            _append_fail("数量不能为负数")
+            continue
+        if direction == "out" and qty <= 0:
+            _append_fail("出库数量须大于 0")
             continue
 
         item = SemiMaterial.query.get(mid)
@@ -561,7 +564,7 @@ def import_finished_movements_from_parsed_lines(
             has_other = bool(
                 normalize_spec_for_match(spec_raw)
                 or area
-                or qty > 0
+                or qty != 0
                 or (unit and str(unit).strip())
                 or (remark and str(remark).strip())
             )
@@ -578,8 +581,11 @@ def import_finished_movements_from_parsed_lines(
             _append_fail("仓储区不能为空")
             continue
 
-        if qty <= 0:
-            _append_fail("数量须大于 0")
+        if qty < 0:
+            _append_fail("数量不能为负数")
+            continue
+        if direction == "out" and qty <= 0:
+            _append_fail("出库数量须大于 0")
             continue
 
         u = None

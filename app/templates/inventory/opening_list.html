@@ -29,7 +29,7 @@
             <td>
                 {% if r.category == 'finished' and r.product %}{{ r.product.product_code }} — {{ r.product.name }}{% if r.product.spec %}（{{ r.product.spec }}）{% endif %}{% elif r.category in ('semi','material') and r.material %}{{ r.material.code }} — {{ r.material.name }}{% if r.material.spec %}（{{ r.material.spec }}）{% endif %}{% else %}-{% endif %}
             </td>
-            <td class="text-end">{{ r.opening_qty }}</td>
+            <td class="text-end">{{ r.opening_qty|qty_plain }}</td>
             <td>{{ r.unit or '-' }}</td>
             <td>{{ r.remark or '-' }}</td>
             <td>

@@ -22,6 +22,20 @@
 
 查询结存等能力可能受 `inventory_stock_query_read_filters` 等约束（见 `app/auth/capabilities.py`）。
 
+## 批次列表与 `?category=`
+
+- **入口**：侧栏「成品/半成品/材料录入」对应 `GET /inventory/finished|semi|material`，内部 **302** 到 `GET /inventory?category=finished|semi|material`，先进入**仅含该类的** `InventoryMovementBatch` 列表。
+- **无 query**：`GET /inventory` 按当前用户拥有的上述菜单，**仅展示其有权菜单对应品类的批次**（多菜单则合并为一张表并保留「类别」列）；仅一个菜单时等价于带 `category=`。
+- **越权**：`category` 与本人菜单不一致时返回 **403**；非法取值 **404**。
+- **批次详情 / 撤销 / 删单条流水**：按批次或流水上的 `category` 校验对应 `movement.list`、`movement_batch.void`、`movement.delete`（不再仅凭「任一品类能力」覆盖他类数据）。
+
+
+## 数量展示与录入校验
+
+- **页面数量字符串**：模板中对 `Decimal`/`Numeric` 数量优先使用 Jinja 过滤器 **`qty_plain`**（[`app/utils/qty_display.py`](../../app/utils/qty_display.py)），避免 `0E-8` 等科学计数与无意义尾随零；采购侧收货/确认列表与对比页中的数量列亦同。
+- **手工/Excel 流水数量**：方向为 **入库** 时单行数量允许 **0**（须 ≥0）；**出库** 时单行数量须 **>0**（与 `routes_inventory` 解析及 `inventory_svc` 导入校验一致）。
+- **库存录入品名搜索下拉**（[`app/templates/inventory/movement_form.html`](../../app/templates/inventory/movement_form.html)）：打开时挂到 **`document.body`** 并用 `getBoundingClientRect` 固定定位，避免表格/`.app-table-scroll` 内层叠与 flex 子项被压扁；关闭、切换类别或删行前移回对应 `td.inv-product-cell`；文档点击关闭时需排除 `.inv-product-dd` 自身以免点选项即被关掉。
+
 ## 典型流程
 
 1. **手工/批量流水**：创建 `InventoryMovementBatch` + 明细；部分操作会 `emit_event(EVENT_INVENTORY_CHANGED)` 供编排器使用。

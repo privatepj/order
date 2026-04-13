@@ -49,7 +49,7 @@
                 <td>{{ row.receipt_no }}</td>
                 <td>{{ row.purchase_order.po_no if row.purchase_order else '-' }}</td>
                 <td>{{ row.purchase_order.supplier_name if row.purchase_order else '-' }}</td>
-                <td>{{ row.received_qty }}</td>
+                <td>{{ row.received_qty|qty_plain }}</td>
                 <td>{{ row.received_at }}</td>
                 <td>{{ row.status|status_zh('procurement_receipt_status') }}</td>
                 <td>{{ row.reconcile_status|status_zh('procurement_reconcile_status') }}</td>
