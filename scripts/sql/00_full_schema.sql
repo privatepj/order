@@ -1673,6 +1673,7 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('production.preplan.action.edit', '预生产计划：编辑', 'production_preplan', '预生产计划', 20),
 ('production.preplan.action.delete', '预生产计划：删除', 'production_preplan', '预生产计划', 30),
 ('production.calc.action.run', '预生产计划：生产测算运行', 'production_preplan', '预生产计划', 40),
+('production.preplan.cost.view', '预生产计划：查看测算成本', 'production_preplan', '预生产计划', 45),
 ('production_incident.filter.keyword', '生产事故：关键词筛选', 'production_incident', '生产事故', 11),
 ('production_incident.action.create', '生产事故：新建', 'production_incident', '生产事故', 21),
 ('production_incident.action.edit', '生产事故：编辑', 'production_incident', '生产事故', 31),

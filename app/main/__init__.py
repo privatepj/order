@@ -24,6 +24,7 @@ from app.main.routes_employee_capability import register_employee_capability_rou
 from app.main.routes_machine import register_machine_routes
 from app.main.routes_procurement import register_procurement_routes
 from app.main.routes_orchestrator import register_orchestrator_routes
+from app.main.routes_crm import register_crm_routes
 
 bp = Blueprint("main", __name__)
 register_customer_routes(bp)
@@ -48,6 +49,7 @@ register_employee_capability_routes(bp)
 register_machine_routes(bp)
 register_procurement_routes(bp)
 register_orchestrator_routes(bp)
+register_crm_routes(bp)
 
 
 @bp.route("/")

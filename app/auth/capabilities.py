@@ -8,8 +8,8 @@ from flask import request
 from flask_login import current_user
 
 from app.auth.capability_data import CAPABILITY_FALLBACK
-from app.auth.menus import current_user_can_menu, user_can_menu
-from app.auth.rbac_cache import get_all_cap_codes, get_capability_tuples, get_nav_snapshot
+from app.auth.menus import user_can_menu
+from app.auth.rbac_cache import get_capability_tuples
 
 _ORDER_EDIT_DELETE_CAPS = frozenset({"order.action.edit", "order.action.delete"})
 

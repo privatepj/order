@@ -135,6 +135,7 @@
     <div class="col-md-4">
         <div class="card h-100">
             <div class="card-body py-2">
+                {% if user_can_cap('production.preplan.cost.view') %}
                 <h5 class="mb-2">预算总成本（元）</h5>
                 <div class="mb-1 small">
                     <span class="text-muted">优化（最小期望）：</span>
@@ -145,6 +146,10 @@
                     <span class="fw-semibold">{{ (preplan_total_cost_assigned if preplan_total_cost_assigned is defined else 0)|qty_plain }}</span>
                 </div>
                 <div class="text-muted small">人工/机台按能力表良品率、时薪与机台费率；物料按 semi_material.standard_unit_cost；制造费用按人工+机台 20%。与排程表内保存的机台/人员一致。</div>
+                {% else %}
+                <h5 class="mb-2">预算总成本（元）</h5>
+                <p class="text-muted small mb-0">当前账号无「查看测算成本」权限（<code>production.preplan.cost.view</code>）。需要查看优化/已选资源两项汇总时，请联系管理员在角色中勾选该能力。</p>
+                {% endif %}
             </div>
         </div>
     </div>

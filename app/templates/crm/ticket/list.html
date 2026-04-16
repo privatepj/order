@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}CRM 工单列表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">CRM 工单</h2>
+
+<form class="mb-3 d-flex gap-2 flex-wrap" method="get">
+  <div>
+    <label class="form-label mb-1">状态</label>
+    <select class="form-select" name="status" style="min-width: 180px">
+      {% set st = status or '' %}
+      <option value="" {{ 'selected' if not st else '' }}>全部</option>
+      <option value="open" {{ 'selected' if st=='open' else '' }}>open</option>
+      <option value="in_progress" {{ 'selected' if st=='in_progress' else '' }}>in_progress</option>
+      <option value="resolved" {{ 'selected' if st=='resolved' else '' }}>resolved</option>
+      <option value="closed" {{ 'selected' if st=='closed' else '' }}>closed</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary align-self-end">筛选</button>
+</form>
+
+<p>
+  {% if user_can_cap('crm_ticket.action.create') %}
+    <a href="{{ url_for('main.crm_ticket_new') }}" class="btn btn-success me-2">新增工单</a>
+  {% endif %}
+</p>
+
+<div class="table-responsive app-table-scroll">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>编码</th>
+        <th>客户</th>
+        <th>类型</th>
+        <th>优先级</th>
+        <th>状态</th>
+        <th>主题</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tickets %}
+      <tr>
+        <td>{{ t.ticket_code }}</td>
+        <td>{{ t.customer.name if t.customer else '-' }}</td>
+        <td>{{ t.ticket_type }}</td>
+        <td>{{ t.priority }}</td>
+        <td>{{ t.status }}</td>
+        <td>{{ t.subject or '-' }}</td>
+        <td style="white-space: nowrap">
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.crm_ticket_detail', ticket_id=t.id) }}">详情</a>
+          {% if user_can_cap('crm_ticket.action.edit') %}
+            <a class="btn btn-sm btn-outline-secondary ms-1" href="{{ url_for('main.crm_ticket_edit', ticket_id=t.id) }}">编辑</a>
+          {% endif %}
+          {% if user_can_cap('crm_ticket.action.delete') %}
+            <form method="post" action="{{ url_for('main.crm_ticket_delete', ticket_id=t.id) }}" class="d-inline ms-1"
+              onsubmit="return confirm('确定删除该工单？');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">暂无工单</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

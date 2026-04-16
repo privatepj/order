@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑线索' if lead and lead.id else '新增线索' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ '编辑线索' if lead and lead.id else '新增线索' }}</h2>
+
+<form method="post">
+  {% if lead and lead.lead_code %}
+  <div class="mb-3">
+    <label class="form-label">线索编码</label>
+    <input type="text" class="form-control" value="{{ lead.lead_code }}" readonly>
+  </div>
+  {% endif %}
+
+  <div class="mb-3">
+    <label class="form-label">关联客户（可选）</label>
+    <select class="form-select" name="customer_id">
+      <option value="">（未关联）</option>
+      {% for c in customers %}
+        <option value="{{ c.id }}" {{ 'selected' if lead and lead.customer_id==c.id else '' }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">客户名称 <span class="text-danger">*</span></label>
+    <input type="text" class="form-control" name="customer_name" value="{{ lead.customer_name if lead else '' }}" required>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">联系人</label>
+    <input type="text" class="form-control" name="contact" value="{{ lead.contact if lead else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">电话</label>
+    <input type="text" class="form-control" name="phone" value="{{ lead.phone if lead else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">来源</label>
+    <input type="text" class="form-control" name="source" value="{{ lead.source if lead else 'manual' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">状态</label>
+    <select class="form-select" name="status">
+      {% set st = lead.status if lead else 'new' %}
+      <option value="new" {{ 'selected' if st=='new' else '' }}>new</option>
+      <option value="qualified" {{ 'selected' if st=='qualified' else '' }}>qualified</option>
+      <option value="disqualified" {{ 'selected' if st=='disqualified' else '' }}>disqualified</option>
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">标签（逗号分隔，可选）</label>
+    <input type="text" class="form-control" name="tags" value="{{ lead.tags if lead else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">备注</label>
+    <textarea class="form-control" name="remark" rows="2">{{ lead.remark if lead else '' }}</textarea>
+  </div>
+
+  <button type="submit" class="btn btn-primary">保存</button>
+  <a href="{{ url_for('main.crm_lead_list') }}" class="btn btn-secondary">取消</a>
+</form>
+{% endblock %}
+

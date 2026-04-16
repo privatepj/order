@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}机会生成订单 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">从机会生成订单</h2>
+
+<p class="text-muted mb-2">
+  机会：{{ opp.opp_code }} · 客户：{{ opp.customer.name if opp.customer else '-' }} · 当前阶段：{{ opp.stage }}
+</p>
+
+{% if order %}
+  <div class="alert alert-success">
+    已生成订单：<a href="{{ url_for('main.order_edit', order_id=order.id) }}">{{ order.order_no }}</a>
+  </div>
+{% endif %}
+
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">客户订单号（可选）</label>
+    <input type="text" class="form-control" name="customer_order_no" value="{{ opp.customer_order_no if opp.customer_order_no else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">销售员</label>
+    <input type="text" class="form-control" name="salesperson" value="{{ opp.salesperson if opp.salesperson else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">订单日期（可选）</label>
+    <input type="date" class="form-control" name="order_date" value="{{ opp.order_date if opp.order_date else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">需求日期（可选）</label>
+    <input type="date" class="form-control" name="required_date" value="{{ opp.required_date if opp.required_date else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">付款类型</label>
+    {% set pt = opp.payment_type if opp.payment_type else 'monthly' %}
+    <select class="form-select" name="payment_type">
+      <option value="monthly" {{ 'selected' if pt=='monthly' else '' }}>monthly(月结)</option>
+      <option value="cash" {{ 'selected' if pt=='cash' else '' }}>cash(现金)</option>
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">备注</label>
+    <textarea class="form-control" name="remark" rows="2">{{ opp.remark if opp.remark else '' }}</textarea>
+  </div>
+
+  <button type="submit" class="btn btn-success">生成订单</button>
+  <a href="{{ url_for('main.crm_opportunity_edit', opp_id=opp.id) }}" class="btn btn-secondary">返回机会</a>
+</form>
+{% endblock %}
+

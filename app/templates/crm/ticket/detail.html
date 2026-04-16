@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}工单详情 {{ ticket.ticket_code }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">工单详情</h2>
+
+<p class="text-muted mb-2">
+  编码：{{ ticket.ticket_code }} · 客户：{{ ticket.customer.name if ticket.customer else '-' }} · 类型：{{ ticket.ticket_type }} · 优先级：{{ ticket.priority }}
+</p>
+
+<div class="mb-4">
+  <div class="mb-2"><strong>主题：</strong>{{ ticket.subject or '-' }}</div>
+  <div class="mb-2"><strong>描述：</strong>{{ ticket.description or '-' }}</div>
+  <div class="mb-2"><strong>状态：</strong>{{ ticket.status }}</div>
+  <div class="mb-2"><strong>到期：</strong>{{ ticket.due_date or '-' }}</div>
+</div>
+
+{% if user_can_cap('crm_ticket.action.edit') %}
+  <h5 class="mb-3">更新状态</h5>
+  <form method="post" action="{{ url_for('main.crm_ticket_set_status', ticket_id=ticket.id) }}" class="d-flex gap-2 align-items-end flex-wrap">
+    <div>
+      <label class="form-label mb-1">状态</label>
+      <select class="form-select" name="status">
+        <option value="open" {{ 'selected' if ticket.status=='open' else '' }}>open</option>
+        <option value="in_progress" {{ 'selected' if ticket.status=='in_progress' else '' }}>in_progress</option>
+        <option value="resolved" {{ 'selected' if ticket.status=='resolved' else '' }}>resolved</option>
+        <option value="closed" {{ 'selected' if ticket.status=='closed' else '' }}>closed</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-warning">更新</button>
+  </form>
+{% endif %}
+
+<hr class="my-4">
+
+<h5 class="mb-3">活动记录</h5>
+<div class="mb-4">
+  {% for a in ticket.activities %}
+    <div class="border rounded p-2 mb-2">
+      <div class="text-muted small">{{ a.created_at }} · {{ a.activity_type }}</div>
+      <div style="white-space: pre-wrap">{{ a.content }}</div>
+    </div>
+  {% else %}
+    <div class="text-muted">暂无活动记录</div>
+  {% endfor %}
+</div>
+
+{% if user_can_cap('crm_ticket.action.edit') %}
+  <h5 class="mb-3">新增活动</h5>
+  <form method="post" action="{{ url_for('main.crm_ticket_activity_new', ticket_id=ticket.id) }}">
+    <input type="hidden" name="actor_user_id" value="{{ current_user.id }}">
+    <div class="mb-3">
+      <label class="form-label">类型</label>
+      <select class="form-select" name="activity_type">
+        <option value="note" selected>note</option>
+        <option value="status_change">status_change</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">内容</label>
+      <textarea class="form-control" name="content" rows="3" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">添加</button>
+  </form>
+{% endif %}
+
+<div class="mt-4">
+  {% if user_can_cap('crm_ticket.action.edit') %}
+    <a href="{{ url_for('main.crm_ticket_edit', ticket_id=ticket.id) }}" class="btn btn-outline-secondary me-2">编辑</a>
+  {% endif %}
+  <a href="{{ url_for('main.crm_ticket_list') }}" class="btn btn-secondary">返回列表</a>
+</div>
+
+{% endblock %}
+

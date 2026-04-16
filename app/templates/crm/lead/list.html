@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}CRM 线索列表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">CRM 线索</h2>
+
+<form class="mb-3 d-flex gap-2 flex-wrap" method="get">
+  <div>
+    <label class="form-label mb-1">状态</label>
+    <select class="form-select" name="status" style="min-width: 180px">
+      {% set s = status or '' %}
+      <option value="" {{ 'selected' if not s else '' }}>全部</option>
+      <option value="new" {{ 'selected' if s=='new' else '' }}>new</option>
+      <option value="qualified" {{ 'selected' if s=='qualified' else '' }}>qualified</option>
+      <option value="disqualified" {{ 'selected' if s=='disqualified' else '' }}>disqualified</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary align-self-end">筛选</button>
+</form>
+
+<p>
+  {% if user_can_cap('crm_lead.action.create') %}
+    <a href="{{ url_for('main.crm_lead_new') }}" class="btn btn-success me-2">新增线索</a>
+  {% endif %}
+</p>
+
+<div class="table-responsive app-table-scroll">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>编码</th>
+        <th>客户名称</th>
+        <th>联系人</th>
+        <th>电话</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in leads %}
+      <tr>
+        <td>{{ l.lead_code }}</td>
+        <td>{{ l.customer_name }}</td>
+        <td>{{ l.contact or '-' }}</td>
+        <td>{{ l.phone or '-' }}</td>
+        <td>{{ l.status }}</td>
+        <td style="white-space: nowrap">
+          {% if user_can_cap('crm_lead.action.edit') %}
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.crm_lead_edit', lead_id=l.id) }}">编辑</a>
+          {% endif %}
+          {% if user_can_cap('crm_lead.action.delete') %}
+            <form method="post" action="{{ url_for('main.crm_lead_delete', lead_id=l.id) }}" class="d-inline" onsubmit="return confirm('确定删除该线索？');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
+            </form>
+          {% endif %}
+          {% if user_can_cap('crm_opportunity.action.create') and l.customer_id %}
+            <form method="post" action="{{ url_for('main.crm_lead_to_opportunity', lead_id=l.id) }}" class="d-inline">
+              <button type="submit" class="btn btn-sm btn-outline-success">转机会</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">暂无线索</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

@@ -380,6 +380,12 @@ def _inventory_category_label(category: str) -> str:
     return category or ""
 
 
+def _movement_query_redirect_target(category: str):
+    if category in _INVENTORY_CATEGORY_SET:
+        return redirect(url_for("main.inventory_movement_query", category=category))
+    return redirect(url_for("main.inventory_movement_query"))
+
+
 def _dedupe_movement_import_parsed(parsed):
     """
     同一文件内六列（品名、规格、仓储区、数量、单位、备注）规范化后完全相同的行，
@@ -931,6 +937,91 @@ def register_inventory_routes(bp):
             pagination=pagination,
             creators=users,
             list_category=list_category,
+        )
+
+    @bp.route("/inventory/movement/query")
+    @login_required
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    def inventory_movement_query():
+        page = request.args.get("page", 1, type=int)
+        category = (request.args.get("category") or "").strip()
+        direction = (request.args.get("direction") or "").strip()
+        preset = (request.args.get("preset") or "week").strip().lower()
+        start_raw = (request.args.get("start_date") or "").strip()
+        end_raw = (request.args.get("end_date") or "").strip()
+        name_spec_kw = (request.args.get("name_spec") or "").strip()
+        storage_area_kw = (request.args.get("storage_area") or "").strip()
+
+        allowed_menu_cats = _user_allowed_inventory_categories()
+        allowed_list_cats = [
+            cat
+            for cat in allowed_menu_cats
+            if current_user_can_cap(f"{_menu_code_for_category(cat)}.movement.list")
+        ]
+        if not allowed_list_cats:
+            abort(403)
+
+        if category:
+            if category not in _INVENTORY_CATEGORY_SET:
+                abort(404)
+            if category not in allowed_list_cats:
+                abort(403)
+            query_cats = [category]
+        else:
+            query_cats = list(allowed_list_cats)
+
+        try:
+            preset_norm, start_date, end_date = _resolve_movement_export_date_range(
+                preset, start_raw, end_raw
+            )
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return _movement_query_redirect_target(category)
+
+        if start_date > end_date:
+            flash("开始日期不能晚于结束日期。", "danger")
+            return _movement_query_redirect_target(category)
+
+        rows, total = inventory_svc.query_movement_rows_paginated(
+            categories=query_cats,
+            start_date=start_date,
+            end_date=end_date,
+            category=category,
+            direction=direction,
+            storage_area_kw=storage_area_kw,
+            name_spec_kw=name_spec_kw,
+            page=page,
+            per_page=30,
+        )
+        total_pages = (total + 30 - 1) // 30 if total else 1
+        if page > total_pages and total:
+            return redirect(
+                url_for(
+                    "main.inventory_movement_query",
+                    page=total_pages,
+                    category=category or None,
+                    direction=direction or None,
+                    preset=preset_norm,
+                    start_date=start_date.isoformat() if preset_norm == "custom" else None,
+                    end_date=end_date.isoformat() if preset_norm == "custom" else None,
+                    name_spec=name_spec_kw or None,
+                    storage_area=storage_area_kw or None,
+                )
+            )
+
+        return render_template(
+            "inventory/movement_query.html",
+            rows=rows,
+            page=page,
+            total=total,
+            total_pages=total_pages,
+            category=category,
+            direction=direction,
+            preset=preset_norm,
+            start_date=start_date,
+            end_date=end_date,
+            storage_area=storage_area_kw,
+            name_spec_kw=name_spec_kw,
         )
 
     @bp.route("/inventory/movement/export", methods=["GET"])

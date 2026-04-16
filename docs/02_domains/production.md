@@ -27,6 +27,10 @@
 ## 权限
 
 - 以 `routes_production.py` 装饰器为准；变更时同步 [map_routes_to_services.md](../04_ai/project-skill/map_routes_to_services.md)。
+- **预生产计划菜单**（`production_preplan`）下常见细项能力：
+  - `production.preplan.action.create` / `edit` / `delete`：预计划维护
+  - `production.calc.action.run`：重新测算、人工排程、保存排程、确认计划等与测算/排程相关的 **操作**
+  - `production.preplan.cost.view`：预生产详情页 **「预算总成本（元）」** 汇总（优化场景与按已选资源）；无此能力时仍可看排程与工时等，但不查询/不展示成本金额。管理员不受限。库表种子见 `scripts/sql/run_79_production_preplan_cost_view_cap.sql`。
 
 ## 相关文档
 

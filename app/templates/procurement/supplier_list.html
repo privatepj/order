@@ -5,6 +5,7 @@
     <h2 class="mb-0">供应商管理</h2>
     {% if user_can_cap('procurement_supplier.action.create') %}
     <a href="{{ url_for('main.procurement_supplier_new') }}" class="btn btn-primary btn-sm">新增供应商</a>
+    <a href="{{ url_for('main.procurement_supplier_import') }}" class="btn btn-outline-secondary btn-sm">Excel 导入</a>
     {% endif %}
 </div>
 

@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block extra_css %}
+<style>
+/* 复用库存录入页的下拉联想样式（fixed 定位，避免表格滚动裁切） */
+.mov-query-name-cell { position: relative; min-width: 280px; max-width: 520px; }
+.inv-product-dd {
+    position: fixed; z-index: 1050; max-height: 240px; overflow-y: auto;
+    overflow-x: visible;
+    background: #fff; border: 1px solid #dee2e6; border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.1);
+    box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 0.25rem 0;
+}
+.inv-product-dd .list-group-item,
+.inv-product-dd button.list-group-item-action {
+    flex: 0 0 auto;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    min-height: 2.5rem;
+    text-align: left;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.inv-product-dd .list-group-item:hover,
+.inv-product-dd button.list-group-item-action:hover { background: #f8f9fa; }
+</style>
+{% endblock %}
+{% block title %}库存录入明细查询 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">库存录入明细查询</h2>
+<p class="text-muted small mb-3">按业务日期、类别、方向、仓储区、品名/规格/编号筛选跨批次库存录入明细，结果可直接导出。</p>
+<form method="get" id="movementQueryForm" class="row g-2 align-items-end mb-4"
+    data-products-search-url="{{ url_for('main.inventory_products_search') }}"
+    data-semi-materials-search-url="{{ url_for('main.inventory_semi_materials_search') }}">
+    <div class="col-md-2">
+        <label class="form-label">类别</label>
+        <select name="category" id="movementQueryCategorySel" class="form-select">
+            <option value="" {{ 'selected' if not category else '' }}>全部</option>
+            <option value="finished" {{ 'selected' if category == 'finished' else '' }}>成品</option>
+            <option value="semi" {{ 'selected' if category == 'semi' else '' }}>半成品</option>
+            <option value="material" {{ 'selected' if category == 'material' else '' }}>物料</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">方向</label>
+        <select name="direction" class="form-select">
+            <option value="" {{ 'selected' if not direction else '' }}>全部</option>
+            <option value="in" {{ 'selected' if direction == 'in' else '' }}>入库</option>
+            <option value="out" {{ 'selected' if direction == 'out' else '' }}>出库</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">查询周期</label>
+        <select name="preset" class="form-select" id="movementQueryPreset">
+            <option value="week" {{ 'selected' if preset == 'week' else '' }}>周报（本周）</option>
+            <option value="month" {{ 'selected' if preset == 'month' else '' }}>月报（本月）</option>
+            <option value="custom" {{ 'selected' if preset == 'custom' else '' }}>指定时间</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">开始日期</label>
+        <input type="date" name="start_date" id="movementQueryStart" class="form-control" value="{{ start_date.isoformat() if start_date else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">结束日期</label>
+        <input type="date" name="end_date" id="movementQueryEnd" class="form-control" value="{{ end_date.isoformat() if end_date else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">仓储区</label>
+        <input type="text" name="storage_area" class="form-control" value="{{ storage_area }}" placeholder="模糊">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">品名/规格/编号</label>
+        <div class="mov-query-name-cell">
+            <textarea
+                name="name_spec"
+                id="movementQueryNameSpec"
+                class="form-control form-control-sm name-search-textarea"
+                rows="1"
+                autocomplete="off"
+                placeholder="模糊搜索（编号/品名/规格）"
+            >{{ name_spec_kw }}</textarea>
+            <div class="inv-product-dd list-group d-none" id="movementQueryNameDd"></div>
+        </div>
+    </div>
+    <div class="col-md-auto d-flex flex-wrap gap-2 align-items-center">
+        <button type="submit" class="btn btn-primary">查询</button>
+        <a href="{{ url_for('main.inventory_movement_query', category=category) if category else url_for('main.inventory_movement_query') }}" class="btn btn-outline-secondary">重置</a>
+    </div>
+</form>
+{% if user_can_cap('inventory_ops_finished.movement.export') or user_can_cap('inventory_ops_semi.movement.export') or user_can_cap('inventory_ops_material.movement.export') %}
+<form method="get" action="{{ url_for('main.inventory_movement_export') }}" class="mb-3">
+    <input type="hidden" name="category" value="{{ category }}">
+    <input type="hidden" name="direction" value="{{ direction }}">
+    <input type="hidden" name="preset" value="{{ preset }}">
+    <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+    <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
+    <input type="hidden" name="storage_area" value="{{ storage_area }}">
+    <input type="hidden" name="name_spec" value="{{ name_spec_kw }}">
+    <button type="submit" class="btn btn-outline-primary">导出当前结果</button>
+</form>
+{% endif %}
+<div class="table-responsive app-table-scroll">
+<table class="table table-bordered table-sm">
+    <thead>
+        <tr>
+            <th>业务日期</th>
+            <th>类别</th>
+            <th>方向</th>
+            <th>仓储区</th>
+            <th>编号</th>
+            <th>品名</th>
+            <th>规格</th>
+            <th class="text-end">数量</th>
+            <th>单位</th>
+            <th>来源</th>
+            <th>备注</th>
+            <th>创建时间</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ row.biz_date.isoformat() if row.biz_date else '-' }}</td>
+            <td>{% if row.category == 'finished' %}成品{% elif row.category == 'semi' %}半成品{% elif row.category == 'material' %}物料{% else %}{{ row.category }}{% endif %}</td>
+            <td>{{ '入库' if row.direction == 'in' else '出库' }}</td>
+            <td>{{ row.storage_area or '-' }}</td>
+            <td>{{ row.item_code or '-' }}</td>
+            <td>{{ row.item_name or '-' }}</td>
+            <td>{{ row.item_spec or '-' }}</td>
+            <td class="text-end">{{ row.quantity|qty_plain }}</td>
+            <td>{{ row.unit or '-' }}</td>
+            <td>
+                {% if row.source_type == 'delivery' %}
+                送货出库{% if row.source_delivery_id %}#{{ row.source_delivery_id }}{% endif %}
+                {% elif row.source_type == 'procurement' %}
+                采购入库
+                {% if row.source_purchase_order_id or row.source_purchase_receipt_id %}
+                （{% if row.source_purchase_order_id %}采购单#{{ row.source_purchase_order_id }}{% endif %}{% if row.source_purchase_order_id and row.source_purchase_receipt_id %} / {% endif %}{% if row.source_purchase_receipt_id %}收货单#{{ row.source_purchase_receipt_id }}{% endif %}）
+                {% endif %}
+                {% else %}
+                手工录入
+                {% endif %}
+            </td>
+            <td>{{ row.remark or '-' }}</td>
+            <td class="text-nowrap small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '-' }}</td>
+            <td>
+                {% if row.movement_batch_id %}
+                <a href="{{ url_for('main.inventory_batch_detail', batch_id=row.movement_batch_id, category=row.category) }}" class="btn btn-sm btn-outline-primary">批次详情</a>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="13">暂无符合条件的库存录入明细</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if total_pages > 1 %}
+<nav>
+    <ul class="pagination">
+        {% if page > 1 %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_movement_query', page=page-1, category=category, direction=direction, preset=preset, start_date=start_date.isoformat() if preset == 'custom' else None, end_date=end_date.isoformat() if preset == 'custom' else None, storage_area=storage_area, name_spec=name_spec_kw) }}">上一页</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">第 {{ page }} / {{ total_pages }} 页（共 {{ total }} 条）</span></li>
+        {% if page < total_pages %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_movement_query', page=page+1, category=category, direction=direction, preset=preset, start_date=start_date.isoformat() if preset == 'custom' else None, end_date=end_date.isoformat() if preset == 'custom' else None, storage_area=storage_area, name_spec=name_spec_kw) }}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var preset = document.getElementById('movementQueryPreset');
+    var start = document.getElementById('movementQueryStart');
+    var end = document.getElementById('movementQueryEnd');
+    if (!preset || !start || !end) return;
+    function syncRangeInputs() {
+        var custom = preset.value === 'custom';
+        start.disabled = !custom;
+        end.disabled = !custom;
+        start.required = custom;
+        end.required = custom;
+    }
+    preset.addEventListener('change', syncRangeInputs);
+    syncRangeInputs();
+})();
+
+(function () {
+    var form = document.getElementById('movementQueryForm');
+    var catSel = document.getElementById('movementQueryCategorySel');
+    var search = document.getElementById('movementQueryNameSpec');
+    var dd = document.getElementById('movementQueryNameDd');
+    var cell = document.querySelector('.mov-query-name-cell');
+    if (!form || !catSel || !search || !dd || !cell) return;
+
+    var productsSearchUrl = form.getAttribute('data-products-search-url');
+    var semiMaterialsSearchUrl = form.getAttribute('data-semi-materials-search-url');
+
+    // 避免无权限时反复触发请求导致下拉空闪烁
+    var capFinished = {{ 'true' if user_can_cap('inventory_ops_finished.api.products_search') else 'false' }};
+    var capSemi = {{ 'true' if user_can_cap('inventory_ops_semi.api.products_search') else 'false' }};
+    var capMaterial = {{ 'true' if user_can_cap('inventory_ops_material.api.products_search') else 'false' }};
+
+    function normalizeQuery(v) {
+        return String(v || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function extractCodeFromLabel(label) {
+        if (!label) return '';
+        var s = String(label);
+        // label 形如：`M-RM-001 — 示例名（示例规格）`
+        var parts = s.split(' — ');
+        return (parts[0] || '').trim();
+    }
+
+    function hideDd() {
+        if (!dd) return;
+        dd.classList.add('d-none');
+        dd.innerHTML = '';
+        if (dd.parentNode !== cell) {
+            cell.appendChild(dd);
+        }
+    }
+
+    function placeDropdown(anchor) {
+        var rect = anchor.getBoundingClientRect();
+        var m = 8;
+        var w = Math.min(Math.max(rect.width, 360), Math.max(280, window.innerWidth - rect.left - m));
+        var left = rect.left;
+        if (left + w > window.innerWidth - m) {
+            left = Math.max(m, window.innerWidth - m - w);
+        }
+        dd.style.cssText =
+            'position:fixed;z-index:1050;left:' + left + 'px;width:' + w + 'px;top:' + rect.bottom + 'px;max-height:240px;overflow-y:auto;overflow-x:visible;box-sizing:border-box';
+    }
+
+    function attachDdToBody() {
+        if (dd.parentNode !== document.body) {
+            document.body.appendChild(dd);
+        }
+    }
+
+    function renderDd(items) {
+        dd.innerHTML = '';
+        attachDdToBody();
+        placeDropdown(search);
+
+        if (!items || !items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'list-group-item text-muted';
+            empty.textContent = '无匹配项';
+            dd.appendChild(empty);
+            dd.classList.remove('d-none');
+            return;
+        }
+
+        items.forEach(function (it) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = it.label || '';
+            btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+            btn.addEventListener('click', function () {
+                var code = extractCodeFromLabel(it.label);
+                search.value = code || it.spec || '';
+                hideDd();
+            });
+            dd.appendChild(btn);
+        });
+        dd.classList.remove('d-none');
+    }
+
+    var debounceTimer = null;
+    function fetchItems(q) {
+        var query = normalizeQuery(q);
+        var kind = catSel.value;
+        if (!kind) {
+            hideDd();
+            return;
+        }
+        if (!query) {
+            hideDd();
+            return;
+        }
+
+        var url = null;
+        if (kind === 'finished') {
+            if (!capFinished) return;
+            url = productsSearchUrl + '?q=' + encodeURIComponent(query) + '&limit=20';
+        } else if (kind === 'semi') {
+            if (!capSemi) return;
+            url = semiMaterialsSearchUrl + '?q=' + encodeURIComponent(query) + '&limit=20&kind=' + encodeURIComponent(kind);
+        } else if (kind === 'material') {
+            if (!capMaterial) return;
+            url = semiMaterialsSearchUrl + '?q=' + encodeURIComponent(query) + '&limit=20&kind=' + encodeURIComponent(kind);
+        }
+        if (!url) return;
+
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderDd((data && data.items) || []); })
+            .catch(function () { renderDd([]); });
+    }
+
+    search.addEventListener('input', function () {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            fetchItems(search.value);
+        }, 250);
+    });
+
+    search.addEventListener('focus', function () {
+        if (search.value && search.value.trim()) {
+            fetchItems(search.value);
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        var target = e.target;
+        if (!target.closest('#movementQueryNameDd') && !target.closest('.mov-query-name-cell')) {
+            hideDd();
+        }
+    });
+
+    // 初始值（有 query 参数时）不自动请求，避免首屏多请求；用户聚焦/输入时再请求。
+    hideDd();
+})();
+</script>
+{% endblock %}

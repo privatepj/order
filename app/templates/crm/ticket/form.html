@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑工单' if ticket and ticket.id else '新增工单' }} - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ '编辑工单' if ticket and ticket.id else '新增工单' }}</h2>
+
+<form method="post">
+  {% if ticket and ticket.ticket_code %}
+  <div class="mb-3">
+    <label class="form-label">工单编码</label>
+    <input type="text" class="form-control" value="{{ ticket.ticket_code }}" readonly>
+  </div>
+  {% endif %}
+
+  <div class="mb-3">
+    <label class="form-label">客户 <span class="text-danger">*</span></label>
+    <select class="form-select" name="customer_id" required>
+      {% for c in customers %}
+        <option value="{{ c.id }}" {{ 'selected' if ticket and ticket.customer_id==c.id else '' }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">工单类型</label>
+    <input type="text" class="form-control" name="ticket_type" value="{{ ticket.ticket_type if ticket else 'support' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">优先级</label>
+    <select class="form-select" name="priority">
+      {% set p = ticket.priority if ticket else 'normal' %}
+      <option value="low" {{ 'selected' if p=='low' else '' }}>low</option>
+      <option value="normal" {{ 'selected' if p=='normal' else '' }}>normal</option>
+      <option value="high" {{ 'selected' if p=='high' else '' }}>high</option>
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">状态</label>
+    {% if ticket and ticket.id %}
+      <input type="hidden" name="status" value="{{ ticket.status }}">
+      <div class="form-control-plaintext">{{ ticket.status }}</div>
+    {% else %}
+      <select class="form-select" name="status">
+        <option value="open" selected>open</option>
+        <option value="in_progress">in_progress</option>
+        <option value="resolved">resolved</option>
+        <option value="closed">closed</option>
+      </select>
+    {% endif %}
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">主题</label>
+    <input type="text" class="form-control" name="subject" value="{{ ticket.subject if ticket and ticket.subject else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">描述</label>
+    <textarea class="form-control" name="description" rows="4">{{ ticket.description if ticket and ticket.description else '' }}</textarea>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">到期日期（可选）</label>
+    <input type="date" class="form-control" name="due_date" value="{{ ticket.due_date if ticket and ticket.due_date else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">负责人（可选）</label>
+    <select class="form-select" name="assignee_user_id">
+      <option value="">（未指定）</option>
+      {% for u in users %}
+        <option value="{{ u.id }}" {{ 'selected' if ticket and ticket.assignee_user_id==u.id else '' }}>{{ u.name or u.username }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">标签（可选）</label>
+    <input type="text" class="form-control" name="tags" value="{{ ticket.tags if ticket and ticket.tags else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">备注</label>
+    <textarea class="form-control" name="remark" rows="2">{{ ticket.remark if ticket and ticket.remark else '' }}</textarea>
+  </div>
+
+  <button type="submit" class="btn btn-primary">保存</button>
+  <a href="{{ url_for('main.crm_ticket_list') }}" class="btn btn-secondary">取消</a>
+</form>
+{% endblock %}
+

@@ -31,7 +31,7 @@
 
 ## 进出明细导出（周/月/自定义）
 
-- **入口**：`GET /inventory/movement/export`（按钮位于 `inventory/movement_list.html`）。
+- **入口**：`GET /inventory/movement/export`（由在线查询页 `inventory/movement_query.html` 的“导出当前结果”触发）。
 - **周期参数**：
   - `preset=week|month|custom`
   - `custom` 必填 `start_date` + `end_date`（`YYYY-MM-DD`）
@@ -40,6 +40,21 @@
 - **权限**：按类别校验 `inventory_ops_*.movement.export`（并叠加菜单可见范围）。
 - **保护阈值**：单次导出日期跨度最多 92 天，结果最多 50,000 行，超限需缩小范围。
 
+## 库存录入明细在线查询
+
+- **入口**：`GET /inventory/movement/query`，列表页 `inventory/movement_list.html` 新增「在线查询明细」按钮。
+- **用途**：查看**跨批次**库存录入流水；与批次详情 `GET /inventory/batch/<id>` 的区别是，后者仅看单批，前者可跨时间/类别/方向检索。
+- **与批次列表关系**：材料、半成品、成品库存批次列表页不再直接提供“导出进出明细”，统一先在线筛选，再按当前结果导出。
+- **筛选参数**：
+  - `category`
+  - `direction`
+  - `preset=week|month|custom`
+  - `start_date` / `end_date`（`custom` 必填）
+  - `storage_area`
+  - `name_spec`
+- **分页**：每页 30 条，按 `biz_date DESC, movement_id DESC` 排序。
+- **权限**：复用各类别 `inventory_ops_*.movement.list`；菜单仍要求具备对应 `inventory_ops_*` 页面入口。
+- **导出一致性**：查询页“导出当前结果”直接提交到既有 `/inventory/movement/export`，并携带当前筛选条件；服务层与导出共用同一套过滤逻辑，避免页面与 Excel 口径不一致。
 
 ## 数量展示与录入校验
 

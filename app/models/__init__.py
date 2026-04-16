@@ -12,6 +12,11 @@ from app.models.order import SalesOrder, OrderItem
 from app.models.delivery import Delivery, DeliveryItem
 from app.models.express import ExpressCompany, ExpressWaybill
 from app.models.product import Product, CustomerProduct
+from app.models.crm_lead import CrmLead
+from app.models.crm_opportunity import CrmOpportunity
+from app.models.crm_opportunity_line import CrmOpportunityLine
+from app.models.crm_ticket import CrmTicket
+from app.models.crm_ticket_activity import CrmTicketActivity
 from app.models.audit_log import AuditLog
 from app.models.inventory import InventoryDailyRecord, InventoryDailyLine
 from app.models.inventory_ledger import (
@@ -92,6 +97,11 @@ __all__ = [
     "RoleAllowedCapability",
     "Company",
     "Customer",
+    "CrmLead",
+    "CrmOpportunity",
+    "CrmOpportunityLine",
+    "CrmTicket",
+    "CrmTicketActivity",
     "SalesOrder",
     "OrderItem",
     "Delivery",

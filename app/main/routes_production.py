@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app import db
+from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.utils.decimal_scale import quantize_decimal
 from app.models import (
@@ -1067,22 +1068,26 @@ def register_production_routes(bp):
                 wo.planned_ef = None
                 wo.planned_wall_minutes = None
 
-        total_cost_opt = (
-            db.session.query(db.func.coalesce(db.func.sum(ProductionCostPlanDetail.amount), 0))
-            .filter(
-                ProductionCostPlanDetail.preplan_id == preplan_id,
-                ProductionCostPlanDetail.scenario == "optimized",
+        if current_user_can_cap("production.preplan.cost.view"):
+            total_cost_opt = (
+                db.session.query(db.func.coalesce(db.func.sum(ProductionCostPlanDetail.amount), 0))
+                .filter(
+                    ProductionCostPlanDetail.preplan_id == preplan_id,
+                    ProductionCostPlanDetail.scenario == "optimized",
+                )
+                .scalar()
             )
-            .scalar()
-        )
-        total_cost_asg = (
-            db.session.query(db.func.coalesce(db.func.sum(ProductionCostPlanDetail.amount), 0))
-            .filter(
-                ProductionCostPlanDetail.preplan_id == preplan_id,
-                ProductionCostPlanDetail.scenario == "assigned",
+            total_cost_asg = (
+                db.session.query(db.func.coalesce(db.func.sum(ProductionCostPlanDetail.amount), 0))
+                .filter(
+                    ProductionCostPlanDetail.preplan_id == preplan_id,
+                    ProductionCostPlanDetail.scenario == "assigned",
+                )
+                .scalar()
             )
-            .scalar()
-        )
+        else:
+            total_cost_opt = None
+            total_cost_asg = None
 
         company_id_ctx = _company_id_from_preplan(preplan)
         budget_options_by_op = _budget_options_for_operations(work_orders, company_id_ctx)

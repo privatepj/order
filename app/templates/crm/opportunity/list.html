@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}CRM 机会列表 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-3">CRM 机会</h2>
+
+<form class="mb-3 d-flex gap-2 flex-wrap" method="get">
+  <div>
+    <label class="form-label mb-1">阶段</label>
+    <select class="form-select" name="stage" style="min-width: 180px">
+      {% set st = stage or '' %}
+      <option value="" {{ 'selected' if not st else '' }}>全部</option>
+      <option value="draft" {{ 'selected' if st=='draft' else '' }}>draft</option>
+      <option value="qualified" {{ 'selected' if st=='qualified' else '' }}>qualified</option>
+      <option value="negotiating" {{ 'selected' if st=='negotiating' else '' }}>negotiating</option>
+      <option value="won" {{ 'selected' if st=='won' else '' }}>won</option>
+      <option value="lost" {{ 'selected' if st=='lost' else '' }}>lost</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary align-self-end">筛选</button>
+</form>
+
+<p>
+  {% if user_can_cap('crm_opportunity.action.create') %}
+    <a href="{{ url_for('main.crm_opportunity_new') }}" class="btn btn-success me-2">新增机会</a>
+  {% endif %}
+</p>
+
+<div class="table-responsive app-table-scroll">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>编码</th>
+        <th>客户</th>
+        <th>阶段</th>
+        <th>预计金额</th>
+        <th>预计成交日</th>
+        <th>成交订单</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in opps %}
+      <tr>
+        <td>{{ o.opp_code }}</td>
+        <td>{{ o.customer.name if o.customer else '-' }}</td>
+        <td>{{ o.stage }}</td>
+        <td>{{ o.expected_amount if o.expected_amount is not none else '-' }} {{ o.currency or '' }}</td>
+        <td>{{ o.expected_close_date or '-' }}</td>
+        <td>
+          {% if o.won_order_id %}
+            <a href="{{ url_for('main.order_edit', order_id=o.won_order_id) }}">#{{ o.won_order_id }}</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td style="white-space: nowrap">
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.crm_opportunity_lines', opp_id=o.id) }}">产品行</a>
+          {% if user_can_cap('crm_opportunity.action.edit') %}
+            <a class="btn btn-sm btn-outline-secondary ms-1" href="{{ url_for('main.crm_opportunity_edit', opp_id=o.id) }}">编辑</a>
+          {% endif %}
+
+          {% if user_can_cap('crm_opportunity.action.edit') %}
+          <form method="post" action="{{ url_for('main.crm_opportunity_set_stage', opp_id=o.id) }}" class="d-inline ms-1">
+            <select class="form-select form-select-sm d-inline-block" name="stage" style="width: 150px">
+              <option value="draft" {{ 'selected' if o.stage=='draft' else '' }}>draft</option>
+              <option value="qualified" {{ 'selected' if o.stage=='qualified' else '' }}>qualified</option>
+              <option value="negotiating" {{ 'selected' if o.stage=='negotiating' else '' }}>negotiating</option>
+              <option value="won" {{ 'selected' if o.stage=='won' else '' }}>won</option>
+              <option value="lost" {{ 'selected' if o.stage=='lost' else '' }}>lost</option>
+            </select>
+            <button type="submit" class="btn btn-sm btn-warning ms-1">更新</button>
+          </form>
+          {% endif %}
+
+          {% if user_can_cap('crm_opportunity.action.generate_order') %}
+            <a class="btn btn-sm btn-success ms-1" href="{{ url_for('main.crm_opportunity_generate_order', opp_id=o.id) }}">生成订单</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if opps|length==0 %}
+      <tr><td colspan="7">暂无机会</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

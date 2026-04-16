@@ -774,6 +774,63 @@ def _save_supplier_material_maps(
     return saved_rows
 
 
+def _upsert_supplier_material_maps_no_delete(
+    supplier: Supplier, rows: list[dict]
+) -> list[SupplierMaterialMap]:
+    """
+    upsert-only：只插入/更新 rows 中出现的 supplier-material 映射，不删除数据库中其他映射。
+
+    默认供应商语义：
+    - `rows[i]["is_preferred"] is True`：设置为默认，并清理同一物料下其它默认供应商。
+    - `rows[i]["is_preferred"] is False`：显式取消默认标记，但不影响其它默认供应商。
+    - `rows[i]["is_preferred"] is None`：不修改 is_preferred（仅对“新建映射”保持非默认）。
+    """
+
+    if not supplier.is_active and any(item.get("is_preferred") is True for item in rows):
+        raise ValueError("停用供应商不能设置为默认供应商。")
+
+    existing_rows = SupplierMaterialMap.query.filter_by(supplier_id=supplier.id).all()
+    existing_by_material_id = {item.material_id: item for item in existing_rows}
+
+    saved_rows: list[SupplierMaterialMap] = []
+    for item in rows:
+        material_id = item["material_id"]
+        mapping = existing_by_material_id.get(material_id)
+        if not mapping:
+            mapping = SupplierMaterialMap(
+                company_id=supplier.company_id,
+                supplier_id=supplier.id,
+                material_id=material_id,
+            )
+            db.session.add(mapping)
+            existing_by_material_id[material_id] = mapping
+
+        mapping.company_id = supplier.company_id
+        mapping.is_active = True
+        mapping.last_unit_price = item["last_unit_price"]
+        mapping.remark = item["remark"]
+
+        preferred_flag = item.get("is_preferred")
+        if not supplier.is_active:
+            mapping.is_preferred = False
+        elif preferred_flag is not None:
+            mapping.is_preferred = bool(preferred_flag)
+        elif mapping.id is None:
+            mapping.is_preferred = False
+
+        saved_rows.append(mapping)
+
+    db.session.flush()
+    for mapping in saved_rows:
+        if mapping.is_preferred:
+            _clear_other_default_supplier_flags(
+                company_id=supplier.company_id,
+                material_id=mapping.material_id,
+                keep_mapping_id=mapping.id,
+            )
+    return saved_rows
+
+
 def _parse_supplier_map_rows(company_id: int) -> list[dict]:
     material_ids = request.form.getlist("map_material_id")
     prices = request.form.getlist("map_last_unit_price")
@@ -815,6 +872,178 @@ def _parse_supplier_map_rows(company_id: int) -> list[dict]:
         )
         seen_material_ids.add(material_id)
     return rows
+
+
+def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str]]:
+    """
+    解析供应商 Excel 导入（含供应商-物料映射）。
+
+    模板列顺序（从第 1 行表头开始）：
+    1 供应商名称（必填）
+    2 联系人
+    3 电话
+    4 地址
+    5 供应商状态（1启用/0停用，可空默认启用）
+    6 供应商备注
+    7 物料编号（SemiMaterial.code，必填）
+    8 最近单价（可空）
+    9 物料-供应商备注
+    10 是否默认供应商（1/0，可空=不修改默认）
+    """
+
+    def _cell_to_str(v) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, bool):
+            return "1" if v else "0"
+        if isinstance(v, float):
+            if v.is_integer():
+                return str(int(v))
+            return str(v)
+        return str(v).strip()
+
+    def _parse_int01(raw, *, field_name: str) -> bool:
+        s = _cell_to_str(raw)
+        if not s:
+            raise ValueError(f"{field_name}不能为空。")
+        if s in ("1", "true", "True", "启用"):
+            return True
+        if s in ("0", "false", "False", "停用"):
+            return False
+        if s.isdigit() and s in ("1", "0"):
+            return s == "1"
+        raise ValueError(f"{field_name}格式错误，请填 1/0。")
+
+    def _parse_optional_int01(raw, *, field_name: str) -> bool | None:
+        s = _cell_to_str(raw)
+        if not s:
+            return None
+        if s in ("1", "true", "True", "是", "默认", "启用"):
+            return True
+        if s in ("0", "false", "False", "否", "非默认", "停用"):
+            return False
+        if s.isdigit() and s in ("1", "0"):
+            return s == "1"
+        raise ValueError(f"{field_name}格式错误，请填 1/0 或留空。")
+
+    def _parse_optional_decimal(raw, *, field_name: str) -> Decimal | None:
+        s = _cell_to_str(raw)
+        if not s:
+            return None
+        return _parse_decimal(s, field_name)
+
+    suppliers: dict = {}
+    errors: list[str] = []
+    seen_supplier_material: set[tuple[str, str]] = set()
+
+    for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        vals = (tuple(row) + (None,) * 10)[:10]
+        (
+            supplier_name,
+            contact_name,
+            phone,
+            address,
+            supplier_status,
+            supplier_remark,
+            material_code,
+            last_unit_price,
+            map_remark,
+            is_preferred,
+        ) = vals
+
+        supplier_name_s = _cell_to_str(supplier_name)[:128]
+        if not supplier_name_s:
+            errors.append(f"第 {idx} 行：供应商名称不能为空。")
+            continue
+
+        try:
+            # 供应商状态：可空默认启用
+            supplier_status_s = _cell_to_str(supplier_status)
+            is_active = (
+                True if not supplier_status_s else _parse_int01(supplier_status, field_name="供应商状态")
+            )
+            contact_name_s = _cell_to_str(contact_name)[:64] or None
+            phone_s = _cell_to_str(phone)[:32] or None
+            address_s = _cell_to_str(address)[:255] or None
+            supplier_remark_s = _cell_to_str(supplier_remark)[:500] or None
+        except ValueError as exc:
+            errors.append(f"第 {idx} 行：{str(exc)}")
+            continue
+
+        material_code_s = _cell_to_str(material_code)
+        if not material_code_s:
+            # 允许该行只更新供应商基础信息，不更新映射
+            errors.append(f"第 {idx} 行：物料编号不能为空。")
+            suppliers.setdefault(
+                supplier_name_s,
+                {"base": {"is_active": is_active, "contact_name": contact_name_s, "phone": phone_s, "address": address_s, "remark": supplier_remark_s}, "maps": []},
+            )
+            # 若已存在则覆盖基础字段（后出现的行优先）
+            if supplier_name_s in suppliers:
+                suppliers[supplier_name_s]["base"] = {
+                    "is_active": is_active,
+                    "contact_name": contact_name_s,
+                    "phone": phone_s,
+                    "address": address_s,
+                    "remark": supplier_remark_s,
+                }
+            continue
+
+        key = (supplier_name_s, material_code_s)
+        if key in seen_supplier_material:
+            errors.append(f"第 {idx} 行：同一供应商的同一物料在文件中重复。")
+            continue
+        seen_supplier_material.add(key)
+
+        material = SemiMaterial.query.filter_by(code=material_code_s).first()
+        if not material or material.kind != "material":
+            errors.append(f"第 {idx} 行：物料编号 {material_code_s} 不存在或不是物料。")
+            continue
+
+        try:
+            price = _parse_optional_decimal(last_unit_price, field_name="最近单价")
+            mapping_remark_s = _cell_to_str(map_remark)[:500] or None
+            preferred_flag = _parse_optional_int01(
+                is_preferred, field_name="是否默认供应商"
+            )
+        except ValueError as exc:
+            errors.append(f"第 {idx} 行：{str(exc)}")
+            continue
+
+        supplier = suppliers.get(supplier_name_s)
+        if not supplier:
+            supplier = {
+                "base": {
+                    "is_active": is_active,
+                    "contact_name": contact_name_s,
+                    "phone": phone_s,
+                    "address": address_s,
+                    "remark": supplier_remark_s,
+                },
+                "maps": [],
+            }
+            suppliers[supplier_name_s] = supplier
+        else:
+            # 后出现的行优先覆盖供应商基础字段
+            supplier["base"] = {
+                "is_active": is_active,
+                "contact_name": contact_name_s,
+                "phone": phone_s,
+                "address": address_s,
+                "remark": supplier_remark_s,
+            }
+
+        supplier["maps"].append(
+            {
+                "company_id": company_id,
+                "material_id": material.id,
+                "is_preferred": preferred_flag,  # None 表示不修改默认标记
+                "remark": mapping_remark_s,
+                "last_unit_price": price,
+            }
+        )
+
+    return suppliers, errors
 
 
 def _parse_requisition_lines(company_id: int) -> list[dict]:
@@ -1248,6 +1477,133 @@ def register_procurement_routes(bp):
             company_id=company_id,
             keyword=keyword,
         )
+
+    @bp.route("/procurement/suppliers/export-import-template", methods=["GET"])
+    @login_required
+    @menu_required("procurement_supplier")
+    @capability_required("procurement_supplier.action.create")
+    def procurement_supplier_export_import_template():
+        from io import BytesIO
+
+        from openpyxl import Workbook
+
+        # 模板列顺序：第 1 行表头；第 2 行起为数据。
+        # 物料匹配使用 SemiMaterial.code（kind=material）。
+        headers = [
+            "供应商名称",
+            "联系人",
+            "电话",
+            "地址",
+            "供应商状态（1启用/0停用）",
+            "供应商备注",
+            "物料编号",
+            "最近单价",
+            "物料-供应商备注",
+            "是否默认供应商（1/0，可空=不修改）",
+        ]
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "导入模板"
+        for col, header in enumerate(headers, start=1):
+            ws.cell(1, col, header)
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name="供应商导入模板.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @bp.route("/procurement/suppliers/import", methods=["GET", "POST"])
+    @login_required
+    @menu_required("procurement_supplier")
+    @capability_required("procurement_supplier.action.create")
+    def procurement_supplier_import():
+        if request.method == "POST":
+            company_id, _ = _resolve_company_id()
+            if not company_id:
+                flash("请先设置默认经营主体。", "danger")
+                return render_template("procurement/supplier_import.html", result=None)
+
+            file = request.files.get("file")
+            if not file:
+                flash("请先选择要上传的 Excel 文件。", "danger")
+                return render_template("procurement/supplier_import.html", result=None)
+
+            try:
+                from openpyxl import load_workbook
+            except ImportError:
+                flash("服务器缺少 openpyxl 依赖，无法导入。", "danger")
+                return render_template(
+                    "procurement/supplier_import.html", result=None
+                )
+
+            try:
+                wb = load_workbook(file, data_only=True)
+                ws = wb.active
+            except Exception:
+                flash("Excel 文件无法读取，请确认格式为 .xlsx。", "danger")
+                return render_template("procurement/supplier_import.html", result=None)
+
+            success = 0
+            suppliers_data, errors = _parse_supplier_import_excel_ws(ws, company_id)
+
+            # 一次性提交：允许文件里存在部分错误，但仍尽量导入可用数据。
+            try:
+                for _supplier_name, info in suppliers_data.items():
+                    base = info.get("base") or {}
+                    maps = info.get("maps") or []
+
+                    supplier_name = (base.get("name") or "").strip() or _supplier_name
+                    supplier = (
+                        Supplier.query.filter_by(
+                            company_id=company_id, name=supplier_name
+                        ).first()
+                    )
+                    if not supplier:
+                        supplier = Supplier(company_id=company_id, name=supplier_name)
+                        db.session.add(supplier)
+                        db.session.flush()
+
+                    supplier.contact_name = base.get("contact_name")
+                    supplier.phone = base.get("phone")
+                    supplier.address = base.get("address")
+                    supplier.is_active = bool(base.get("is_active", True))
+                    supplier.remark = base.get("remark")
+
+                    if maps:
+                        _upsert_supplier_material_maps_no_delete(supplier, maps)
+                        success += len(maps)
+
+                db.session.commit()
+            except ValueError as exc:
+                db.session.rollback()
+                errors.append(str(exc))
+                flash("导入失败：请检查数据。", "danger")
+                return render_template(
+                    "procurement/supplier_import.html",
+                    result={"success": success, "errors": errors},
+                )
+            except IntegrityError:
+                db.session.rollback()
+                flash("导入失败：数据冲突。请重试或检查唯一键。", "danger")
+                return render_template("procurement/supplier_import.html", result=None)
+
+            if success:
+                flash(f"成功导入/更新 {success} 条。", "success")
+            if errors:
+                flash(f"有 {len(errors)} 条记录导入失败，请查看错误列表。", "danger")
+
+            return render_template(
+                "procurement/supplier_import.html",
+                result={"success": success, "errors": errors},
+            )
+
+        return render_template("procurement/supplier_import.html", result=None)
 
     @bp.route("/procurement/suppliers/new", methods=["GET", "POST"])
     @login_required

@@ -769,7 +769,7 @@ def _like_pat(kw: str) -> str:
     return f"%{esc}%"
 
 
-def query_movement_export_rows(
+def _movement_detail_query(
     *,
     categories: List[str],
     start_date,
@@ -778,16 +778,15 @@ def query_movement_export_rows(
     direction: str = "",
     storage_area_kw: str = "",
     name_spec_kw: str = "",
-    limit: int = 50000,
-) -> Tuple[List[dict[str, Any]], bool]:
-    """查询库存进出明细导出行；返回 (rows, exceeded_limit)。"""
+):
     valid_scope = [c for c in categories if c in (INV_FINISHED, INV_SEMI, INV_MATERIAL)]
     if not valid_scope:
-        return [], False
+        return None
 
     q = (
         db.session.query(
             InventoryMovement.id.label("movement_id"),
+            InventoryMovement.movement_batch_id,
             InventoryMovement.category,
             InventoryMovement.direction,
             InventoryMovement.biz_date,
@@ -860,6 +859,95 @@ def query_movement_export_rows(
                 ),
             )
         )
+    return q
+
+
+def _movement_detail_row_to_dict(row) -> dict[str, Any]:
+    is_finished = row.category == INV_FINISHED
+    code = row.f_code if is_finished else row.m_code
+    name = row.f_name if is_finished else row.m_name
+    spec = row.f_spec if is_finished else row.m_spec
+    return {
+        "movement_id": int(row.movement_id),
+        "movement_batch_id": row.movement_batch_id,
+        "biz_date": row.biz_date,
+        "category": row.category,
+        "direction": row.direction,
+        "storage_area": row.storage_area or "",
+        "item_code": code or "",
+        "item_name": name or "",
+        "item_spec": spec or "",
+        "quantity": row.quantity,
+        "unit": row.unit or "",
+        "source_type": row.source_type or "",
+        "source_delivery_id": row.source_delivery_id,
+        "source_purchase_order_id": row.source_purchase_order_id,
+        "source_purchase_receipt_id": row.source_purchase_receipt_id,
+        "remark": row.remark or "",
+        "created_at": row.created_at,
+    }
+
+
+def query_movement_rows_paginated(
+    *,
+    categories: List[str],
+    start_date,
+    end_date,
+    category: str = "",
+    direction: str = "",
+    storage_area_kw: str = "",
+    name_spec_kw: str = "",
+    page: int = 1,
+    per_page: int = 30,
+) -> Tuple[List[dict[str, Any]], int]:
+    """按与导出一致的条件分页查询库存进出明细。"""
+    q = _movement_detail_query(
+        categories=categories,
+        start_date=start_date,
+        end_date=end_date,
+        category=category,
+        direction=direction,
+        storage_area_kw=storage_area_kw,
+        name_spec_kw=name_spec_kw,
+    )
+    if q is None:
+        return [], 0
+
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 100))
+    total = q.order_by(None).count()
+    rows = (
+        q.order_by(InventoryMovement.biz_date.desc(), InventoryMovement.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return [_movement_detail_row_to_dict(r) for r in rows], int(total)
+
+
+def query_movement_export_rows(
+    *,
+    categories: List[str],
+    start_date,
+    end_date,
+    category: str = "",
+    direction: str = "",
+    storage_area_kw: str = "",
+    name_spec_kw: str = "",
+    limit: int = 50000,
+) -> Tuple[List[dict[str, Any]], bool]:
+    """查询库存进出明细导出行；返回 (rows, exceeded_limit)。"""
+    q = _movement_detail_query(
+        categories=categories,
+        start_date=start_date,
+        end_date=end_date,
+        category=category,
+        direction=direction,
+        storage_area_kw=storage_area_kw,
+        name_spec_kw=name_spec_kw,
+    )
+    if q is None:
+        return [], False
 
     fetch_limit = max(1, int(limit)) + 1
     rows = (
@@ -871,32 +959,7 @@ def query_movement_export_rows(
     if exceeded:
         rows = rows[: int(limit)]
 
-    out: List[dict[str, Any]] = []
-    for r in rows:
-        is_finished = r.category == INV_FINISHED
-        code = r.f_code if is_finished else r.m_code
-        name = r.f_name if is_finished else r.m_name
-        spec = r.f_spec if is_finished else r.m_spec
-        out.append(
-            {
-                "movement_id": int(r.movement_id),
-                "biz_date": r.biz_date,
-                "category": r.category,
-                "direction": r.direction,
-                "storage_area": r.storage_area or "",
-                "item_code": code or "",
-                "item_name": name or "",
-                "item_spec": spec or "",
-                "quantity": r.quantity,
-                "unit": r.unit or "",
-                "source_type": r.source_type or "",
-                "source_delivery_id": r.source_delivery_id,
-                "source_purchase_order_id": r.source_purchase_order_id,
-                "source_purchase_receipt_id": r.source_purchase_receipt_id,
-                "remark": r.remark or "",
-                "created_at": r.created_at,
-            }
-        )
+    out = [_movement_detail_row_to_dict(r) for r in rows]
     return out, exceeded
 
 

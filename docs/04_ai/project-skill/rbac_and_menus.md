@@ -32,3 +32,18 @@
 
 - 模板全局：`app/__init__.py` 中 `context_processor` 注入 `nav_tree`、`user_can_cap` 等。
 - 当前导航约定：`machine_schedule`（机台排班）与 `hr_employee_schedule`（人员排产）归属 `production`（生产管理）菜单组。
+
+## 预生产计划：测算成本单独授权
+
+- 能力键：`production.preplan.cost.view`（预生产计划：查看测算成本），锚定菜单 `production_preplan`。
+- 与 `production.calc.action.run`（可执行测算与排程操作）**分离**：仅有生产测算运行权限的角色默认 **看不到** 详情页成本汇总；需在角色中额外勾选成本查看能力。增量脚本：`scripts/sql/run_79_production_preplan_cost_view_cap.sql`（默认不向既有角色批量授权）。
+
+## 库存录入明细在线查询：复用 `movement.list`
+
+- 页面路由：`main.inventory_movement_query`（`GET /inventory/movement/query`）。
+- 菜单要求：仍通过 `@menu_required("inventory_ops_finished", "inventory_ops_semi", "inventory_ops_material")` 进入库存录入域。
+- 能力要求：**不新增 capability**，按 `category` 复用现有：
+  - `inventory_ops_finished.movement.list`
+  - `inventory_ops_semi.movement.list`
+  - `inventory_ops_material.movement.list`
+- 规则：有菜单但缺少该类别 `movement.list` 时，查询页对该类别返回 `403`；这与批次详情页的类别能力分流保持一致。

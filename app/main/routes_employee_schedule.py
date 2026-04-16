@@ -9,7 +9,6 @@ from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.models import (
     HrEmployee,
