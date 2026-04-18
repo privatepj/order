@@ -114,6 +114,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
         "成品录入",
     ),
     (
+        "inventory_ops_finished.api.movement_line_on_hand",
+        "成品录入：录入行当前结存接口",
+        "inventory_ops_finished",
+        "成品录入",
+    ),
+    (
         "inventory_ops_finished.movement.list",
         "成品录入：库存批次列表",
         "inventory_ops_finished",
@@ -210,6 +216,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
         "半成品录入",
     ),
     (
+        "inventory_ops_semi.api.movement_line_on_hand",
+        "半成品录入：录入行当前结存接口",
+        "inventory_ops_semi",
+        "半成品录入",
+    ),
+    (
         "inventory_ops_semi.movement.list",
         "半成品录入：库存批次列表",
         "inventory_ops_semi",
@@ -302,6 +314,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
     (
         "inventory_ops_material.api.suggest_storage_area",
         "材料录入：仓储区建议接口",
+        "inventory_ops_material",
+        "材料录入",
+    ),
+    (
+        "inventory_ops_material.api.movement_line_on_hand",
+        "材料录入：录入行当前结存接口",
         "inventory_ops_material",
         "材料录入",
     ),

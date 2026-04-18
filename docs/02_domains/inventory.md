@@ -61,6 +61,10 @@
 - **页面数量字符串**：模板中对 `Decimal`/`Numeric` 数量优先使用 Jinja 过滤器 **`qty_plain`**（[`app/utils/qty_display.py`](../../app/utils/qty_display.py)），避免 `0E-8` 等科学计数与无意义尾随零；采购侧收货/确认列表与对比页中的数量列亦同。
 - **手工/Excel 流水数量**：方向为 **入库** 时单行数量允许 **0**（须 ≥0）；**出库** 时单行数量须 **>0**（与 `routes_inventory` 解析及 `inventory_svc` 导入校验一致）。
 - **库存录入品名搜索下拉**（[`app/templates/inventory/movement_form.html`](../../app/templates/inventory/movement_form.html)）：打开时挂到 **`document.body`** 并用 `getBoundingClientRect` 固定定位，避免表格/`.app-table-scroll` 内层叠与 flex 子项被压扁；关闭、切换类别或删行前移回对应 `td.inv-product-cell`；文档点击关闭时需排除 `.inv-product-dd` 自身以免点选项即被关掉。
+- **录入列表辅助列（手工录入，非 Excel）**  
+  - **当前结存**：选品后调用 `GET /api/inventory/movement-line-on-hand`（`category`、`item_id`、可选 `storage_area`）；数据由 [`inventory_svc.on_hand_for_movement_line`](../../app/services/inventory_svc.py) 计算——仓储区为空时与全仓台账 `ledger_qty_aggregate` 一致；有仓储区时与该品名在该区的期初+流水结存一致（与库存查询按区汇总同口径）。带出默认仓储区后会再请求一次，以便显示本区结存。  
+  - **录入后结存（预览）**：仅前端根据当前表头「入库/出库」与本行数量演算（入为加、出为减），**不落库**；数量未填或非法时显示 `-` 或留空。  
+  - **权限**：`inventory_ops_{finished|semi|material}.api.movement_line_on_hand`；增量脚本 [`run_83_inventory_movement_line_on_hand_cap.sql`](../../scripts/sql/run_83_inventory_movement_line_on_hand_cap.sql) 从对应 `*.movement.create` 自动授予。
 
 ## 典型流程
 
@@ -74,6 +78,7 @@
 
 - `inventory_ops_finished.movement.create`、`inventory_ops_semi.movement.create`、`inventory_ops_material.movement.create`（三者之一或组合，见 `INVENTORY_CAP_KEYS`）。
 - `inventory_ops_finished.movement.export`、`inventory_ops_semi.movement.export`、`inventory_ops_material.movement.export`（库存进出明细导出）。
+- `inventory_ops_finished.api.movement_line_on_hand` 等（录入页「当前结存」接口）。
 - 同类还有 `movement.delete`、`movement_batch.void`、`opening.*`、`daily.*` 等。
 
 **查询**：菜单 `inventory_query`（与 `inventory_stock_query_read_filters` 配合）。

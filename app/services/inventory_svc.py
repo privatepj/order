@@ -1142,6 +1142,62 @@ def ledger_qty_aggregate(category: str, item_id: int) -> Decimal:
     return _d_inv(opening_qty) + _d_inv(qty_in_out.qty_in) - _d_inv(qty_in_out.qty_out)
 
 
+def on_hand_for_movement_line(
+    category: str, item_id: int, storage_area: Optional[str] = None
+) -> Decimal:
+    """
+    库存录入行展示用结存。
+    仓储区为空：与 ledger_qty_aggregate 相同（全仓合计）。
+    仓储区非空：该 category + 成品/物料 + 仓储区 维度的期初 + 入 − 出。
+    """
+    area = (storage_area or "").strip()[:32]
+    if not area:
+        return ledger_qty_aggregate(category, item_id)
+    if category not in (INV_FINISHED, INV_SEMI, INV_MATERIAL):
+        return Decimal(0)
+    pid, mid = _pid_mid_for_aggregate_item(category, item_id)
+    opening_qty = (
+        db.session.query(func.coalesce(func.sum(InventoryOpeningBalance.opening_qty), 0))
+        .filter(
+            InventoryOpeningBalance.category == category,
+            InventoryOpeningBalance.product_id == pid,
+            InventoryOpeningBalance.material_id == mid,
+            InventoryOpeningBalance.storage_area == area,
+        )
+        .scalar()
+    )
+    qty_in_out = (
+        db.session.query(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (InventoryMovement.direction == "in", InventoryMovement.quantity),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("qty_in"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (InventoryMovement.direction == "out", InventoryMovement.quantity),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("qty_out"),
+        )
+        .filter(
+            InventoryMovement.category == category,
+            InventoryMovement.product_id == pid,
+            InventoryMovement.material_id == mid,
+            InventoryMovement.storage_area == area,
+        )
+        .one()
+    )
+    return _d_inv(opening_qty) + _d_inv(qty_in_out.qty_in) - _d_inv(qty_in_out.qty_out)
+
+
 def reserved_active_qty_aggregate(category: str, item_id: int) -> Decimal:
     """全仓汇总：status=active 的预留数量合计。"""
     pid, mid = _pid_mid_for_aggregate_item(category, item_id)

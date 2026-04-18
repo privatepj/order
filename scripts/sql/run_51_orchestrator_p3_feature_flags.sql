@@ -1,5 +1,5 @@
 -- P3: orchestrator feature flags
--- append-only migration; no foreign keys
+-- append-only migration, no foreign keys
 
 USE sydixon_order;
 SET NAMES utf8mb4;

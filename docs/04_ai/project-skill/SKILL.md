@@ -23,7 +23,7 @@
 - **样式**：`textarea` + 全局类 `name-search-textarea`（`app/static/css/app.css`），`rows="1"` 起步；与 `.name-wrap` 配合可完整换行展示。
 - **脚本**：与品名搜索一致时，查询串用 `normalizeQuery`（空白/换行压成单空格）；`input`/`回填`/`清空` 后对相关 `textarea` 调 **`autoResize`**（高度约 32–96px，超出纵向滚动），避免长文本只见一行。
 - **已覆盖页面（维护新表单时请对齐）**  
-  - 库存进出：`app/templates/inventory/movement_form.html`（品名搜索 + 规格只读）  
+  - 库存进出：`app/templates/inventory/movement_form.html`（品名搜索 + 规格只读 + 当前结存列 + 录入后结存预览列）  
   - 订单明细：`app/templates/order/form.html`（品名搜索 + 规格只读）  
   - 采购：`app/templates/procurement/order_form.html`、`requisition_form.html`（供应商/物料搜索 + 规格只读）  
   - 主数据规格可编辑：`app/templates/product/form.html`、`semi_material/form.html`、`procurement/material_form.html`  

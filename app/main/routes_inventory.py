@@ -27,7 +27,7 @@ from app.models import (
 )
 from app.services import inventory_svc
 from app.utils.query import keyword_like_or
-from app.utils.qty_display import format_qty_plain as _movement_import_qty_display
+from app.utils.qty_display import format_qty_plain
 
 INVENTORY_OPS_MENU_CODES = (
     "inventory_ops_finished",
@@ -37,6 +37,7 @@ INVENTORY_OPS_MENU_CODES = (
 _INVENTORY_CAP_SUFFIXES = (
     "api.products_search",
     "api.suggest_storage_area",
+    "api.movement_line_on_hand",
     "movement.list",
     "movement.create",
     "movement.export",
@@ -425,7 +426,7 @@ def _dedupe_movement_import_parsed(parsed):
                     name=name_s,
                     spec=spec_s,
                     area=area_s,
-                    quantity=_movement_import_qty_display(qty),
+                    quantity=format_qty_plain(qty),
                     unit=_unit_key(unit) or None,
                     remark=_remark_key(remark) or None,
                     reason=reason,
@@ -519,6 +520,27 @@ def register_inventory_routes(bp):
 
         area = inventory_svc.suggest_storage_area_for_category_item(category, item_id)
         return jsonify({"storage_area": area})
+
+    @bp.route("/api/inventory/movement-line-on-hand", methods=["GET"])
+    @login_required
+    @menu_required(*INVENTORY_OPS_MENU_CODES)
+    def inventory_movement_line_on_hand():
+        category = (request.args.get("category") or "").strip() or inventory_svc.INV_FINISHED
+        item_id = request.args.get("item_id", type=int)
+        if not item_id:
+            return jsonify({"on_hand": "-"})
+        if category not in (
+            inventory_svc.INV_FINISHED,
+            inventory_svc.INV_SEMI,
+            inventory_svc.INV_MATERIAL,
+        ):
+            category = inventory_svc.INV_FINISHED
+        menu_code = _menu_code_for_category(category)
+        if not current_user_can_cap(f"{menu_code}.api.movement_line_on_hand"):
+            abort(403)
+        storage_area = request.args.get("storage_area")
+        qty = inventory_svc.on_hand_for_movement_line(category, item_id, storage_area)
+        return jsonify({"on_hand": format_qty_plain(qty), "on_hand_value": str(qty)})
 
     # ----- API：半成品/物料搜索（库存录入用） -----
     @bp.route("/api/inventory/semi-materials-search", methods=["GET"])

@@ -32,6 +32,7 @@
 }
 .inv-product-dd .list-group-item:hover,
 .inv-product-dd button.list-group-item-action:hover { background: #f8f9fa; }
+.mov-line-table .tabular-nums { font-variant-numeric: tabular-nums; }
 </style>
 {% endblock %}
 {% block content %}
@@ -42,7 +43,8 @@
 <form method="post" id="movForm" enctype="multipart/form-data"
     data-products-search-url="{{ url_for('main.inventory_products_search') }}"
     data-semi-materials-search-url="{{ url_for('main.inventory_semi_materials_search') }}"
-    data-suggest-area-url="{{ url_for('main.inventory_suggest_storage_area') }}">
+    data-suggest-area-url="{{ url_for('main.inventory_suggest_storage_area') }}"
+    data-on-hand-url="{{ url_for('main.inventory_movement_line_on_hand') }}">
     {% if purchase_context %}
     <input type="hidden" name="purchase_order_id" value="{{ purchase_context.purchase_order_id }}">
     {% if purchase_context.purchase_receipt_id %}
@@ -60,7 +62,7 @@
         </div>
         <div class="col-md-4">
             <label class="form-label">方向 <span class="text-danger">*</span></label>
-            <select name="direction" class="form-select" required>
+            <select name="direction" id="invDirection" class="form-select" required>
                 <option value="in" {% if not form_direction or form_direction == 'in' %}selected{% endif %}>入库</option>
                 <option value="out" {% if form_direction == 'out' %}selected{% endif %}>出库</option>
             </select>
@@ -107,6 +109,8 @@
             <tr>
                 <th style="min-width:220px;">品名（搜索） <span class="text-danger">*</span></th>
                 <th style="min-width:100px;">规格（自动）</th>
+                <th style="min-width:88px;">当前结存</th>
+                <th style="min-width:100px;">录入后结存（预览）</th>
                 <th style="min-width:80px;">单位</th>
                 <th style="min-width:90px;">仓储区 <span class="text-danger">*</span></th>
                 <th style="min-width:90px;">数量 <span class="text-danger">*</span></th>
@@ -123,6 +127,8 @@
                     <div class="inv-product-dd list-group d-none"></div>
                 </td>
                 <td><textarea class="form-control form-control-sm name-search-textarea inv-line-spec" rows="1" readonly placeholder="选产品后显示"></textarea></td>
+                <td><input type="text" class="form-control form-control-sm tabular-nums inv-line-on-hand" readonly tabindex="-1" value="" placeholder="选品后显示" aria-label="当前结存"></td>
+                <td><input type="text" class="form-control form-control-sm tabular-nums inv-line-preview" readonly tabindex="-1" value="" placeholder="填数量后预览" aria-label="录入后结存预览"></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_unit" maxlength="16" placeholder="默认单位"></td>
                 <td><input type="text" class="form-control form-control-sm" name="line_storage_area" maxlength="32" placeholder="如 B18"></td>
                 <td><input type="text" class="form-control form-control-sm js-line-qty" name="line_quantity" inputmode="decimal" placeholder="入库≥0 / 出库&gt;0"></td>
@@ -170,6 +176,8 @@
             <div class="inv-product-dd list-group d-none"></div>
         </td>
         <td><textarea class="form-control form-control-sm name-search-textarea inv-line-spec" rows="1" readonly placeholder="选产品后显示"></textarea></td>
+        <td><input type="text" class="form-control form-control-sm tabular-nums inv-line-on-hand" readonly tabindex="-1" value="" placeholder="选品后显示" aria-label="当前结存"></td>
+        <td><input type="text" class="form-control form-control-sm tabular-nums inv-line-preview" readonly tabindex="-1" value="" placeholder="填数量后预览" aria-label="录入后结存预览"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_unit" maxlength="16" placeholder="默认单位"></td>
         <td><input type="text" class="form-control form-control-sm" name="line_storage_area" maxlength="32" placeholder="如 B18"></td>
         <td><input type="text" class="form-control form-control-sm js-line-qty" name="line_quantity" inputmode="decimal" placeholder="入库≥0 / 出库&gt;0"></td>
@@ -185,6 +193,7 @@
     var searchUrl = form.getAttribute('data-products-search-url');
     var semiSearchUrl = form.getAttribute('data-semi-materials-search-url');
     var suggestUrl = form.getAttribute('data-suggest-area-url');
+    var onHandUrl = form.getAttribute('data-on-hand-url');
     var body = document.getElementById('movLinesBody');
     var tpl = document.getElementById('movLineTpl');
     var categorySel = document.getElementById('invCategory');
@@ -199,6 +208,98 @@
         var h = Math.min(el.scrollHeight || 0, 96);
         el.style.height = Math.max(32, h) + 'px';
         el.style.overflowY = (el.scrollHeight || 0) > 96 ? 'auto' : 'hidden';
+    }
+
+    function clearOnHandRow(row) {
+        var oh = row.querySelector('.inv-line-on-hand');
+        var pv = row.querySelector('.inv-line-preview');
+        if (oh) oh.value = '';
+        if (pv) pv.value = '';
+        delete row.dataset.onHandValue;
+    }
+
+    function formatPreviewPlain(x) {
+        if (!isFinite(x)) return '-';
+        var s = (Math.round(x * 1e12) / 1e12).toFixed(12).replace(/0+$/, '').replace(/\.$/, '');
+        return s || '0';
+    }
+
+    function updateLinePreview(row) {
+        var pv = row.querySelector('.inv-line-preview');
+        if (!pv) return;
+        var raw = row.dataset.onHandValue;
+        if (raw === undefined || raw === '') {
+            pv.value = '';
+            return;
+        }
+        var base = parseFloat(String(raw).replace(/,/g, ''));
+        if (!isFinite(base)) {
+            pv.value = '-';
+            return;
+        }
+        var dirSel = document.getElementById('invDirection');
+        var dir = dirSel ? dirSel.value : 'in';
+        var qtyEl = row.querySelector('.js-line-qty');
+        var qraw = qtyEl ? String(qtyEl.value || '').trim() : '';
+        if (qraw === '') {
+            pv.value = '';
+            return;
+        }
+        var q = parseFloat(qraw.replace(/,/g, ''));
+        if (!isFinite(q)) {
+            pv.value = '-';
+            return;
+        }
+        var result = dir === 'in' ? base + q : base - q;
+        pv.value = formatPreviewPlain(result);
+    }
+
+    function fetchOnHand(row) {
+        if (!onHandUrl) return;
+        var kind = categorySel.value;
+        var isFinished = kind === 'finished';
+        var idInput = isFinished
+            ? row.querySelector('.inv-line-product-id')
+            : row.querySelector('.inv-line-material-id');
+        var itemId = idInput && idInput.value ? String(idInput.value).trim() : '';
+        var ohEl = row.querySelector('.inv-line-on-hand');
+        if (!itemId) {
+            clearOnHandRow(row);
+            return;
+        }
+        var sa = row.querySelector('[name="line_storage_area"]');
+        var saVal = sa ? String(sa.value || '').trim() : '';
+        var url =
+            onHandUrl
+            + '?category=' + encodeURIComponent(kind)
+            + '&item_id=' + encodeURIComponent(itemId);
+        if (saVal) {
+            url += '&storage_area=' + encodeURIComponent(saVal);
+        }
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) {
+                if (r.status === 403) throw new Error('403');
+                return r.json();
+            })
+            .then(function (data) {
+                if (ohEl) {
+                    ohEl.value =
+                        data && data.on_hand !== undefined && data.on_hand !== null && data.on_hand !== ''
+                            ? data.on_hand
+                            : '-';
+                }
+                if (data && data.on_hand_value !== undefined && data.on_hand_value !== null && data.on_hand_value !== '') {
+                    row.dataset.onHandValue = data.on_hand_value;
+                } else {
+                    delete row.dataset.onHandValue;
+                }
+                updateLinePreview(row);
+            })
+            .catch(function () {
+                if (ohEl) ohEl.value = '-';
+                delete row.dataset.onHandValue;
+                updateLinePreview(row);
+            });
     }
 
     function restoreDdToCell(dd) {
@@ -273,6 +374,7 @@
                 var u = row.querySelector('[name="line_unit"]');
                 if (u && !u.value) u.value = it.base_unit || '';
                 hideAllDd();
+                fetchOnHand(row);
                 if (suggestUrl && it.id) {
                     fetch(
                         suggestUrl
@@ -289,6 +391,7 @@
                             if (sa && data && data.storage_area && !sa.value) {
                                 sa.value = data.storage_area;
                             }
+                            fetchOnHand(row);
                         })
                         .catch(function () {});
                 }
@@ -330,6 +433,7 @@
             autoResize(search);
             if (pidInput) pidInput.value = '';
             if (midInput) midInput.value = '';
+            clearOnHandRow(row);
             var specC = row.querySelector('.inv-line-spec');
             if (specC) {
                 specC.value = '';
@@ -350,6 +454,23 @@
             var first = dd.querySelector('button.list-group-item-action');
             if (first) first.click();
         });
+        var saEl = row.querySelector('[name="line_storage_area"]');
+        if (saEl) {
+            saEl.addEventListener('input', function () {
+                var idIn =
+                    categorySel.value === 'finished'
+                        ? (pidInput && pidInput.value)
+                        : (midInput && midInput.value);
+                if (idIn) fetchOnHand(row);
+                else clearOnHandRow(row);
+            });
+        }
+        var qtyInp = row.querySelector('.js-line-qty');
+        if (qtyInp) {
+            qtyInp.addEventListener('input', function () {
+                updateLinePreview(row);
+            });
+        }
         autoResize(search);
     }
 
@@ -378,6 +499,13 @@
         }
     });
 
+    var dirSel = document.getElementById('invDirection');
+    if (dirSel) {
+        dirSel.addEventListener('change', function () {
+            body.querySelectorAll('.mov-line-row').forEach(updateLinePreview);
+        });
+    }
+
     categorySel.addEventListener('change', function () {
         hideAllDd();
         btnSubmit.disabled = false;
@@ -391,6 +519,7 @@
                 spec.value = '';
                 autoResize(spec);
             }
+            clearOnHandRow(tr);
         });
     });
 
