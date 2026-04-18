@@ -58,6 +58,16 @@
             {% endfor %}
         </select>
     </div>
+    <div class="col-md-4">
+        <label class="form-label">归属行政部门</label>
+        <select name="owning_hr_department_id" class="form-select">
+            <option value="0" {% if not row or not row.owning_hr_department_id %}selected{% endif %}>未分配</option>
+            {% for d in hr_org_departments or [] %}
+            <option value="{{ d.id }}" {% if row and row.owning_hr_department_id == d.id %}selected{% endif %}>{{ d.name }}（id={{ d.id }}）</option>
+            {% endfor %}
+        </select>
+        <div class="form-text">车间/产线行政归属，用于部门生产看板与排产机台筛选；与下方「能力工种」不同。</div>
+    </div>
     <div class="col-md-8">
         <label class="form-label">默认能力工种（覆盖机种）</label>
         <select name="default_capability_work_type_id" class="form-select">

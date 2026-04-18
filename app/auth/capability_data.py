@@ -552,6 +552,18 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
         "预生产计划",
     ),
     (
+        "production.department.board.view",
+        "部门生产看板：查看",
+        "production_department",
+        "部门生产看板",
+    ),
+    (
+        "production.department.board.filter_dept",
+        "部门生产看板：切换部门",
+        "production_department",
+        "部门生产看板",
+    ),
+    (
         "orchestrator.replay.high_risk",
         "编排引擎：高风险重放",
         "production_preplan",

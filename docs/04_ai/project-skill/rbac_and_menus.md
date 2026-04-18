@@ -36,6 +36,7 @@
 ## 预生产计划：测算成本单独授权
 
 - 能力键：`production.preplan.cost.view`（预生产计划：查看测算成本），锚定菜单 `production_preplan`。
+- 菜单 `production_department`（部门生产看板）：能力 `production.department.board.view`、`production.department.board.filter_dept`（切换部门）。增量与种子见 `scripts/sql/run_90_production_department_nav.sql`、`00_full_schema.sql`。
 - 与 `production.calc.action.run`（可执行测算与排程操作）**分离**：仅有生产测算运行权限的角色默认 **看不到** 详情页成本汇总；需在角色中额外勾选成本查看能力。增量脚本：`scripts/sql/run_79_production_preplan_cost_view_cap.sql`（默认不向既有角色批量授权）。
 
 ## 库存录入明细在线查询：复用 `movement.list`

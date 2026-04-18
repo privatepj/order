@@ -905,7 +905,7 @@ CREATE TABLE `inventory_movement_batch` (
   `category` varchar(16) NOT NULL COMMENT 'finished / semi',
   `biz_date` date NOT NULL COMMENT '业务日期',
   `direction` varchar(8) NOT NULL COMMENT 'in=入库 out=出库',
-  `source` varchar(16) NOT NULL COMMENT 'form=手工 excel=导入 delivery=送货出库',
+  `source` varchar(64) NOT NULL COMMENT 'form/excel/delivery 为系统值，其余为手工填写的来源说明',
   `line_count` int unsigned NOT NULL DEFAULT 0 COMMENT '明细行数',
   `original_filename` varchar(255) DEFAULT NULL COMMENT 'Excel 导入时的文件名',
   `source_delivery_id` int unsigned DEFAULT NULL COMMENT '送货批次时关联 delivery.id',
@@ -1185,13 +1185,15 @@ CREATE TABLE `machine` (
   `remark` varchar(255) DEFAULT NULL,
   `default_capability_hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '覆盖机种默认；0=沿用机种',
   `default_capability_work_type_id` int unsigned NOT NULL DEFAULT 0 COMMENT '覆盖机种默认工种；0=沿用机种',
+  `owning_hr_department_id` int unsigned NOT NULL DEFAULT 0 COMMENT '归属行政部门 hr_department.id；0=未分配',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_machine_no` (`machine_no`),
   KEY `idx_machine_type` (`machine_type_id`),
   KEY `idx_machine_status` (`status`),
-  KEY `idx_machine_owner` (`owner_user_id`)
+  KEY `idx_machine_owner` (`owner_user_id`),
+  KEY `idx_machine_owning_dept` (`owning_hr_department_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='机台台账';
 
 CREATE TABLE `machine_runtime_log` (
@@ -1700,7 +1702,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO `role` (`name`, `code`, `description`, `allowed_menu_keys`) VALUES
 ('管理员', 'admin', '系统管理员', NULL),
 ('销售', 'sales', '销售员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
-('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops_finished","inventory_ops_semi","inventory_ops_material","customer","product","semi_material","bom","production_preplan","production_incident","production_process","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
+('仓管', 'warehouse', '仓管员', CAST('["order","delivery","express","inventory_query","inventory_ops_finished","inventory_ops_semi","inventory_ops_material","customer","product","semi_material","bom","production_preplan","production_department","production_incident","production_process","machine_type","machine_asset","machine_runtime","procurement_requisition","procurement_order","procurement_receipt","procurement_stockin","customer_product","reconciliation"]' AS JSON)),
 ('财务', 'finance', '财务人员', CAST('["order","delivery","customer","product","customer_product","reconciliation"]' AS JSON)),
 ('待分配', 'pending', '注册后等待管理员分配', CAST('[]' AS JSON));
 
@@ -1725,6 +1727,7 @@ INSERT INTO `sys_nav_item` (`id`, `parent_id`, `code`, `title`, `endpoint`, `sor
 (41, 6, 'inventory_ops_material', '材料录入', 'main.inventory_material_entry', 30, 1, 0, 1, 88),
 (21, NULL, 'production', '生产管理', NULL, 15, 1, 0, 0, NULL),
 (36, 21, 'production_preplan', '预生产计划', 'main.production_preplan_list', 10, 1, 0, 1, 87),
+(61, 21, 'production_department', '部门生产看板', 'main.production_department_board', 12, 1, 0, 1, 86),
 (37, 21, 'production_incident', '生产事故', 'main.production_incident_list', 20, 1, 0, 1, 88),
 (38, 21, 'production_process', '工序管理', 'main.production_process_template_list', 30, 1, 0, 1, 89),
 (22, NULL, 'nav_hr', '人力资源', NULL, 17, 1, 0, 0, NULL),
@@ -1901,6 +1904,8 @@ INSERT INTO `sys_capability` (`code`, `title`, `nav_item_code`, `group_label`, `
 ('production.preplan.action.delete', '预生产计划：删除', 'production_preplan', '预生产计划', 30),
 ('production.calc.action.run', '预生产计划：生产测算运行', 'production_preplan', '预生产计划', 40),
 ('production.preplan.cost.view', '预生产计划：查看测算成本', 'production_preplan', '预生产计划', 45),
+('production.department.board.view', '部门生产看板：查看', 'production_department', '部门生产看板', 10),
+('production.department.board.filter_dept', '部门生产看板：切换部门', 'production_department', '部门生产看板', 20),
 ('production_incident.filter.keyword', '生产事故：关键词筛选', 'production_incident', '生产事故', 11),
 ('production_incident.action.create', '生产事故：新建', 'production_incident', '生产事故', 21),
 ('production_incident.action.edit', '生产事故：编辑', 'production_incident', '生产事故', 31),

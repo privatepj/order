@@ -16,6 +16,10 @@
 5. 若涉及表结构/SQL，读 [db_rules_and_patterns.md](db_rules_and_patterns.md)。  
 6. 改完后：更新域文档 + 本目录相关子页 + 必要时 `docs/changes/` 记录。
 
+## 生产：部门看板与机台归属（速记）
+
+- 菜单码 `production_department`，服务 `app/services/production_dept_board_svc.py`，机台列 `machine.owning_hr_department_id`（与 `default_capability_*` 不同）。详情见 [../../02_domains/production.md](../../02_domains/production.md)、[../../02_domains/machine.md](../../02_domains/machine.md)。
+
 ## Web UI：长品名与规格（textarea）
 
 业务表单里**易被截断**的「品名关键字搜索」「只读规格」「主数据规格」统一为：
@@ -23,7 +27,7 @@
 - **样式**：`textarea` + 全局类 `name-search-textarea`（`app/static/css/app.css`），`rows="1"` 起步；与 `.name-wrap` 配合可完整换行展示。
 - **脚本**：与品名搜索一致时，查询串用 `normalizeQuery`（空白/换行压成单空格）；`input`/`回填`/`清空` 后对相关 `textarea` 调 **`autoResize`**（高度约 32–96px，超出纵向滚动），避免长文本只见一行。
 - **已覆盖页面（维护新表单时请对齐）**  
-  - 库存进出：`app/templates/inventory/movement_form.html`（品名搜索 + 规格只读 + 当前结存列 + 录入后结存预览列）  
+  - 库存进出：`app/templates/inventory/movement_form.html`（品名搜索 + 规格只读 + 当前结存列 + 录入后结存预览列；可选「批次来源」写入 `inventory_movement_batch.source`，空则 `form`）  
   - 订单明细：`app/templates/order/form.html`（品名搜索 + 规格只读）  
   - 采购：`app/templates/procurement/order_form.html`、`requisition_form.html`（供应商/物料搜索 + 规格只读）  
   - 主数据规格可编辑：`app/templates/product/form.html`、`semi_material/form.html`、`procurement/material_form.html`（**系列** `series`：列表关键字与库存结存查询按系列筛选）  

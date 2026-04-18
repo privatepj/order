@@ -65,7 +65,7 @@
             <td class="text-nowrap small">{{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '—' }}</td>
             <td>
                 <a href="{{ url_for('main.inventory_batch_detail', batch_id=b.id, category=b.category) }}" class="btn btn-sm btn-outline-primary">详情</a>
-                {% if b.source in ('form', 'excel') and ((b.category == 'finished' and user_can_cap('inventory_ops_finished.movement_batch.void')) or (b.category == 'semi' and user_can_cap('inventory_ops_semi.movement_batch.void')) or (b.category == 'material' and user_can_cap('inventory_ops_material.movement_batch.void'))) %}
+                {% if b.source != 'delivery' and ((b.category == 'finished' and user_can_cap('inventory_ops_finished.movement_batch.void')) or (b.category == 'semi' and user_can_cap('inventory_ops_semi.movement_batch.void')) or (b.category == 'material' and user_can_cap('inventory_ops_material.movement_batch.void'))) %}
                 <form method="post" action="{{ url_for('main.inventory_batch_void', batch_id=b.id) }}" class="d-inline" onsubmit="return confirm('确定撤销本批次？将删除该批下全部 {{ b.line_count }} 条明细，且不可恢复。');">
                     <button type="submit" class="btn btn-sm btn-outline-danger">撤销批次</button>
                 </form>

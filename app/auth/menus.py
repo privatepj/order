@@ -21,6 +21,7 @@ _FALLBACK_ASSIGNABLE = frozenset(
     {
         "order",
         "production_preplan",
+        "production_department",
         "production_incident",
         "delivery",
         "express",
@@ -65,6 +66,7 @@ _FALLBACK_ADMIN_ONLY = frozenset({"company", "user_mgmt", "role_mgmt"})
 _FALLBACK_ENDPOINTS = {
     "order": "main.order_list",
     "production_preplan": "main.production_preplan_list",
+    "production_department": "main.production_department_board",
     "production_incident": "main.production_incident_list",
     "delivery": "main.delivery_list",
     "customer": "main.customer_list",
@@ -107,6 +109,7 @@ _FALLBACK_ENDPOINTS = {
 _FALLBACK_LANDING = [
     "order",
     "production_preplan",
+    "production_department",
     "production_incident",
     "delivery",
     "customer",
@@ -149,6 +152,7 @@ _FALLBACK_LANDING = [
 _FALLBACK_MENU_LABELS = {
     "order": "订单",
     "production_preplan": "预生产计划",
+    "production_department": "部门生产看板",
     "production_incident": "生产事故",
     "delivery": "送货",
     "express": "快递",
@@ -347,6 +351,12 @@ def _fallback_nav_specs():
                     "production_preplan",
                     "预生产计划",
                     "main.production_preplan_list",
+                    None,
+                ),
+                (
+                    "production_department",
+                    "部门生产看板",
+                    "main.production_department_board",
                     None,
                 ),
                 (

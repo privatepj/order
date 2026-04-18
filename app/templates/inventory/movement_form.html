@@ -72,6 +72,16 @@
             <input type="date" class="form-control" name="biz_date" required value="{{ default_biz_date }}">
         </div>
     </div>
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <label class="form-label">批次来源（可选）</label>
+            <input type="text" class="form-control" name="batch_source" maxlength="64"
+                value="{{ form_batch_source or '' }}"
+                placeholder="留空则视为手工录入；可填写如客户退货、盘盈等（勿填 excel / delivery）"
+                autocomplete="off">
+            <div class="form-text">最多 64 字；Excel 导入批次仍为系统自动标记，与本项无关。</div>
+        </div>
+    </div>
     {% if purchase_context %}
     <div class="alert alert-info py-2">
         当前为采购来源入库。

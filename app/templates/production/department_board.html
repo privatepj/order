@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}部门生产看板 - 工厂订单系统{% endblock %}
+{% block content %}
+<h2 class="mb-4">部门生产看板</h2>
+
+{% if can_filter_dept and departments %}
+<form method="get" class="row g-2 mb-3 align-items-end">
+    <div class="col-md-4">
+        <label class="form-label">行政部门</label>
+        <select name="department_id" class="form-select" onchange="this.form.submit()">
+            <option value="">-- 请选择 --</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}" {% if view_dept_id == d.id %}selected{% endif %}>{{ d.name }}（id={{ d.id }}）</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary">筛选</button>
+    </div>
+</form>
+{% elif not can_filter_dept and default_dept_id %}
+<p class="text-muted small mb-3">当前按您的人员档案部门筛选（部门 id={{ default_dept_id }}）。</p>
+{% endif %}
+
+<div class="table-responsive app-table-scroll">
+    <table class="table table-bordered table-sm align-middle">
+        <thead>
+        <tr>
+            <th>预计划</th>
+            <th>计划日</th>
+            <th>工单</th>
+            <th>工序</th>
+            <th>资源</th>
+            <th>生产对象</th>
+            <th>机台/人员</th>
+            <th>ES / EF</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="text-nowrap">#{{ r.preplan_id }} <span class="text-muted">{{ r.preplan_status or '' }}</span></td>
+            <td class="text-nowrap">{{ r.preplan_plan_date or '' }}</td>
+            <td class="text-nowrap">WO#{{ r.work_order_id }}</td>
+            <td>{{ r.step_no }}. {{ r.step_name }}</td>
+            <td class="text-nowrap">{{ r.resource_kind or '-' }}</td>
+            <td>{{ r.parent_label or '-' }}</td>
+            <td>
+                {% if r.machine_label %}<div>机台：{{ r.machine_label }}</div>{% endif %}
+                {% if r.employee_label %}<div>人员：{{ r.employee_label }}</div>{% endif %}
+                {% if not r.machine_label and not r.employee_label %}-{% endif %}
+            </td>
+            <td class="text-nowrap small">
+                {% if r.es %}{{ r.es.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}
+                /
+                {% if r.ef %}{{ r.ef.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}
+            </td>
+            <td>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.production_preplan_detail', preplan_id=r.preplan_id) }}">预计划详情</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted">暂无相关工序</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

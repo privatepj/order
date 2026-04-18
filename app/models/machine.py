@@ -56,6 +56,7 @@ class Machine(db.Model):
     remark = db.Column(db.String(255), nullable=True)
     default_capability_hr_department_id = db.Column(db.Integer, nullable=False, default=0)
     default_capability_work_type_id = db.Column(db.Integer, nullable=False, default=0)
+    owning_hr_department_id = db.Column(db.Integer, nullable=False, default=0, index=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
@@ -69,6 +70,12 @@ class Machine(db.Model):
         "User",
         primaryjoin="foreign(Machine.owner_user_id) == User.id",
         lazy=True,
+    )
+    owning_hr_department = db.relationship(
+        "HrDepartment",
+        primaryjoin="foreign(Machine.owning_hr_department_id) == HrDepartment.id",
+        lazy=True,
+        viewonly=True,
     )
     runtime_logs = db.relationship(
         "MachineRuntimeLog",

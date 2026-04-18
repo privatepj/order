@@ -836,8 +836,12 @@ def register_inventory_routes(bp):
                         import_result=import_result,
                         purchase_context=purchase_context,
                         list_category=ex_list_cat,
+                        form_batch_source=(request.form.get("batch_source") or "").strip(),
                     )
 
+                manual_batch_source = inventory_svc.normalize_manual_batch_source(
+                    request.form.get("batch_source")
+                )
                 if cat == inventory_svc.INV_FINISHED:
                     line_rows = _parse_movement_line_rows(direction)
                     if not line_rows:
@@ -847,7 +851,7 @@ def register_inventory_routes(bp):
                         category=inventory_svc.INV_FINISHED,
                         biz_date=biz_date,
                         direction=direction,
-                        source=inventory_svc.BATCH_SOURCE_FORM,
+                        source=manual_batch_source,
                         line_count=len(line_rows),
                         created_by=current_user.id,
                     )
@@ -879,7 +883,7 @@ def register_inventory_routes(bp):
                         category=cat,
                         biz_date=biz_date,
                         direction=direction,
-                        source=inventory_svc.BATCH_SOURCE_FORM,
+                        source=manual_batch_source,
                         line_count=len(line_rows),
                         created_by=current_user.id,
                     )
@@ -938,6 +942,9 @@ def register_inventory_routes(bp):
             import_result=import_result,
             purchase_context=purchase_context,
             list_category=list_cat,
+            form_batch_source=(request.form.get("batch_source") or "").strip()
+            if request.method == "POST"
+            else "",
         )
 
     # ----- 库存批次列表（主「库存」入口） -----

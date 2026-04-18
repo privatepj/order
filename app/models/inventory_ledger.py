@@ -14,7 +14,7 @@ class InventoryMovementBatch(db.Model):
     category = db.Column(db.String(16), nullable=False)
     biz_date = db.Column(db.Date, nullable=False)
     direction = db.Column(db.String(8), nullable=False)
-    source = db.Column(db.String(16), nullable=False)
+    source = db.Column(db.String(64), nullable=False)
     line_count = db.Column(db.Integer, nullable=False, default=0)
     original_filename = db.Column(db.String(255))
     source_delivery_id = db.Column(db.Integer)

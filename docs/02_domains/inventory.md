@@ -4,7 +4,7 @@
 
 - **期初** `InventoryOpeningBalance`：按 `category`、成品 `product_id` 或物料 `material_id`、`storage_area` 等维度。
 - **流水** `InventoryMovement`：方向、数量、业务日、`source_type` 及来源 ID（送货、采购单、收货单等）。
-- **批次** `InventoryMovementBatch`：一次提交（手工、Excel、送货出库等）的批次头；与多条 `InventoryMovement` 关联。
+- **批次** `InventoryMovementBatch`：一次提交（手工、Excel、送货出库等）的批次头；与多条 `InventoryMovement` 关联。字段 **`source`**：`form` / `excel` / `delivery` 为系统写入；**手工录入页**（非 Excel）可提供「批次来源」：`source` 为空或仅空白时存 `form`（列表仍显示「手工录入」），否则存用户填写的说明（最多 64 字符，不可用保留字 `excel`、`delivery`）。Excel 导入与送货自动出库仍为 `excel` / `delivery`。
 - **日盘点**：`InventoryDailyRecord` / `InventoryDailyLine`（`app/models/inventory.py`），路由在 `routes_inventory.py`。
 - **预留** `InventoryReservation`（[`app/models/inventory_reservation.py`](../../app/models/inventory_reservation.py)）：计划占用，**不**写入 `InventoryMovement`。`ref_type`/`ref_id` 当前用于 `preplan` + `production_preplan.id`。测算用 **ATP** = 台账结存（期初+流水汇总，与生产测算相同口径、忽略仓储区）− `status=active` 的预留合计；见 `inventory_svc.ledger_qty_aggregate`、`reserved_active_qty_aggregate`、`atp_for_item_aggregate`。
 

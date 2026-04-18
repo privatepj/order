@@ -42,6 +42,19 @@ SOURCE_PROCUREMENT = "procurement"
 BATCH_SOURCE_FORM = "form"
 BATCH_SOURCE_EXCEL = "excel"
 BATCH_SOURCE_DELIVERY = "delivery"
+BATCH_SOURCE_MAX_LEN = 64
+
+
+def normalize_manual_batch_source(raw: Optional[str]) -> str:
+    """手工录入批次来源：空为 form；禁止与系统保留 excel/delivery 混淆。"""
+    s = (raw or "").strip()
+    if not s:
+        return BATCH_SOURCE_FORM
+    if s in (BATCH_SOURCE_EXCEL, BATCH_SOURCE_DELIVERY):
+        raise ValueError("批次来源不能使用保留字：excel、delivery。")
+    if len(s) > BATCH_SOURCE_MAX_LEN:
+        raise ValueError(f"批次来源最多 {BATCH_SOURCE_MAX_LEN} 个字符。")
+    return s
 
 
 def default_storage_area_for_delivery() -> str:
@@ -93,11 +106,12 @@ def create_movement_batch(
     fn = None
     if original_filename and str(original_filename).strip():
         fn = str(original_filename).strip()[:255]
+    src = (source or "").strip()
     b = InventoryMovementBatch(
         category=category,
         biz_date=biz_date,
         direction=direction,
-        source=source,
+        source=src,
         line_count=line_count,
         original_filename=fn,
         source_delivery_id=source_delivery_id,

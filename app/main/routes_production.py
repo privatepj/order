@@ -15,9 +15,13 @@ from app import db
 from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.utils.decimal_scale import quantize_decimal
+from app.utils.hr_user import resolve_user_hr_department_id
+from app.utils.visibility import is_admin
 from app.models import (
+    Company,
     CustomerProduct,
     Customer,
+    HrDepartment,
     HrEmployee,
     HrEmployeeCapability,
     HrWorkType,
@@ -50,6 +54,7 @@ from app.services import (
     delivery_svc,
     inventory_svc,
     production_cost_svc,
+    production_dept_board_svc,
     production_preplan_schedule_manual_svc,
     production_svc,
 )
@@ -556,7 +561,10 @@ def _company_id_from_preplan(preplan: ProductionPreplan) -> int:
 
 
 def _budget_options_for_operations(
-    work_orders: List[ProductionWorkOrder], company_id: int
+    work_orders: List[ProductionWorkOrder],
+    company_id: int,
+    *,
+    viewer_dept_id: Optional[int] = None,
 ) -> Dict[int, Dict[str, Any]]:
     """预生产详情页：指定资源下拉选项（机台+白名单操作员；或部门能力员工）。"""
     out: Dict[int, Dict[str, Any]] = {}
@@ -564,11 +572,18 @@ def _budget_options_for_operations(
         for op in wo.operations or []:
             oid = int(op.id)
             if op.resource_kind == "machine_type" and int(op.machine_type_id or 0) > 0:
-                machines = (
-                    Machine.query.filter_by(machine_type_id=int(op.machine_type_id), status="enabled")
-                    .order_by(Machine.machine_no.asc())
-                    .all()
+                mq = Machine.query.filter_by(
+                    machine_type_id=int(op.machine_type_id), status="enabled"
                 )
+                if viewer_dept_id is not None and int(viewer_dept_id) > 0:
+                    vid = int(viewer_dept_id)
+                    mq = mq.filter(
+                        db.or_(
+                            Machine.owning_hr_department_id == 0,
+                            Machine.owning_hr_department_id == vid,
+                        )
+                    )
+                machines = mq.order_by(Machine.machine_no.asc()).all()
                 pairs = []
                 for m in machines:
                     for al in MachineOperatorAllowlist.query.filter_by(machine_id=m.id, is_active=True).all():
@@ -696,6 +711,44 @@ def register_production_routes(bp):
             ProductionPreplan.query.order_by(ProductionPreplan.id.desc()).limit(100).all()
         )
         return render_template("production/preplan_list.html", preplans=preplans)
+
+    @bp.route("/production/department-board")
+    @login_required
+    @menu_required("production_department")
+    def production_department_board():
+        company_id = int(Company.get_default_id() or 0)
+        can_filter = current_user_can_cap("production.department.board.filter_dept") or is_admin()
+        default_dept_id = resolve_user_hr_department_id(current_user.id)
+        view_dept_id = request.args.get("department_id", type=int)
+        if not can_filter:
+            view_dept_id = default_dept_id
+        elif view_dept_id is None or view_dept_id <= 0:
+            view_dept_id = default_dept_id
+
+        departments: List[HrDepartment] = []
+        if can_filter and company_id:
+            departments = (
+                HrDepartment.query.filter_by(company_id=company_id)
+                .order_by(HrDepartment.sort_order.asc(), HrDepartment.id.asc())
+                .all()
+            )
+
+        rows: List[Dict[str, Any]] = []
+        if not view_dept_id:
+            flash("未绑定行政部门人员档案，或请选择部门。", "warning")
+        else:
+            rows = production_dept_board_svc.list_board_rows(
+                dept_id=int(view_dept_id), company_id=company_id
+            )
+
+        return render_template(
+            "production/department_board.html",
+            rows=rows,
+            departments=departments,
+            view_dept_id=view_dept_id,
+            default_dept_id=default_dept_id,
+            can_filter_dept=can_filter,
+        )
 
     # ----------------------------
     # 新建（手工预生产计划）
@@ -1090,7 +1143,10 @@ def register_production_routes(bp):
             total_cost_asg = None
 
         company_id_ctx = _company_id_from_preplan(preplan)
-        budget_options_by_op = _budget_options_for_operations(work_orders, company_id_ctx)
+        viewer_dept_id = resolve_user_hr_department_id(current_user.id)
+        budget_options_by_op = _budget_options_for_operations(
+            work_orders, company_id_ctx, viewer_dept_id=viewer_dept_id
+        )
 
         # 机台排班时间窗（用于“报工”选择 booking）
         start_dt = datetime.combine(preplan.plan_date, time.min)
@@ -1106,7 +1162,7 @@ def register_production_routes(bp):
                 bookings_by_wo_id[int(wo.id)] = []
                 continue
 
-            bookings = (
+            bq = (
                 MachineScheduleBooking.query.options(selectinload(MachineScheduleBooking.machine))
                 .join(Machine, Machine.id == MachineScheduleBooking.machine_id)
                 .filter(
@@ -1116,7 +1172,17 @@ def register_production_routes(bp):
                     MachineScheduleBooking.start_at < end_dt,
                     MachineScheduleBooking.end_at > start_dt,
                 )
-                .order_by(MachineScheduleBooking.start_at.asc(), MachineScheduleBooking.id.asc())
+            )
+            if viewer_dept_id:
+                vid = int(viewer_dept_id)
+                bq = bq.filter(
+                    db.or_(
+                        Machine.owning_hr_department_id == 0,
+                        Machine.owning_hr_department_id == vid,
+                    )
+                )
+            bookings = (
+                bq.order_by(MachineScheduleBooking.start_at.asc(), MachineScheduleBooking.id.asc())
                 .limit(2000)
                 .all()
             )

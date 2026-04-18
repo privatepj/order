@@ -13,6 +13,7 @@ from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.models import (
     Company,
+    HrDepartment,
     HrEmployee,
     HrWorkType,
     Machine,
@@ -36,6 +37,18 @@ def _hr_departments_for_machine_form():
     return (
         HrWorkType.query.filter_by(company_id=cid)
         .order_by(HrWorkType.sort_order, HrWorkType.id)
+        .all()
+    )
+
+
+def _hr_org_departments_for_machine_form():
+    """行政部门（hr_department），用于机台归属车间；与能力工种下拉不同。"""
+    cid = Company.get_default_id()
+    if not cid:
+        return []
+    return (
+        HrDepartment.query.filter_by(company_id=cid)
+        .order_by(HrDepartment.sort_order, HrDepartment.id)
         .all()
     )
 
@@ -228,6 +241,7 @@ def register_machine_routes(bp):
         types = MachineType.query.order_by(MachineType.name).all()
         users = User.query.order_by(User.id).all()
         hr_departments = _hr_departments_for_machine_form()
+        hr_org_departments = _hr_org_departments_for_machine_form()
         if request.method == "POST":
             return _machine_save(None, types, users)
         return render_template(
@@ -237,6 +251,7 @@ def register_machine_routes(bp):
             users=users,
             machine_statuses=MACHINE_STATUS,
             hr_departments=hr_departments,
+            hr_org_departments=hr_org_departments,
         )
 
     @bp.route("/machines/<int:machine_id>/edit", methods=["GET", "POST"])
@@ -248,6 +263,7 @@ def register_machine_routes(bp):
         types = MachineType.query.order_by(MachineType.name).all()
         users = User.query.order_by(User.id).all()
         hr_departments = _hr_departments_for_machine_form()
+        hr_org_departments = _hr_org_departments_for_machine_form()
         if request.method == "POST":
             return _machine_save(row, types, users)
         return render_template(
@@ -257,10 +273,12 @@ def register_machine_routes(bp):
             users=users,
             machine_statuses=MACHINE_STATUS,
             hr_departments=hr_departments,
+            hr_org_departments=hr_org_departments,
         )
 
     def _machine_save(row, types, users):
         hr_departments = _hr_departments_for_machine_form()
+        hr_org_departments = _hr_org_departments_for_machine_form()
         machine_no = (request.form.get("machine_no") or "").strip().upper()
         name = (request.form.get("name") or "").strip()
         machine_type_id = request.form.get("machine_type_id", type=int)
@@ -273,6 +291,7 @@ def register_machine_routes(bp):
             or request.form.get("default_capability_hr_department_id", type=int)
         )
         def_cap_m = max(0, int(def_cap_raw or 0))
+        owning_dept_id = max(0, int(request.form.get("owning_hr_department_id", type=int) or 0))
         is_admin = getattr(current_user, "role_code", None) == "admin"
         try:
             capacity_per_hour = float((request.form.get("capacity_per_hour") or "0").strip())
@@ -285,6 +304,7 @@ def register_machine_routes(bp):
                 users=users,
                 machine_statuses=MACHINE_STATUS,
                 hr_departments=hr_departments,
+                hr_org_departments=hr_org_departments,
             )
 
         machine_cost_purchase_price = None
@@ -305,6 +325,7 @@ def register_machine_routes(bp):
                     users=users,
                     machine_statuses=MACHINE_STATUS,
                     hr_departments=hr_departments,
+                    hr_org_departments=hr_org_departments,
                 )
             try:
                 if single_raw == "":
@@ -322,6 +343,7 @@ def register_machine_routes(bp):
                     users=users,
                     machine_statuses=MACHINE_STATUS,
                     hr_departments=hr_departments,
+                    hr_org_departments=hr_org_departments,
                 )
         if not machine_no or not name or not machine_type_id:
             flash("机台编号、名称、种类为必填。", "danger")
@@ -332,6 +354,7 @@ def register_machine_routes(bp):
                 users=users,
                 machine_statuses=MACHINE_STATUS,
                 hr_departments=hr_departments,
+                hr_org_departments=hr_org_departments,
             )
         if status not in MACHINE_STATUS:
             status = "enabled"
@@ -345,6 +368,7 @@ def register_machine_routes(bp):
                 users=users,
                 machine_statuses=MACHINE_STATUS,
                 hr_departments=hr_departments,
+                hr_org_departments=hr_org_departments,
             )
         if owner_user_id and not User.query.get(owner_user_id):
             flash("责任人不存在。", "danger")
@@ -355,6 +379,7 @@ def register_machine_routes(bp):
                 users=users,
                 machine_statuses=MACHINE_STATUS,
                 hr_departments=hr_departments,
+                hr_org_departments=hr_org_departments,
             )
         if capacity_per_hour < 0:
             flash("标准产能不能为负数。", "danger")
@@ -365,7 +390,22 @@ def register_machine_routes(bp):
                 users=users,
                 machine_statuses=MACHINE_STATUS,
                 hr_departments=hr_departments,
+                hr_org_departments=hr_org_departments,
             )
+        if owning_dept_id:
+            od = HrDepartment.query.get(owning_dept_id)
+            cid = Company.get_default_id()
+            if not od or (cid and int(od.company_id) != int(cid)):
+                flash("归属行政部门无效或未与默认经营主体匹配。", "danger")
+                return render_template(
+                    "machine/machine_form.html",
+                    row=row,
+                    types=types,
+                    users=users,
+                    machine_statuses=MACHINE_STATUS,
+                    hr_departments=hr_departments,
+                    hr_org_departments=hr_org_departments,
+                )
         if not row:
             row = Machine(machine_no=machine_no)
             db.session.add(row)
@@ -382,6 +422,7 @@ def register_machine_routes(bp):
         row.remark = remark
         row.default_capability_hr_department_id = 0
         row.default_capability_work_type_id = def_cap_m
+        row.owning_hr_department_id = owning_dept_id
         try:
             db.session.commit()
         except IntegrityError:
@@ -394,6 +435,7 @@ def register_machine_routes(bp):
                 users=users,
                 machine_statuses=MACHINE_STATUS,
                 hr_departments=hr_departments,
+                hr_org_departments=hr_org_departments,
             )
         flash("机台信息已保存。", "success")
         return redirect(url_for("main.machine_list"))

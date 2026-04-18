@@ -18,7 +18,7 @@
 | `routes_inventory.py` | `inventory_svc`；批次列表 `GET /inventory` 支持 `?category=finished` / `semi` / `material`（与三录入菜单一致，见 inventory 域文档） | [inventory.md](../../02_domains/inventory.md) |
 | `routes_semi_material.py` | 半成品/物料页面 | [semi-material.md](../../02_domains/semi-material.md) |
 | `routes_bom.py` | `bom_svc` | [bom.md](../../02_domains/bom.md) |
-| `routes_production.py` | `production_svc`、`production_schedule_svc`、`production_cost_svc`、`production_preplan_schedule_manual_svc`（预计划人工排程/确认）等 | [production.md](../../02_domains/production.md) |
+| `routes_production.py` | `production_svc`、`production_schedule_svc`、`production_cost_svc`、`production_preplan_schedule_manual_svc`（预计划人工排程/确认）、`production_dept_board_svc`（部门生产看板）等 | [production.md](../../02_domains/production.md) |
 | `routes_rbac_admin.py` | 导航/能力表维护 | [rbac_and_menus.md](rbac_and_menus.md) |
 | `routes_hr.py` | `hr_*_svc` | [hr.md](../../02_domains/hr.md) |
 | `routes_employee_schedule.py` | `hr_employee_schedule_svc`、`hr_work_type_svc` | [hr.md](../../02_domains/hr.md) |
