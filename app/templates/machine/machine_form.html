@@ -23,13 +23,13 @@
     </div>
     <div class="col-md-3">
         <label class="form-label">标准产能(件/小时)</label>
-        <input class="form-control" type="number" min="0" step="0.00000001" name="capacity_per_hour" value="{{ row.capacity_per_hour if row else '0' }}">
+        <input class="form-control" type="number" min="0" step="0.00000001" name="capacity_per_hour" value="{{ row.capacity_per_hour if row else '' }}">
     </div>
 
     {% if current_user.role_code == 'admin' %}
     <div class="col-md-3">
         <label class="form-label">购入价格</label>
-        <input class="form-control" type="number" min="0" step="0.00000001" name="machine_cost_purchase_price" value="{{ row.machine_cost_purchase_price if row and row.machine_cost_purchase_price is not none else '0' }}">
+        <input class="form-control" type="number" min="0" step="0.00000001" name="machine_cost_purchase_price" value="{{ row.machine_cost_purchase_price if row else '' }}">
     </div>
     <div class="col-md-3">
         <label class="form-label">单次运行成本</label>

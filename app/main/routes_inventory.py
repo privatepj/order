@@ -135,8 +135,10 @@ def _parse_line_rows():
         if product_id in seen_pid:
             raise ValueError("同一单据中不能重复选择同一产品。")
         seen_pid.add(product_id)
-        qraw = (qtys[i] if i < len(qtys) else "") or "0"
-        qraw = str(qraw).strip()
+        qraw = qtys[i] if i < len(qtys) else ""
+        qraw = str(qraw or "").strip()
+        if not qraw:
+            raise ValueError("每一行产品必须填写数量。")
         try:
             qty = Decimal(qraw)
         except InvalidOperation:

@@ -51,6 +51,10 @@ def create_app(config_class=Config):
 
     app.jinja_env.filters["status_zh"] = status_zh
 
+    from app.utils.form_display import form_blank
+
+    app.jinja_env.filters["form_blank"] = form_blank
+
     @app.context_processor
     def inject_menu_permissions():
         from flask_login import current_user

@@ -32,25 +32,25 @@
     <div class="row">
         <div class="col-md-4 mb-3">
             <label class="form-label">基本工资</label>
-            <input type="number" step="0.00000001" class="form-control" name="base_salary" value="{{ line.base_salary if line else '0' }}" id="field_base_salary">
+            <input type="number" step="0.00000001" class="form-control" name="base_salary" value="{{ line.base_salary if line else '' }}" id="field_base_salary">
         </div>
         <div class="col-md-4 mb-3">
             <label class="form-label">津贴</label>
-            <input type="number" step="0.00000001" class="form-control" name="allowance" value="{{ line.allowance if line else '0' }}" id="field_allowance">
+            <input type="number" step="0.00000001" class="form-control" name="allowance" value="{{ line.allowance if line else '' }}" id="field_allowance">
         </div>
         <div class="col-md-4 mb-3">
             <label class="form-label">扣款</label>
-            <input type="number" step="0.00000001" class="form-control" name="deduction" value="{{ line.deduction if line else '0' }}" id="field_deduction">
+            <input type="number" step="0.00000001" class="form-control" name="deduction" value="{{ line.deduction if line else '' }}" id="field_deduction">
         </div>
     </div>
     <div class="row">
         <div class="col-md-6 mb-3">
             <label class="form-label">工时（小时）/ 计划件数</label>
-            <input type="number" step="0.00000001" class="form-control" name="work_hours" value="{{ line.work_hours if line and line.work_hours is not none else '0' }}">
+            <input type="number" step="0.00000001" class="form-control" name="work_hours" value="{{ line.work_hours if line and line.work_hours is not none else '' }}">
         </div>
         <div class="col-md-6 mb-3" id="field_hourly_rate">
             <label class="form-label">时薪（元/小时）</label>
-            <input type="number" step="0.00000001" class="form-control" name="hourly_rate" value="{{ line.hourly_rate if line else '0' }}">
+            <input type="number" step="0.00000001" class="form-control" name="hourly_rate" value="{{ line.hourly_rate if line else '' }}">
         </div>
     </div>
     <div class="mb-3">

@@ -34,6 +34,7 @@ from app.models import (
     Supplier,
     SupplierMaterialMap,
 )
+from app.services.inventory_svc import find_semi_material_id_by_name_spec
 from app.utils.decimal_scale import json_decimal
 from app.utils.procurement_order_excel import build_purchase_order_workbook
 
@@ -885,10 +886,11 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
     4 地址
     5 供应商状态（1启用/0停用，可空默认启用）
     6 供应商备注
-    7 物料编号（SemiMaterial.code，必填）
-    8 最近单价（可空）
-    9 物料-供应商备注
-    10 是否默认供应商（1/0，可空=不修改默认）
+    7 物料名称（与主数据品名一致；有映射数据时必填，程序按品名+规格匹配物料编号）
+    8 规格（可空，与主数据规格一致；空白与主数据空规格等同）
+    9 最近单价（可空）
+    10 物料-供应商备注
+    11 是否默认供应商（1/0，可空=不修改默认）
     """
 
     def _cell_to_str(v) -> str:
@@ -934,10 +936,10 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
 
     suppliers: dict = {}
     errors: list[str] = []
-    seen_supplier_material: set[tuple[str, str]] = set()
+    seen_supplier_material: set[tuple[str, int]] = set()
 
     for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        vals = (tuple(row) + (None,) * 10)[:10]
+        vals = (tuple(row) + (None,) * 11)[:11]
         (
             supplier_name,
             contact_name,
@@ -945,7 +947,8 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
             address,
             supplier_status,
             supplier_remark,
-            material_code,
+            material_name,
+            material_spec,
             last_unit_price,
             map_remark,
             is_preferred,
@@ -970,15 +973,28 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
             errors.append(f"第 {idx} 行：{str(exc)}")
             continue
 
-        material_code_s = _cell_to_str(material_code)
-        if not material_code_s:
-            # 允许该行只更新供应商基础信息，不更新映射
-            errors.append(f"第 {idx} 行：物料编号不能为空。")
+        material_name_s = _cell_to_str(material_name)[:128]
+        spec_raw = material_spec
+        if not material_name_s:
+            if (
+                _cell_to_str(last_unit_price)
+                or _cell_to_str(map_remark)
+                or _cell_to_str(is_preferred)
+            ):
+                errors.append(f"第 {idx} 行：填写了单价/备注/默认标记时，物料名称不能为空。")
             suppliers.setdefault(
                 supplier_name_s,
-                {"base": {"is_active": is_active, "contact_name": contact_name_s, "phone": phone_s, "address": address_s, "remark": supplier_remark_s}, "maps": []},
+                {
+                    "base": {
+                        "is_active": is_active,
+                        "contact_name": contact_name_s,
+                        "phone": phone_s,
+                        "address": address_s,
+                        "remark": supplier_remark_s,
+                    },
+                    "maps": [],
+                },
             )
-            # 若已存在则覆盖基础字段（后出现的行优先）
             if supplier_name_s in suppliers:
                 suppliers[supplier_name_s]["base"] = {
                     "is_active": is_active,
@@ -989,16 +1005,22 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
                 }
             continue
 
-        key = (supplier_name_s, material_code_s)
+        mid, match_err = find_semi_material_id_by_name_spec(
+            "material", material_name_s, spec_raw
+        )
+        if match_err:
+            errors.append(f"第 {idx} 行：{match_err}")
+            continue
+        material = db.session.get(SemiMaterial, mid)
+        if not material or material.kind != "material":
+            errors.append(f"第 {idx} 行：匹配到的物料无效。")
+            continue
+
+        key = (supplier_name_s, material.id)
         if key in seen_supplier_material:
             errors.append(f"第 {idx} 行：同一供应商的同一物料在文件中重复。")
             continue
         seen_supplier_material.add(key)
-
-        material = SemiMaterial.query.filter_by(code=material_code_s).first()
-        if not material or material.kind != "material":
-            errors.append(f"第 {idx} 行：物料编号 {material_code_s} 不存在或不是物料。")
-            continue
 
         try:
             price = _parse_optional_decimal(last_unit_price, field_name="最近单价")
@@ -1488,7 +1510,7 @@ def register_procurement_routes(bp):
         from openpyxl import Workbook
 
         # 模板列顺序：第 1 行表头；第 2 行起为数据。
-        # 物料匹配使用 SemiMaterial.code（kind=material）。
+        # 物料按「品名 + 规格」匹配主数据（kind=material），与库存导入一致。
         headers = [
             "供应商名称",
             "联系人",
@@ -1496,7 +1518,8 @@ def register_procurement_routes(bp):
             "地址",
             "供应商状态（1启用/0停用）",
             "供应商备注",
-            "物料编号",
+            "物料名称",
+            "规格",
             "最近单价",
             "物料-供应商备注",
             "是否默认供应商（1/0，可空=不修改）",

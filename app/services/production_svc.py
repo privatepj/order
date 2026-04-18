@@ -34,6 +34,22 @@ def _d(val) -> Decimal:
     return Decimal(str(val))
 
 
+def _wo_op_snapshot_text_not_null(raw: object, *, max_len: int) -> str:
+    """工序快照 NOT NULL 文本：禁止 str(None) 落库为字面量 'None'。"""
+    if raw is None:
+        return ""
+    s = str(raw).strip()
+    return s[:max_len] if s else ""
+
+
+def _wo_op_snapshot_optional_code(raw: object, *, max_len: int) -> Optional[str]:
+    """工序编码可空：空输入不写占位字符串。"""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s[:max_len] if s else None
+
+
 def _active_bom_header_cached(
     header_cache: Dict[Tuple[str, int], Optional[object]],
     parent_kind: str,
@@ -347,8 +363,8 @@ def measure_production_for_preplan(
                         preplan_id=preplan_id,
                         work_order_id=wo.id,
                         step_no=int(st["step_no"]),
-                        step_code=st["step_code"],
-                        step_name=str(st["step_name"]),
+                        step_code=_wo_op_snapshot_optional_code(st.get("step_code"), max_len=64),
+                        step_name=_wo_op_snapshot_text_not_null(st.get("step_name"), max_len=128),
                         resource_kind=st["resource_kind"],
                         machine_type_id=int(st["machine_type_id"]),
                         hr_department_id=int(st["hr_department_id"]),

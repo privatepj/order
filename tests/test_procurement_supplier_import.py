@@ -2,9 +2,14 @@ from decimal import Decimal
 
 import pytest
 
+from openpyxl import Workbook
+
 from app import create_app, db
 from app.config import Config
-from app.main.routes_procurement import _upsert_supplier_material_maps_no_delete
+from app.main.routes_procurement import (
+    _parse_supplier_import_excel_ws,
+    _upsert_supplier_material_maps_no_delete,
+)
 from app.models import Company, SemiMaterial, Supplier, SupplierMaterialMap
 
 
@@ -136,4 +141,63 @@ def test_supplier_import_preferred_clears_other_defaults(app_ctx):
 
     assert mapping2.is_preferred is True
     assert mapping1.is_preferred is False
+
+
+def test_supplier_import_excel_parser_resolves_material_by_name_and_spec(app_ctx):
+    company = Company(name="Test Co", code="C0001", is_default=1)
+    m = SemiMaterial(
+        kind="material",
+        code="X001",
+        name="不锈钢板",
+        spec="304 2mm",
+        base_unit="张",
+    )
+    db.session.add_all([company, m])
+    db.session.commit()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["供应商名称"] + [""] * 10)
+    ws.append(
+        [
+            "供应商甲",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "不锈钢板",
+            "304 2mm",
+            "12.5",
+            "",
+            "",
+        ]
+    )
+
+    data, errors = _parse_supplier_import_excel_ws(ws, company.id)
+    assert errors == []
+    assert "供应商甲" in data
+    assert len(data["供应商甲"]["maps"]) == 1
+    assert data["供应商甲"]["maps"][0]["material_id"] == m.id
+    assert data["供应商甲"]["maps"][0]["last_unit_price"] == Decimal("12.5")
+
+
+def test_supplier_import_excel_parser_errors_on_ambiguous_name_spec(app_ctx):
+    company = Company(name="Test Co", code="C0001", is_default=1)
+    m1 = SemiMaterial(
+        kind="material", code="A1", name="同名", spec="", base_unit="个"
+    )
+    m2 = SemiMaterial(
+        kind="material", code="A2", name="同名", spec="", base_unit="个"
+    )
+    db.session.add_all([company, m1, m2])
+    db.session.commit()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["供应商名称"] + [""] * 10)
+    ws.append(["乙供应商", "", "", "", "", "", "同名", "", "", "", ""])
+
+    _data, errors = _parse_supplier_import_excel_ws(ws, company.id)
+    assert any("多条" in e for e in errors)
 

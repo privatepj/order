@@ -24,6 +24,11 @@
   - `sys_nav_item` 中 `procurement_material` 是否 `is_active=1` 且挂在 `nav_procurement` 下；
   - 服务进程是否使用了旧 RBAC 快照（多实例需全部重载）。
 
+## 供应商 Excel 导入
+
+- 入口：`/procurement/suppliers/import`；模板下载：`/procurement/suppliers/export-import-template`。
+- 供应商-物料映射列填写 **物料名称 + 规格**（与 `semi_material` 主数据一致），系统按 `app/services/inventory_svc.py` 中 `find_semi_material_id_by_name_spec` 与库存导入相同的规则匹配 `kind=material` 的物料；**不在 Excel 中填写物料编号**。
+
 ## 相关 SQL
 
 - 以 `scripts/sql/run_*` 中与 procurement 相关的脚本为准（见 [05_releases](../05_releases/index.md) 发布说明）。

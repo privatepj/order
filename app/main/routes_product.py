@@ -7,6 +7,7 @@ from app.auth.decorators import capability_required, menu_required
 from app import db
 from app.models import Product
 from app.utils.query import keyword_like_or
+from app.utils.form_display import clean_optional_text
 from sqlalchemy.exc import IntegrityError
 from io import BytesIO
 
@@ -138,11 +139,9 @@ def register_product_routes(bp):
                             product = Product(product_code=code)
                             db.session.add(product)
                         product.name = name
-                        product.spec = (spec or "").strip() if isinstance(spec, str) else spec
-                        product.base_unit = (
-                            (base_unit or "").strip() if isinstance(base_unit, str) else base_unit
-                        )
-                        product.remark = (remark or "").strip() if isinstance(remark, str) else remark
+                        product.spec = clean_optional_text(spec, max_len=128)
+                        product.base_unit = clean_optional_text(base_unit, max_len=16)
+                        product.remark = clean_optional_text(remark, max_len=255)
                         success += 1
                         db.session.flush()
 
@@ -197,9 +196,9 @@ def register_product_routes(bp):
             while Product.query.filter_by(product_code=product.product_code).first():
                 product.product_code = _bump_product_code(product.product_code)
         product.name = name
-        product.spec = (request.form.get("spec") or "").strip() or None
-        product.base_unit = (request.form.get("base_unit") or "").strip() or None
-        product.remark = (request.form.get("remark") or "").strip() or None
+        product.spec = clean_optional_text(request.form.get("spec"), max_len=128)
+        product.base_unit = clean_optional_text(request.form.get("base_unit"), max_len=16)
+        product.remark = clean_optional_text(request.form.get("remark"), max_len=255)
         max_tries = 3
         db.session.add(product)
         for attempt in range(max_tries):

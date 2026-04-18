@@ -33,8 +33,8 @@
         <tr>
             <td>{{ p.product_code }}</td>
             <td>{{ p.name }}</td>
-            <td>{{ p.spec or '-' }}</td>
-            <td>{{ p.base_unit or '-' }}</td>
+            <td>{{ (p.spec|form_blank) or '-' }}</td>
+            <td>{{ (p.base_unit|form_blank) or '-' }}</td>
             <td>
                 {% if user_can_cap('product.action.edit') %}
                 <a href="{{ url_for('main.product_edit', product_id=p.id) }}" class="btn btn-sm btn-outline-primary">编辑</a>

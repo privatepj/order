@@ -17,15 +17,15 @@
     </div>
     <div class="mb-3">
         <label for="spec" class="form-label">规格</label>
-        <textarea class="form-control name-search-textarea" id="spec" name="spec" rows="1">{{ product.spec if product else '' }}</textarea>
+        <textarea class="form-control name-search-textarea" id="spec" name="spec" rows="1">{{ (product.spec|form_blank) if product else '' }}</textarea>
     </div>
     <div class="mb-3">
         <label for="base_unit" class="form-label">基础单位</label>
-        <input type="text" class="form-control" id="base_unit" name="base_unit" value="{{ product.base_unit if product else '' }}">
+        <input type="text" class="form-control" id="base_unit" name="base_unit" value="{{ (product.base_unit|form_blank) if product else '' }}">
     </div>
     <div class="mb-3">
         <label for="remark" class="form-label">备注</label>
-        <textarea class="form-control" id="remark" name="remark" rows="2">{{ product.remark if product else '' }}</textarea>
+        <textarea class="form-control" id="remark" name="remark" rows="2">{{ (product.remark|form_blank) if product else '' }}</textarea>
     </div>
     <button type="submit" class="btn btn-primary">保存</button>
     <a href="{{ url_for('main.product_list') }}" class="btn btn-secondary">取消</a>
