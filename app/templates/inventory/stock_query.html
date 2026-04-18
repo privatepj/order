@@ -28,6 +28,17 @@
         <input type="text" name="spec" class="form-control" value="{{ spec_kw }}" placeholder="模糊">
     </div>
     {% endif %}
+    {% if user_can_cap('inventory_query.filter.series') %}
+    <div class="col-md-2">
+        <label class="form-label">系列</label>
+        <select name="series" class="form-select">
+            <option value="" {{ 'selected' if not series else '' }}>全部</option>
+            {% for s in series_options %}
+            <option value="{{ s }}" {{ 'selected' if series == s else '' }}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
     {% if user_can_cap('inventory_query.filter.name_spec') %}
     <div class="col-md-3">
         <label class="form-label">品名/规格/编号</label>
@@ -54,6 +65,7 @@
             <th>仓储区</th>
             <th>产品编号</th>
             <th>品名</th>
+            <th>系列</th>
             <th>规格</th>
             <th class="text-end">期初</th>
             <th class="text-end">入库</th>
@@ -68,6 +80,7 @@
             <td>{{ r.storage_area or '-' }}</td>
             <td>{{ r.product_code or '-' }}</td>
             <td>{{ r.product_name or '-' }}</td>
+            <td>{{ r.product_series or '-' }}</td>
             <td>{{ r.product_spec or '-' }}</td>
             <td class="text-end inv-stock-qty" data-raw="{{ r.opening_qty|qty_plain }}">{{ r.opening_qty|qty_plain }}</td>
             <td class="text-end inv-stock-qty" data-raw="{{ r.qty_in|qty_plain }}">{{ r.qty_in|qty_plain }}</td>
@@ -75,7 +88,7 @@
             <td class="text-end fw-semibold inv-stock-qty" data-raw="{{ r.closing_qty|qty_plain }}">{{ r.closing_qty|qty_plain }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="9">无数据（无期初且无流水时不会出现在此表）</td></tr>
+        <tr><td colspan="10">无数据（无期初且无流水时不会出现在此表）</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -84,11 +97,11 @@
 <nav>
     <ul class="pagination">
         {% if page > 1 %}
-        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_stock_query', page=page-1, category=category, spec=spec_kw, name_spec=name_spec_kw, storage_area=storage_area) }}">上一页</a></li>
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_stock_query', page=page-1, category=category, spec=spec_kw, name_spec=name_spec_kw, storage_area=storage_area, series=series) }}">上一页</a></li>
         {% endif %}
         <li class="page-item disabled"><span class="page-link">第 {{ page }} / {{ total_pages }} 页（共 {{ total }} 条）</span></li>
         {% if page < total_pages %}
-        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_stock_query', page=page+1, category=category, spec=spec_kw, name_spec=name_spec_kw, storage_area=storage_area) }}">下一页</a></li>
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.inventory_stock_query', page=page+1, category=category, spec=spec_kw, name_spec=name_spec_kw, storage_area=storage_area, series=series) }}">下一页</a></li>
         {% endif %}
     </ul>
 </nav>

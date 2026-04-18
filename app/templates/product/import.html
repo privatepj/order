@@ -3,7 +3,7 @@
 {% block content %}
 <h2 class="mb-4">产品导入（Excel）</h2>
 <p class="text-muted">
-    模板列顺序：<strong>产品编号</strong>（可留空，系统自动生成如 P0001）、产品名称、规格、基础单位、备注（从第 2 行开始为数据）。<br>
+    模板列顺序（从第 2 行为数据）：<strong>产品编号</strong>（可留空，系统自动生成如 P0001）、<strong>产品名称</strong>、规格、基础单位、备注、系列、<strong>类型</strong>（可选；主数据<strong>内部分类/导航</strong>，自由填写；与「成品/半成品」无关。导入范围始终为<strong>成品</strong>）。<br>
     有编号时按编号定位并更新；编号为空时按名称新增并自动生成编号。
 </p>
 <form method="post" enctype="multipart/form-data" class="mb-4">

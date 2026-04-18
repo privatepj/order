@@ -36,6 +36,7 @@ from app.models import (
 )
 from app.services.inventory_svc import find_semi_material_id_by_name_spec
 from app.utils.decimal_scale import json_decimal
+from app.utils.form_display import clean_optional_text
 from app.utils.procurement_order_excel import build_purchase_order_workbook
 
 REQUISITION_STATUS = ("draft", "signed", "partial_ordered", "ordered", "cancelled")
@@ -285,6 +286,7 @@ def _material_search_query(keyword: str = ""):
                 SemiMaterial.code.contains(keyword),
                 SemiMaterial.name.contains(keyword),
                 SemiMaterial.spec.contains(keyword),
+                SemiMaterial.nav_type.contains(keyword),
             )
         )
     return q.order_by(SemiMaterial.name.asc(), SemiMaterial.id.asc())
@@ -1261,6 +1263,7 @@ def register_procurement_routes(bp):
             item.spec = spec
             item.base_unit = base_unit
             item.remark = remark
+            item.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
             max_tries = 3
             for attempt in range(max_tries):
                 db.session.add(item)
@@ -1317,6 +1320,7 @@ def register_procurement_routes(bp):
                 item.spec = spec
                 item.base_unit = base_unit
                 item.remark = remark
+                item.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
                 if not item.name:
                     raise ValueError("名称为必填。")
                 db.session.add(item)

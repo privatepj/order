@@ -90,6 +90,12 @@ CAPABILITY_FALLBACK: Tuple[Tuple[str, str, str, str], ...] = (
     ),
     ("inventory_query.filter.spec", "库存查询：规格", "inventory_query", "库存查询"),
     (
+        "inventory_query.filter.series",
+        "库存查询：系列",
+        "inventory_query",
+        "库存查询",
+    ),
+    (
         "inventory_query.filter.name_spec",
         "库存查询：品名/规格/编号",
         "inventory_query",

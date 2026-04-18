@@ -189,15 +189,18 @@ def inventory_stock_query_read_filters():
     storage_area = (request.args.get("storage_area") or "").strip()
     spec_kw = (request.args.get("spec") or request.args.get("model") or "").strip()
     name_spec_kw = (request.args.get("name_spec") or "").strip()
+    series = (request.args.get("series") or "").strip()
     if not current_user_can_cap("inventory_query.filter.category"):
         category = ""
     if not current_user_can_cap("inventory_query.filter.storage_area"):
         storage_area = ""
     if not current_user_can_cap("inventory_query.filter.spec"):
         spec_kw = ""
+    if not current_user_can_cap("inventory_query.filter.series"):
+        series = ""
     if not current_user_can_cap("inventory_query.filter.name_spec"):
         name_spec_kw = ""
-    return page, category, storage_area, spec_kw, name_spec_kw
+    return page, category, storage_area, spec_kw, name_spec_kw, series
 
 
 def role_capability_form_defaults(role) -> Tuple[bool, List[str]]:

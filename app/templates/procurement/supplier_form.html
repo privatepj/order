@@ -67,7 +67,8 @@
         <table class="table table-bordered align-middle" id="mapTable">
             <thead>
                 <tr>
-                    <th style="min-width:240px;">物料</th>
+                    <th style="min-width:240px;">物料（品名，可搜索）</th>
+                    <th style="min-width:140px;">规格（只读）</th>
                     <th style="width:120px;">最近单价</th>
                     <th>备注</th>
                     <th style="width:72px;"></th>
@@ -81,6 +82,9 @@
                         <textarea class="form-control form-control-sm name-search-textarea map-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索">{{ item.material.name if item.material else '' }}</textarea>
                         <div class="map-dd list-group d-none"></div>
                     </td>
+                    <td>
+                        <textarea class="form-control form-control-sm name-search-textarea map-material-spec" rows="1" readonly tabindex="-1" aria-label="规格">{{ item.material.spec if item.material and item.material.spec else '' }}</textarea>
+                    </td>
                     <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value="{{ item.last_unit_price if item.last_unit_price is not none else '' }}"></td>
                     <td><input type="text" class="form-control form-control-sm" name="map_remark" value="{{ item.remark or '' }}" maxlength="500"></td>
                     <td><button type="button" class="btn btn-outline-danger btn-sm btn-remove-map">删除</button></td>
@@ -92,6 +96,9 @@
                         <input type="hidden" name="map_material_id" class="map-material-id" value="">
                         <textarea class="form-control form-control-sm name-search-textarea map-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索"></textarea>
                         <div class="map-dd list-group d-none"></div>
+                    </td>
+                    <td>
+                        <textarea class="form-control form-control-sm name-search-textarea map-material-spec" rows="1" readonly tabindex="-1" aria-label="规格"></textarea>
                     </td>
                     <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value=""></td>
                     <td><input type="text" class="form-control form-control-sm" name="map_remark" value="" maxlength="500"></td>
@@ -114,6 +121,9 @@
             <input type="hidden" name="map_material_id" class="map-material-id" value="">
             <textarea class="form-control form-control-sm name-search-textarea map-material-search" rows="1" autocomplete="off" placeholder="输入后模糊搜索"></textarea>
             <div class="map-dd list-group d-none"></div>
+        </td>
+        <td>
+            <textarea class="form-control form-control-sm name-search-textarea map-material-spec" rows="1" readonly tabindex="-1" aria-label="规格"></textarea>
         </td>
         <td><input type="text" class="form-control form-control-sm" name="map_last_unit_price" value=""></td>
         <td><input type="text" class="form-control form-control-sm" name="map_remark" value="" maxlength="500"></td>
@@ -179,7 +189,12 @@
             btn.addEventListener('click', function () {
                 var row = dd.closest('.map-row');
                 row.querySelector('.map-material-id').value = item.material_id || item.id || '';
-                row.querySelector('.map-material-search').value = item.label || '';
+                row.querySelector('.map-material-search').value = item.name || '';
+                var specTa = row.querySelector('.map-material-spec');
+                if (specTa) {
+                    specTa.value = item.spec || '';
+                    autoResize(specTa);
+                }
                 autoResize(row.querySelector('.map-material-search'));
                 hideAll();
             });
@@ -193,12 +208,17 @@
         row.setAttribute('data-bound', '1');
         var input = row.querySelector('.map-material-search');
         var hidden = row.querySelector('.map-material-id');
+        var specTa = row.querySelector('.map-material-spec');
         var dd = row.querySelector('.map-dd');
         var timer = null;
         if (!input || !dd) return;
         input.addEventListener('input', function () {
             autoResize(input);
             hidden.value = '';
+            if (specTa) {
+                specTa.value = '';
+                autoResize(specTa);
+            }
             if (timer) window.clearTimeout(timer);
             timer = window.setTimeout(function () {
                 fetch(searchUrl + '?q=' + encodeURIComponent(normalizeQuery(input.value)), {
@@ -212,11 +232,10 @@
         });
         input.addEventListener('focus', function () {
             autoResize(input);
-            if ((input.value || '').trim()) {
-                input.dispatchEvent(new Event('input'));
-            }
+            if (specTa) autoResize(specTa);
         });
         autoResize(input);
+        if (specTa) autoResize(specTa);
     }
 
     body.querySelectorAll('.map-row').forEach(bindRow);

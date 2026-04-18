@@ -969,6 +969,7 @@ def query_stock_aggregate(
     storage_area_kw: str = "",
     spec_kw: str = "",
     name_spec_kw: str = "",
+    series: str = "",
     page: int = 1,
     per_page: int = 30,
 ) -> Tuple[List[dict[str, Any]], int]:
@@ -1002,6 +1003,13 @@ def query_stock_aggregate(
             " OR b.category NOT IN ('finished','semi','material'))"
         )
         params["ns_pat"] = _like_pat(name_spec_kw)
+    series_trim = (series or "").strip()
+    if series_trim:
+        where_parts.append(
+            "((b.category = 'finished' AND b.product_id > 0 AND TRIM(COALESCE(p.series,'')) = :series)"
+            " OR (b.category = 'semi' AND b.material_id > 0 AND TRIM(COALESCE(sm.series,'')) = :series))"
+        )
+        params["series"] = series_trim[:64]
 
     where_sql = " AND ".join(where_parts)
 
@@ -1042,7 +1050,8 @@ SELECT
   COALESCE(a.qty_out, 0) AS qty_out,
   COALESCE(p.product_code, sm.code) AS product_code,
   COALESCE(p.name, sm.name) AS product_name,
-  COALESCE(p.spec, sm.spec) AS product_spec
+  COALESCE(p.spec, sm.spec) AS product_spec,
+  COALESCE(p.series, sm.series) AS product_series
 {inner}
 ORDER BY b.storage_area, b.category, b.product_id, b.material_id
 LIMIT :limit OFFSET :offset
@@ -1055,6 +1064,8 @@ LIMIT :limit OFFSET :offset
         opening = Decimal(str(r["opening_qty"]))
         qi = Decimal(str(r["qty_in"]))
         qo = Decimal(str(r["qty_out"]))
+        ps = r.get("product_series")
+        product_series = (str(ps).strip() if ps is not None else "") or None
         out.append(
             {
                 "category": r["category"],
@@ -1068,9 +1079,33 @@ LIMIT :limit OFFSET :offset
                 "product_code": r["product_code"],
                 "product_name": r["product_name"],
                 "product_spec": r["product_spec"],
+                "product_series": product_series,
             }
         )
     return out, int(total)
+
+
+def list_distinct_stock_series_options() -> List[str]:
+    """成品与半成品已维护的系列值（去重排序），供库存结存查询下拉筛选。"""
+    labels: set[str] = set()
+    for (raw,) in (
+        db.session.query(Product.series)
+        .filter(Product.series.isnot(None))
+        .filter(func.trim(Product.series) != "")
+        .distinct()
+        .all()
+    ):
+        labels.add(str(raw).strip())
+    for (raw,) in (
+        db.session.query(SemiMaterial.series)
+        .filter(SemiMaterial.kind == INV_SEMI)
+        .filter(SemiMaterial.series.isnot(None))
+        .filter(func.trim(SemiMaterial.series) != "")
+        .distinct()
+        .all()
+    ):
+        labels.add(str(raw).strip())
+    return sorted(labels)
 
 
 def _d_inv(val: Any) -> Decimal:

@@ -10,7 +10,7 @@
 <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
     <form class="d-flex gap-2 ms-auto" method="get">
         {% if user_can_cap('procurement_material.filter.keyword') %}
-        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编码、名称、规格">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编码、名称、规格、类型">
         {% endif %}
         <button type="submit" class="btn btn-primary">搜索</button>
     </form>
@@ -32,6 +32,7 @@
             <th>编号</th>
             <th>名称</th>
             <th>规格</th>
+            <th>类型</th>
             <th>基础单位</th>
             <th>默认供应商</th>
             <th>默认报价</th>
@@ -47,6 +48,7 @@
             <td>{{ item.code }}</td>
             <td>{{ item.name }}</td>
             <td>{{ item.spec or '-' }}</td>
+            <td>{{ item.nav_type or '-' }}</td>
             <td>{{ item.base_unit or '-' }}</td>
             <td>{{ default_mapping.supplier.name if default_mapping and default_mapping.supplier else '-' }}</td>
             <td>{{ default_mapping.last_unit_price if default_mapping and default_mapping.last_unit_price is not none else '-' }}</td>
@@ -63,7 +65,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="8">暂无数据</td></tr>
+        <tr><td colspan="9">暂无数据</td></tr>
         {% endfor %}
     </tbody>
 </table>

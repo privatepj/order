@@ -24,6 +24,11 @@
         <textarea class="form-control name-search-textarea" name="spec" rows="1">{{ item.spec if item else '' }}</textarea>
     </div>
     <div class="mb-3">
+        <label class="form-label">类型</label>
+        <input type="text" class="form-control" name="nav_type" maxlength="64" value="{{ item.nav_type if item else '' }}">
+        <div class="form-text">内部分类，便于列表筛选；与主数据类别（采购物料）无关。</div>
+    </div>
+    <div class="mb-3">
         <label class="form-label">基础单位</label>
         <input type="text" class="form-control" name="base_unit" value="{{ item.base_unit if item else '' }}">
     </div>

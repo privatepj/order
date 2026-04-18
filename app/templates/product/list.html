@@ -4,7 +4,7 @@
 <h2 class="mb-4">产品列表</h2>
 <form class="mb-3 d-flex gap-2" method="get">
     {% if user_can_cap('product.filter.keyword') %}
-    <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编号、名称、规格、单位、备注等">
+    <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编号、名称、规格、类型、单位、备注等">
     {% endif %}
     <button type="submit" class="btn btn-primary">搜索</button>
 </form>
@@ -23,6 +23,7 @@
             <th>产品编号</th>
             <th>产品名称</th>
             <th>规格</th>
+            <th>类型</th>
             <th>基础单位</th>
             <th>备注</th>
             <th>操作</th>
@@ -34,6 +35,7 @@
             <td>{{ p.product_code }}</td>
             <td>{{ p.name }}</td>
             <td>{{ (p.spec|form_blank) or '-' }}</td>
+            <td>{{ (p.nav_type|form_blank) or '-' }}</td>
             <td>{{ (p.base_unit|form_blank) or '-' }}</td>
             <td>
                 {% if user_can_cap('product.action.edit') %}
@@ -47,7 +49,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="6">暂无产品</td></tr>
+        <tr><td colspan="7">暂无产品</td></tr>
         {% endfor %}
     </tbody>
 </table>

@@ -10,6 +10,7 @@ from app import db
 from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.models import SemiMaterial
+from app.utils.form_display import clean_optional_text
 from app.utils.query import keyword_like_or
 
 
@@ -78,6 +79,7 @@ def register_semi_material_routes(bp):
             SemiMaterial.code,
             SemiMaterial.name,
             SemiMaterial.spec,
+            SemiMaterial.nav_type,
             SemiMaterial.base_unit,
             SemiMaterial.remark,
         )
@@ -119,8 +121,11 @@ def register_semi_material_routes(bp):
             item.code = _next_code_for_kind(kind)
             item.name = name
             item.spec = spec
+            if kind == "semi":
+                item.series = clean_optional_text(request.form.get("series"), max_len=64)
             item.base_unit = base_unit
             item.remark = remark
+            item.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
 
             max_tries = 3
             db.session.add(item)
@@ -164,6 +169,9 @@ def register_semi_material_routes(bp):
                 return render_template("semi_material/form.html", item=item, kind=item.kind)
             item.name = name
             item.spec = spec
+            if item.kind == "semi":
+                item.series = clean_optional_text(request.form.get("series"), max_len=64)
+            item.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
             item.base_unit = base_unit
             item.remark = remark
             if is_admin:
@@ -217,7 +225,7 @@ def register_semi_material_routes(bp):
 
         from openpyxl import Workbook
 
-        headers = ["物料编号（可留空）", "名称", "规格", "基础单位", "备注"]
+        headers = ["物料编号（可留空）", "名称", "规格", "基础单位", "备注", "系列", "类型"]
         wb = Workbook()
         ws = wb.active
         ws.title = "导入模板"
@@ -269,7 +277,9 @@ def register_semi_material_routes(bp):
             success = 0
             errors = []
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                code, name, spec, base_unit, remark = (row + (None,) * 5)[:5]
+                code, name, spec, base_unit, remark, series_col, nav_type_col = (
+                    row + (None,) * 7
+                )[:7]
                 code = (code or "").strip() if isinstance(code, str) else (code or "")
                 code = str(code).strip()
                 name = (name or "").strip() if isinstance(name, str) else (name or "")
@@ -285,6 +295,7 @@ def register_semi_material_routes(bp):
                 base_unit = base_unit or None
                 remark = (remark or "").strip() if isinstance(remark, str) else (remark or "")
                 remark = remark or None
+                nav_val = clean_optional_text(nav_type_col, max_len=64)
 
                 # code 可留空：系统自动生成
                 if not code:
@@ -303,6 +314,11 @@ def register_semi_material_routes(bp):
                     existing.spec = spec
                     existing.base_unit = base_unit
                     existing.remark = remark
+                    existing.nav_type = nav_val
+                    if kind == "semi":
+                        existing.series = clean_optional_text(series_col, max_len=64)
+                    else:
+                        existing.series = None
                     db.session.add(existing)
                 else:
                     db.session.add(
@@ -313,6 +329,10 @@ def register_semi_material_routes(bp):
                             spec=spec,
                             base_unit=base_unit,
                             remark=remark,
+                            nav_type=nav_val,
+                            series=clean_optional_text(series_col, max_len=64)
+                            if kind == "semi"
+                            else None,
                         )
                     )
 

@@ -592,12 +592,16 @@ def register_inventory_routes(bp):
     @login_required
     @menu_required("inventory_query")
     def inventory_stock_query():
-        page, category, storage_area, spec_kw, name_spec_kw = inventory_stock_query_read_filters()
+        page, category, storage_area, spec_kw, name_spec_kw, series = (
+            inventory_stock_query_read_filters()
+        )
+        series_options = inventory_svc.list_distinct_stock_series_options()
         rows, total = inventory_svc.query_stock_aggregate(
             category=category,
             storage_area_kw=storage_area,
             spec_kw=spec_kw,
             name_spec_kw=name_spec_kw,
+            series=series,
             page=page,
             per_page=30,
         )
@@ -612,6 +616,8 @@ def register_inventory_routes(bp):
             storage_area=storage_area,
             spec_kw=spec_kw,
             name_spec_kw=name_spec_kw,
+            series=series,
+            series_options=series_options,
         )
 
     # ----- 库存录入（批量手工出入库） -----

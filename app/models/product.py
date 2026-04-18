@@ -7,6 +7,8 @@ class Product(db.Model):
     product_code = db.Column(db.String(64), nullable=False, unique=True)
     name = db.Column(db.String(128), nullable=False)
     spec = db.Column(db.String(128))
+    series = db.Column(db.String(64))
+    nav_type = db.Column(db.String(64))
     base_unit = db.Column(db.String(16))
     remark = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, server_default=db.func.now())

@@ -26,7 +26,8 @@
   - 库存进出：`app/templates/inventory/movement_form.html`（品名搜索 + 规格只读 + 当前结存列 + 录入后结存预览列）  
   - 订单明细：`app/templates/order/form.html`（品名搜索 + 规格只读）  
   - 采购：`app/templates/procurement/order_form.html`、`requisition_form.html`（供应商/物料搜索 + 规格只读）  
-  - 主数据规格可编辑：`app/templates/product/form.html`、`semi_material/form.html`、`procurement/material_form.html`  
+  - 主数据规格可编辑：`app/templates/product/form.html`、`semi_material/form.html`、`procurement/material_form.html`（「系列」用于结存查询筛选；另有 **类型**（`nav_type`）用于内部分类/列表筛选，与主数据类别无关）  
+  - **成品/半成品 Excel 导入**：模板第 7 列「类型」对应 `nav_type`（内部分类）；详见 [../../02_domains/semi-material.md](../../02_domains/semi-material.md)「Excel 导入与「类型」列」  
   - 其他已用品名 textarea 的库存页：`inventory/daily_form.html`、`inventory/opening_form.html` 等（与 movement 同套路）
 
 ## 子文档索引
