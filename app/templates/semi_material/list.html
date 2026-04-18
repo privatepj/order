@@ -6,7 +6,7 @@
 <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
     <form class="d-flex gap-2 ms-auto" method="get">
         {% if user_can_cap('semi_material.filter.keyword') %}
-        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编码、名称、规格、类型、单位等">
+        <input type="text" class="form-control" name="keyword" value="{{ keyword }}" placeholder="编码、名称、规格、系列、单位等">
         {% endif %}
         <button type="submit" class="btn btn-primary">搜索</button>
     </form>
@@ -31,7 +31,7 @@
             <th>编号</th>
             <th>名称</th>
             <th>规格</th>
-            <th>类型</th>
+            <th>系列</th>
             <th>基础单位</th>
             <th>备注</th>
             <th>操作</th>
@@ -43,7 +43,7 @@
             <td>{{ it.code }}</td>
             <td>{{ it.name }}</td>
             <td>{{ it.spec or '-' }}</td>
-            <td>{{ it.nav_type or '-' }}</td>
+            <td>{{ it.series or '-' }}</td>
             <td>{{ it.base_unit or '-' }}</td>
             <td>{{ it.remark or '-' }}</td>
             <td>

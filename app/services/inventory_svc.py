@@ -1007,7 +1007,7 @@ def query_stock_aggregate(
     if series_trim:
         where_parts.append(
             "((b.category = 'finished' AND b.product_id > 0 AND TRIM(COALESCE(p.series,'')) = :series)"
-            " OR (b.category = 'semi' AND b.material_id > 0 AND TRIM(COALESCE(sm.series,'')) = :series))"
+            " OR (b.category IN ('semi','material') AND b.material_id > 0 AND TRIM(COALESCE(sm.series,'')) = :series))"
         )
         params["series"] = series_trim[:64]
 
@@ -1086,7 +1086,7 @@ LIMIT :limit OFFSET :offset
 
 
 def list_distinct_stock_series_options() -> List[str]:
-    """成品与半成品已维护的系列值（去重排序），供库存结存查询下拉筛选。"""
+    """成品、半成品、采购物料已维护的系列值（去重排序），供库存结存查询下拉筛选。"""
     labels: set[str] = set()
     for (raw,) in (
         db.session.query(Product.series)
@@ -1098,7 +1098,7 @@ def list_distinct_stock_series_options() -> List[str]:
         labels.add(str(raw).strip())
     for (raw,) in (
         db.session.query(SemiMaterial.series)
-        .filter(SemiMaterial.kind == INV_SEMI)
+        .filter(SemiMaterial.kind.in_((INV_SEMI, INV_MATERIAL)))
         .filter(SemiMaterial.series.isnot(None))
         .filter(func.trim(SemiMaterial.series) != "")
         .distinct()

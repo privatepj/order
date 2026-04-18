@@ -17,7 +17,6 @@ class SemiMaterial(db.Model):
     name = db.Column(db.String(128), nullable=False)
     spec = db.Column(db.String(128))
     series = db.Column(db.String(64))
-    nav_type = db.Column(db.String(64))
     base_unit = db.Column(db.String(16))
     standard_unit_cost = db.Column(db.Numeric(26, 8), nullable=True)
     remark = db.Column(db.String(255))

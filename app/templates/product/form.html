@@ -22,11 +22,7 @@
     <div class="mb-3">
         <label for="series" class="form-label">系列</label>
         <input type="text" class="form-control" id="series" name="series" maxlength="64" value="{{ (product.series|form_blank) if product else '' }}">
-    </div>
-    <div class="mb-3">
-        <label for="nav_type" class="form-label">类型</label>
-        <input type="text" class="form-control" id="nav_type" name="nav_type" maxlength="64" value="{{ (product.nav_type|form_blank) if product else '' }}">
-        <div class="form-text">内部分类，便于列表筛选与导航；与「成品/半成品」主数据类别无关。</div>
+        <div class="form-text">可用于库存结存查询按系列筛选。</div>
     </div>
     <div class="mb-3">
         <label for="base_unit" class="form-label">基础单位</label>

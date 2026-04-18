@@ -286,7 +286,7 @@ def _material_search_query(keyword: str = ""):
                 SemiMaterial.code.contains(keyword),
                 SemiMaterial.name.contains(keyword),
                 SemiMaterial.spec.contains(keyword),
-                SemiMaterial.nav_type.contains(keyword),
+                SemiMaterial.series.contains(keyword),
             )
         )
     return q.order_by(SemiMaterial.name.asc(), SemiMaterial.id.asc())
@@ -1263,7 +1263,7 @@ def register_procurement_routes(bp):
             item.spec = spec
             item.base_unit = base_unit
             item.remark = remark
-            item.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
+            item.series = clean_optional_text(request.form.get("series"), max_len=64)
             max_tries = 3
             for attempt in range(max_tries):
                 db.session.add(item)
@@ -1320,7 +1320,7 @@ def register_procurement_routes(bp):
                 item.spec = spec
                 item.base_unit = base_unit
                 item.remark = remark
-                item.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
+                item.series = clean_optional_text(request.form.get("series"), max_len=64)
                 if not item.name:
                     raise ValueError("名称为必填。")
                 db.session.add(item)
@@ -1380,7 +1380,7 @@ def register_procurement_routes(bp):
 
         from openpyxl import Workbook
 
-        headers = ["物料编号（可留空）", "名称", "规格", "基础单位", "备注"]
+        headers = ["物料编号（可留空）", "名称", "规格", "基础单位", "备注", "系列"]
         wb = Workbook()
         ws = wb.active
         ws.title = "导入模板"
@@ -1421,7 +1421,7 @@ def register_procurement_routes(bp):
             success = 0
             errors = []
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                code, name, spec, base_unit, remark = (row + (None,) * 5)[:5]
+                code, name, spec, base_unit, remark, series_col = (row + (None,) * 6)[:6]
                 code = (code or "").strip() if isinstance(code, str) else (code or "")
                 code = str(code).strip()
                 name = (name or "").strip() if isinstance(name, str) else (name or "")
@@ -1440,6 +1440,7 @@ def register_procurement_routes(bp):
                 base_unit = base_unit or None
                 remark = (remark or "").strip() if isinstance(remark, str) else (remark or "")
                 remark = remark or None
+                series_val = clean_optional_text(series_col, max_len=64)
                 if not code:
                     code = _next_material_code()
                     while SemiMaterial.query.filter_by(code=code).first():
@@ -1454,6 +1455,7 @@ def register_procurement_routes(bp):
                     existing.spec = spec
                     existing.base_unit = base_unit
                     existing.remark = remark
+                    existing.series = series_val
                     db.session.add(existing)
                 else:
                     db.session.add(
@@ -1464,6 +1466,7 @@ def register_procurement_routes(bp):
                             spec=spec,
                             base_unit=base_unit,
                             remark=remark,
+                            series=series_val,
                         )
                     )
                 success += 1

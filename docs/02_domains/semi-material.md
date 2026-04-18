@@ -12,14 +12,14 @@
 
 ## 字段说明（补充）
 
-- **系列**（`semi_material.series`，可空）：仅**半成品**（`kind=semi`）在表单/导入中维护；用于库存结存查询按系列筛选（与成品 `product.series` 一并出现在下拉选项中，见 [inventory.md](inventory.md) 结存查询一节）。
-- **类型**（`semi_material.nav_type` / `product.nav_type`，可空）：主数据**内部分类/导航**，与「成品 vs 半成品 vs 采购物料」主数据类别无关；列表关键字搜索会匹配该字段。成品用 `product.nav_type`；半成品与采购物料均用 `semi_material.nav_type`（采购物料表单在采购域维护）。
+- **系列**（`semi_material.series` / `product.series`，可空）：成品、半成品、采购物料（`kind=material`）均在表单或导入中可维护；用于库存结存查询按系列筛选与结果列展示（与 [inventory.md](inventory.md) 结存查询一节一致）。**`SemiMaterial.kind` 仅由菜单入口与 URL 决定**，与系列列内容无关。
 
-## Excel 导入与「类型」列
+## Excel 导入与「系列」列
 
-- **成品**（`app/main/routes_product.py`）：模板与导入第 7 列「类型」写入 `product.nav_type`（内部分类）；导入流程始终是成品主数据。
-- **半成品/采购物料**（`app/main/routes_semi_material.py`）：第 7 列写入 `semi_material.nav_type`。**`SemiMaterial.kind`（半成品/采购物料）仅由菜单入口与 URL 决定**，与「类型」列无关。
-- 库表增量：`scripts/sql/run_87_product_semi_nav_type.sql`。
+- **成品**（`app/main/routes_product.py`）：模板第 6 列「系列」写入 `product.series`。
+- **半成品**（`app/main/routes_semi_material.py`）：模板第 6 列「系列」写入 `semi_material.series`。
+- **采购物料**（`app/main/routes_procurement.py`）：模板第 6 列「系列」写入 `semi_material.series`（`kind=material`）。
+- 历史：`nav_type` 曾用于「类型」内部分类，已由 `scripts/sql/run_88_product_semi_drop_nav_type.sql` 删除列；新库见 `00_full_schema.sql`。
 
 ## 关联
 

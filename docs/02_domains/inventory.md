@@ -86,7 +86,7 @@
 ## 库存结存查询（`/inventory/query`）
 
 - **结存口径**：期初 + 累计入库 − 累计出库；按类别、仓储区、成品 `product_id` 或半成品/物料 `material_id` 等 bucket 聚合（`inventory_svc.query_stock_aggregate`）。
-- **筛选**：`category`、`spec`、`name_spec`、`storage_area`；**系列**（`series`）为下拉，选项来自成品 `product.series` 与半成品（`semi_material.kind=semi`）`semi_material.series` 的去重排序列表，与主数据 `TRIM` 后**精确**匹配；无权限时由 `inventory_stock_query_read_filters` 忽略该参数。能力键：`inventory_query.filter.series`（增量见 `scripts/sql/run_86_product_semi_series_and_stock_query_filter.sql`）。
+- **筛选**：`category`、`spec`、`name_spec`、`storage_area`；**系列**（`series`）为下拉，选项来自成品 `product.series` 与 `semi_material`（半成品 `kind=semi`、采购物料 `kind=material`）`semi_material.series` 的去重排序列表，与主数据 `TRIM` 后**精确**匹配；无权限时由 `inventory_stock_query_read_filters` 忽略该参数。能力键：`inventory_query.filter.series`（增量见 `scripts/sql/run_86_product_semi_series_and_stock_query_filter.sql`）。
 - **列表**：结果表含「系列」列（成品取 `product.series`，半成品/物料行取 `semi_material.series`）。
 
 ## 关联域

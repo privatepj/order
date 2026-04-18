@@ -25,7 +25,7 @@ def register_product_routes(bp):
             Product.product_code,
             Product.name,
             Product.spec,
-            Product.nav_type,
+            Product.series,
             Product.base_unit,
             Product.remark,
         )
@@ -77,7 +77,7 @@ def register_product_routes(bp):
         """产品导入模板（xlsx）：表头行+1行空白。"""
         from openpyxl import Workbook
 
-        headers = ["产品编号", "产品名称", "规格", "基础单位", "备注", "系列", "类型"]
+        headers = ["产品编号", "产品名称", "规格", "基础单位", "备注", "系列"]
 
         wb = Workbook()
         ws = wb.active
@@ -124,9 +124,9 @@ def register_product_routes(bp):
                     for idx, row in enumerate(
                         ws.iter_rows(min_row=2, values_only=True), start=2
                     ):
-                        code, name, spec, base_unit, remark, series, nav_type_col = (
-                            row + (None,) * 7
-                        )[:7]
+                        code, name, spec, base_unit, remark, series = (
+                            row + (None,) * 6
+                        )[:6]
                         code = (code or "").strip() if isinstance(code, str) else ""
                         name = (name or "").strip() if isinstance(name, str) else (name or "")
                         if not name:
@@ -146,7 +146,6 @@ def register_product_routes(bp):
                         product.base_unit = clean_optional_text(base_unit, max_len=16)
                         product.remark = clean_optional_text(remark, max_len=255)
                         product.series = clean_optional_text(series, max_len=64)
-                        product.nav_type = clean_optional_text(nav_type_col, max_len=64)
                         success += 1
                         db.session.flush()
 
@@ -203,7 +202,6 @@ def register_product_routes(bp):
         product.name = name
         product.spec = clean_optional_text(request.form.get("spec"), max_len=128)
         product.series = clean_optional_text(request.form.get("series"), max_len=64)
-        product.nav_type = clean_optional_text(request.form.get("nav_type"), max_len=64)
         product.base_unit = clean_optional_text(request.form.get("base_unit"), max_len=16)
         product.remark = clean_optional_text(request.form.get("remark"), max_len=255)
         max_tries = 3
