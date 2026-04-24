@@ -9,10 +9,37 @@ from app.models import Product
 from app.utils.query import keyword_like_or
 from app.utils.form_display import clean_optional_text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from io import BytesIO
 
 
 def register_product_routes(bp):
+    def _normalize_name_spec(name, spec):
+        name_n = (name or "").strip()
+        if spec is None:
+            spec_n = ""
+        elif isinstance(spec, str):
+            spec_n = spec.strip()
+        else:
+            spec_n = str(spec).strip()
+        return name_n, spec_n
+
+    def _find_product_by_name_spec(name, spec):
+        name_n, spec_n = _normalize_name_spec(name, spec)
+        if not name_n:
+            return None, None
+        matches = (
+            Product.query.filter(
+                Product.name == name_n,
+                func.coalesce(Product.spec, "") == spec_n,
+            )
+            .order_by(Product.id.asc())
+            .all()
+        )
+        if len(matches) > 1:
+            return None, "同品名+规格匹配到多条产品，请先清理主数据"
+        return (matches[0] if matches else None), None
+
     @bp.route("/products")
     @login_required
     @menu_required("product")
@@ -121,6 +148,7 @@ def register_product_routes(bp):
                 try:
                     success = 0
                     errors = []
+                    seen_name_spec = set()
                     for idx, row in enumerate(
                         ws.iter_rows(min_row=2, values_only=True), start=2
                     ):
@@ -133,16 +161,43 @@ def register_product_routes(bp):
                             if any(row):
                                 errors.append(f"第 {idx} 行：产品名称为空")
                             continue
-                        if not code:
-                            code = _next_product_code()
-                            while Product.query.filter_by(product_code=code).first():
-                                code = _bump_product_code(code)
-                        product = Product.query.filter_by(product_code=code).first()
+                        spec_clean = clean_optional_text(spec, max_len=128)
+                        name_n, spec_n = _normalize_name_spec(name, spec_clean)
+                        row_key = (name_n, spec_n)
+                        if row_key in seen_name_spec:
+                            errors.append(
+                                f"第 {idx} 行：同一文件中品名+规格重复（{name_n}/{spec_n or '空规格'}）"
+                            )
+                            continue
+                        seen_name_spec.add(row_key)
+
+                        product_by_name, name_match_err = _find_product_by_name_spec(
+                            name_n, spec_clean
+                        )
+                        if name_match_err:
+                            errors.append(f"第 {idx} 行：{name_match_err}")
+                            continue
+
+                        product_by_code = (
+                            Product.query.filter_by(product_code=code).first() if code else None
+                        )
+                        if product_by_code and product_by_name and product_by_code.id != product_by_name.id:
+                            errors.append(
+                                f"第 {idx} 行：产品编号与品名+规格命中不同记录，无法自动合并"
+                            )
+                            continue
+
+                        product = product_by_code or product_by_name
                         if not product:
+                            if not code:
+                                code = _next_product_code()
+                                while Product.query.filter_by(product_code=code).first():
+                                    code = _bump_product_code(code)
                             product = Product(product_code=code)
                             db.session.add(product)
-                        product.name = name
-                        product.spec = clean_optional_text(spec, max_len=128)
+
+                        product.name = name_n
+                        product.spec = spec_clean
                         product.base_unit = clean_optional_text(base_unit, max_len=16)
                         product.remark = clean_optional_text(remark, max_len=255)
                         product.series = clean_optional_text(series, max_len=64)

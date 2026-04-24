@@ -1208,6 +1208,33 @@ def create_purchase_orders_from_requisition(
 
 
 def register_procurement_routes(bp):
+    def _normalize_name_spec(name, spec):
+        name_n = (name or "").strip()
+        if spec is None:
+            spec_n = ""
+        elif isinstance(spec, str):
+            spec_n = spec.strip()
+        else:
+            spec_n = str(spec).strip()
+        return name_n, spec_n
+
+    def _find_material_by_name_spec(name, spec):
+        name_n, spec_n = _normalize_name_spec(name, spec)
+        if not name_n:
+            return None, None
+        matches = (
+            SemiMaterial.query.filter(
+                SemiMaterial.kind == "material",
+                SemiMaterial.name == name_n,
+                func.coalesce(SemiMaterial.spec, "") == spec_n,
+            )
+            .order_by(SemiMaterial.id.asc())
+            .all()
+        )
+        if len(matches) > 1:
+            return None, "同品名+规格匹配到多条物料主数据，请先清理主数据"
+        return (matches[0] if matches else None), None
+
     @bp.route("/procurement/materials")
     @login_required
     @menu_required("procurement_material")
@@ -1420,6 +1447,7 @@ def register_procurement_routes(bp):
 
             success = 0
             errors = []
+            seen_name_spec = set()
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 code, name, spec, base_unit, remark, series_col = (row + (None,) * 6)[:6]
                 code = (code or "").strip() if isinstance(code, str) else (code or "")
@@ -1441,28 +1469,58 @@ def register_procurement_routes(bp):
                 remark = (remark or "").strip() if isinstance(remark, str) else (remark or "")
                 remark = remark or None
                 series_val = clean_optional_text(series_col, max_len=64)
-                if not code:
-                    code = _next_material_code()
-                    while SemiMaterial.query.filter_by(code=code).first():
-                        code = _bump_material_code(code)
-                existing = SemiMaterial.query.filter_by(code=code).first()
-                if existing and existing.kind != "material":
+
+                name_n, spec_n = _normalize_name_spec(name, spec)
+                row_key = (name_n, spec_n)
+                if row_key in seen_name_spec:
+                    errors.append(
+                        f"第 {idx} 行：同一文件中品名+规格重复（{name_n}/{spec_n or '空规格'}）"
+                    )
+                    continue
+                seen_name_spec.add(row_key)
+
+                existing_by_name, name_match_err = _find_material_by_name_spec(
+                    name_n, spec
+                )
+                if name_match_err:
+                    errors.append(f"第 {idx} 行：{name_match_err}")
+                    continue
+
+                existing_by_code = (
+                    SemiMaterial.query.filter_by(code=code).first() if code else None
+                )
+                if existing_by_code and existing_by_code.kind != "material":
                     errors.append(f"第 {idx} 行：编号已存在但类别不匹配")
                     continue
+                if (
+                    existing_by_code
+                    and existing_by_name
+                    and existing_by_code.id != existing_by_name.id
+                ):
+                    errors.append(
+                        f"第 {idx} 行：编号与品名+规格命中不同记录，无法自动合并"
+                    )
+                    continue
+
+                existing = existing_by_code or existing_by_name
                 if existing:
                     existing.kind = "material"
-                    existing.name = name
+                    existing.name = name_n
                     existing.spec = spec
                     existing.base_unit = base_unit
                     existing.remark = remark
                     existing.series = series_val
                     db.session.add(existing)
                 else:
+                    if not code:
+                        code = _next_material_code()
+                        while SemiMaterial.query.filter_by(code=code).first():
+                            code = _bump_material_code(code)
                     db.session.add(
                         SemiMaterial(
                             kind="material",
                             code=code,
-                            name=name,
+                            name=name_n,
                             spec=spec,
                             base_unit=base_unit,
                             remark=remark,

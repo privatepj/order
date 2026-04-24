@@ -63,6 +63,13 @@ def _seed_stock_rows(app):
                 ),
                 InventoryOpeningBalance(
                     category=inventory_svc.INV_FINISHED,
+                    product_id=fg_a.id,
+                    material_id=0,
+                    storage_area="A2",
+                    opening_qty=Decimal("4"),
+                ),
+                InventoryOpeningBalance(
+                    category=inventory_svc.INV_FINISHED,
                     product_id=fg_b.id,
                     material_id=0,
                     storage_area="A1",
@@ -92,6 +99,9 @@ def test_query_stock_aggregate_filter_series(app):
     with app.app_context():
         rows_all, total_all = inventory_svc.query_stock_aggregate()
         assert total_all == 3
+        by_code = {r["product_code"]: r for r in rows_all}
+        assert by_code["P-SER-A"]["storage_area"] == "A1,A2"
+        assert by_code["P-SER-A"]["opening_qty"] == Decimal("5")
 
         rows_alpha, total_alpha = inventory_svc.query_stock_aggregate(series="Alpha")
         assert total_alpha == 2
@@ -110,3 +120,4 @@ def test_query_stock_aggregate_filter_series(app):
         )
         assert len(rows_finished_alpha) == 1
         assert rows_finished_alpha[0]["product_code"] == "P-SER-A"
+

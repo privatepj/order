@@ -987,7 +987,7 @@ def query_stock_aggregate(
     page: int = 1,
     per_page: int = 30,
 ) -> Tuple[List[dict[str, Any]], int]:
-    """按 bucket 聚合期初与收发，返回行字典列表与总条数。"""
+    """库存查询按 item 聚合；仓储区以逗号拼接展示。"""
     page = max(1, page)
     per_page = max(1, min(per_page, 100))
     offset = (page - 1) * per_page
@@ -1049,9 +1049,6 @@ LEFT JOIN semi_material sm ON b.material_id = sm.id AND b.category IN ('semi','m
 WHERE {where_sql}
 """
 
-    count_sql = text(f"SELECT COUNT(*) AS c FROM (SELECT 1 AS x {inner}) t")
-    total = db.session.execute(count_sql, params).scalar() or 0
-
     data_sql = text(
         f"""
 SELECT
@@ -1068,35 +1065,71 @@ SELECT
   COALESCE(p.series, sm.series) AS product_series
 {inner}
 ORDER BY b.storage_area, b.category, b.product_id, b.material_id
-LIMIT :limit OFFSET :offset
 """
     )
-    params_with_lim = {**params, "limit": per_page, "offset": offset}
-    rows = db.session.execute(data_sql, params_with_lim).mappings().all()
-    out = []
+    rows = db.session.execute(data_sql, params).mappings().all()
+    merged_map: dict[tuple[str, int, int], dict[str, Any]] = {}
     for r in rows:
+        key = (
+            str(r["category"]),
+            int(r["product_id"] or 0),
+            int(r["material_id"] or 0),
+        )
         opening = Decimal(str(r["opening_qty"]))
         qi = Decimal(str(r["qty_in"]))
         qo = Decimal(str(r["qty_out"]))
         ps = r.get("product_series")
         product_series = (str(ps).strip() if ps is not None else "") or None
-        out.append(
-            {
+        storage_area = ((r["storage_area"] or "") if "storage_area" in r else "").strip()
+        if key not in merged_map:
+            merged_map[key] = {
                 "category": r["category"],
                 "product_id": r["product_id"],
                 "material_id": r["material_id"],
-                "storage_area": r["storage_area"],
-                "opening_qty": opening,
-                "qty_in": qi,
-                "qty_out": qo,
-                "closing_qty": opening + qi - qo,
+                "storage_area": "",
+                "opening_qty": Decimal("0"),
+                "qty_in": Decimal("0"),
+                "qty_out": Decimal("0"),
+                "closing_qty": Decimal("0"),
                 "product_code": r["product_code"],
                 "product_name": r["product_name"],
                 "product_spec": r["product_spec"],
                 "product_series": product_series,
+                "_areas": set(),
             }
+        target = merged_map[key]
+        target["opening_qty"] += opening
+        target["qty_in"] += qi
+        target["qty_out"] += qo
+        target["closing_qty"] = target["opening_qty"] + target["qty_in"] - target["qty_out"]
+        if storage_area:
+            target["_areas"].add(storage_area)
+        if not target.get("product_code") and r.get("product_code"):
+            target["product_code"] = r.get("product_code")
+        if not target.get("product_name") and r.get("product_name"):
+            target["product_name"] = r.get("product_name")
+        if (not target.get("product_spec")) and r.get("product_spec"):
+            target["product_spec"] = r.get("product_spec")
+        if (not target.get("product_series")) and product_series:
+            target["product_series"] = product_series
+
+    merged_rows = []
+    for item in merged_map.values():
+        areas = sorted(item.pop("_areas"))
+        item["storage_area"] = ",".join(areas)
+        merged_rows.append(item)
+
+    merged_rows.sort(
+        key=lambda x: (
+            x.get("storage_area") or "",
+            x.get("category") or "",
+            int(x.get("product_id") or 0),
+            int(x.get("material_id") or 0),
         )
-    return out, int(total)
+    )
+    total = len(merged_rows)
+    paged = merged_rows[offset : offset + per_page]
+    return paged, int(total)
 
 
 def list_distinct_stock_series_options() -> List[str]:

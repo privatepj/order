@@ -5,6 +5,7 @@ from io import BytesIO
 from flask import flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 
 from app import db
 from app.auth.capabilities import current_user_can_cap
@@ -53,6 +54,33 @@ def _bump_code(code: str) -> str:
 
 
 def register_semi_material_routes(bp):
+    def _normalize_name_spec(name, spec):
+        name_n = (name or "").strip()
+        if spec is None:
+            spec_n = ""
+        elif isinstance(spec, str):
+            spec_n = spec.strip()
+        else:
+            spec_n = str(spec).strip()
+        return name_n, spec_n
+
+    def _find_semi_material_by_name_spec(kind, name, spec):
+        name_n, spec_n = _normalize_name_spec(name, spec)
+        if not name_n:
+            return None, None
+        matches = (
+            SemiMaterial.query.filter(
+                SemiMaterial.kind == kind,
+                SemiMaterial.name == name_n,
+                func.coalesce(SemiMaterial.spec, "") == spec_n,
+            )
+            .order_by(SemiMaterial.id.asc())
+            .all()
+        )
+        if len(matches) > 1:
+            return None, "同品名+规格匹配到多条主数据，请先清理主数据"
+        return (matches[0] if matches else None), None
+
     # ----- 列表 -----
     @bp.route("/semi-materials")
     @login_required
@@ -272,6 +300,7 @@ def register_semi_material_routes(bp):
 
             success = 0
             errors = []
+            seen_name_spec = set()
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 code, name, spec, base_unit, remark, series_col = (
                     row + (None,) * 6
@@ -292,33 +321,57 @@ def register_semi_material_routes(bp):
                 remark = (remark or "").strip() if isinstance(remark, str) else (remark or "")
                 remark = remark or None
                 # code 可留空：系统自动生成
-                if not code:
-                    code = _next_code_for_kind(kind)
-                    while SemiMaterial.query.filter_by(code=code).first():
-                        code = _bump_code(code)
+                name_n, spec_n = _normalize_name_spec(name, spec)
+                row_key = (kind, name_n, spec_n)
+                if row_key in seen_name_spec:
+                    errors.append(
+                        f"第 {idx} 行：同一文件中品名+规格重复（{name_n}/{spec_n or '空规格'}）"
+                    )
+                    continue
+                seen_name_spec.add(row_key)
 
-                existing = SemiMaterial.query.filter_by(code=code).first()
-                if existing and existing.kind != kind:
-                    errors.append(f"第 {idx} 行：编号已存在但类别不匹配")
+                existing_by_name, name_match_err = _find_semi_material_by_name_spec(
+                    kind, name_n, spec
+                )
+                if name_match_err:
+                    errors.append(f"第 {idx} 行：{name_match_err}")
                     continue
 
+                existing_by_code = (
+                    SemiMaterial.query.filter_by(code=code).first() if code else None
+                )
+                if existing_by_code and existing_by_code.kind != kind:
+                    errors.append(f"第 {idx} 行：编号已存在但类别不匹配")
+                    continue
+                if (
+                    existing_by_code
+                    and existing_by_name
+                    and existing_by_code.id != existing_by_name.id
+                ):
+                    errors.append(
+                        f"第 {idx} 行：编号与品名+规格命中不同记录，无法自动合并"
+                    )
+                    continue
+
+                existing = existing_by_code or existing_by_name
                 if existing:
                     existing.kind = kind
-                    existing.name = name
+                    existing.name = name_n
                     existing.spec = spec
                     existing.base_unit = base_unit
                     existing.remark = remark
-                    if kind == "semi":
-                        existing.series = clean_optional_text(series_col, max_len=64)
-                    else:
-                        existing.series = clean_optional_text(series_col, max_len=64)
+                    existing.series = clean_optional_text(series_col, max_len=64)
                     db.session.add(existing)
                 else:
+                    if not code:
+                        code = _next_code_for_kind(kind)
+                        while SemiMaterial.query.filter_by(code=code).first():
+                            code = _bump_code(code)
                     db.session.add(
                         SemiMaterial(
                             kind=kind,
                             code=code,
-                            name=name,
+                            name=name_n,
                             spec=spec,
                             base_unit=base_unit,
                             remark=remark,
