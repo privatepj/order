@@ -121,6 +121,7 @@
             <th class="text-end">数量</th>
             <th>单位</th>
             <th>来源</th>
+            <th class="text-end">当时库存快照</th>
             <th>备注</th>
             <th>创建时间</th>
             <th>操作</th>
@@ -150,6 +151,7 @@
                 手工录入
                 {% endif %}
             </td>
+            <td class="text-end">{{ row.snapshot_qty|qty_plain if row.snapshot_qty is not none else '-' }}</td>
             <td>{{ row.remark or '-' }}</td>
             <td class="text-nowrap small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '-' }}</td>
             <td>
@@ -161,7 +163,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="13">暂无符合条件的库存录入明细</td></tr>
+        <tr><td colspan="14">暂无符合条件的库存录入明细</td></tr>
         {% endfor %}
     </tbody>
 </table>

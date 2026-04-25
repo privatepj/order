@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app
-from sqlalchemy import and_, case, func, or_, text
+from sqlalchemy import and_, case, func, or_, text, tuple_
 
 from app import db
 from app.models import (
@@ -803,6 +803,8 @@ def _movement_detail_query(
             InventoryMovement.movement_batch_id,
             InventoryMovement.category,
             InventoryMovement.direction,
+            InventoryMovement.product_id,
+            InventoryMovement.material_id,
             InventoryMovement.biz_date,
             InventoryMovement.storage_area,
             InventoryMovement.quantity,
@@ -876,11 +878,99 @@ def _movement_detail_query(
     return q
 
 
-def _movement_detail_row_to_dict(row) -> dict[str, Any]:
+def _movement_item_keys(rows) -> list[tuple[str, int, int]]:
+    keys: set[tuple[str, int, int]] = set()
+    for row in rows:
+        keys.add((str(row.category), int(row.product_id or 0), int(row.material_id or 0)))
+    return list(keys)
+
+
+def _movement_snapshot_after_map(rows) -> dict[int, Decimal]:
+    """按 movement_id 返回该条流水的后置全仓库存快照。"""
+    if not rows:
+        return {}
+    keys = _movement_item_keys(rows)
+    if not keys:
+        return {}
+
+    opening_rows = (
+        db.session.query(
+            InventoryOpeningBalance.category,
+            InventoryOpeningBalance.product_id,
+            InventoryOpeningBalance.material_id,
+            func.coalesce(func.sum(InventoryOpeningBalance.opening_qty), 0).label("opening"),
+        )
+        .filter(
+            tuple_(
+                InventoryOpeningBalance.category,
+                InventoryOpeningBalance.product_id,
+                InventoryOpeningBalance.material_id,
+            ).in_(keys)
+        )
+        .group_by(
+            InventoryOpeningBalance.category,
+            InventoryOpeningBalance.product_id,
+            InventoryOpeningBalance.material_id,
+        )
+        .all()
+    )
+    opening_map: dict[tuple[str, int, int], Decimal] = {
+        (str(r.category), int(r.product_id or 0), int(r.material_id or 0)): _d_inv(r.opening)
+        for r in opening_rows
+    }
+
+    movement_rows = (
+        db.session.query(
+            InventoryMovement.id,
+            InventoryMovement.category,
+            InventoryMovement.product_id,
+            InventoryMovement.material_id,
+            InventoryMovement.direction,
+            InventoryMovement.quantity,
+            InventoryMovement.created_at,
+        )
+        .filter(
+            tuple_(
+                InventoryMovement.category,
+                InventoryMovement.product_id,
+                InventoryMovement.material_id,
+            ).in_(keys)
+        )
+        .order_by(
+            InventoryMovement.category.asc(),
+            InventoryMovement.product_id.asc(),
+            InventoryMovement.material_id.asc(),
+            InventoryMovement.created_at.asc(),
+            InventoryMovement.id.asc(),
+        )
+        .all()
+    )
+
+    running_map: dict[tuple[str, int, int], Decimal] = {}
+    out: dict[int, Decimal] = {}
+    for m in movement_rows:
+        item_key = (str(m.category), int(m.product_id or 0), int(m.material_id or 0))
+        running = running_map.get(item_key, opening_map.get(item_key, Decimal(0)))
+        qty = _d_inv(m.quantity)
+        if m.direction == "out":
+            running -= qty
+        else:
+            running += qty
+        running_map[item_key] = running
+        out[int(m.id)] = running
+    return out
+
+
+def _movement_detail_row_to_dict(
+    row, snapshot_after_map: Optional[dict[int, Decimal]] = None
+) -> dict[str, Any]:
     is_finished = row.category == INV_FINISHED
     code = row.f_code if is_finished else row.m_code
     name = row.f_name if is_finished else row.m_name
     spec = row.f_spec if is_finished else row.m_spec
+    snapshot_qty = None
+    if snapshot_after_map is not None:
+        snapshot_qty = snapshot_after_map.get(int(row.movement_id))
     return {
         "movement_id": int(row.movement_id),
         "movement_batch_id": row.movement_batch_id,
@@ -899,6 +989,7 @@ def _movement_detail_row_to_dict(row) -> dict[str, Any]:
         "source_purchase_receipt_id": row.source_purchase_receipt_id,
         "remark": row.remark or "",
         "created_at": row.created_at,
+        "snapshot_qty": snapshot_qty,
     }
 
 
@@ -931,12 +1022,16 @@ def query_movement_rows_paginated(
     per_page = max(1, min(int(per_page), 100))
     total = q.order_by(None).count()
     rows = (
-        q.order_by(InventoryMovement.biz_date.desc(), InventoryMovement.id.desc())
+        q.order_by(InventoryMovement.created_at.desc(), InventoryMovement.id.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()
     )
-    return [_movement_detail_row_to_dict(r) for r in rows], int(total)
+    snapshot_after_map = _movement_snapshot_after_map(rows)
+    return [
+        _movement_detail_row_to_dict(r, snapshot_after_map=snapshot_after_map)
+        for r in rows
+    ], int(total)
 
 
 def query_movement_export_rows(
@@ -965,7 +1060,7 @@ def query_movement_export_rows(
 
     fetch_limit = max(1, int(limit)) + 1
     rows = (
-        q.order_by(InventoryMovement.biz_date.desc(), InventoryMovement.id.desc())
+        q.order_by(InventoryMovement.created_at.desc(), InventoryMovement.id.desc())
         .limit(fetch_limit)
         .all()
     )
@@ -973,7 +1068,11 @@ def query_movement_export_rows(
     if exceeded:
         rows = rows[: int(limit)]
 
-    out = [_movement_detail_row_to_dict(r) for r in rows]
+    snapshot_after_map = _movement_snapshot_after_map(rows)
+    out = [
+        _movement_detail_row_to_dict(r, snapshot_after_map=snapshot_after_map)
+        for r in rows
+    ]
     return out, exceeded
 
 

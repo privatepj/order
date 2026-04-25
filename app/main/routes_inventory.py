@@ -1145,6 +1145,7 @@ def register_inventory_routes(bp):
             "数量",
             "单位",
             "来源",
+            "当时库存快照",
             "备注",
             "创建时间",
         ]
@@ -1164,11 +1165,12 @@ def register_inventory_routes(bp):
             ws.cell(row_idx, 8, row.get("quantity"))
             ws.cell(row_idx, 9, row.get("unit") or "")
             ws.cell(row_idx, 10, _movement_source_label(row))
-            ws.cell(row_idx, 11, row.get("remark") or "")
+            ws.cell(row_idx, 11, row.get("snapshot_qty"))
+            ws.cell(row_idx, 12, row.get("remark") or "")
             created_at = row.get("created_at")
             ws.cell(
                 row_idx,
-                12,
+                13,
                 created_at.strftime("%Y-%m-%d %H:%M:%S")
                 if getattr(created_at, "strftime", None)
                 else "",
