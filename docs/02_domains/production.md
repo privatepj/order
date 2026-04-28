@@ -37,3 +37,12 @@
 ## 相关文档
 
 - [production-measurement-benchmark.md](../production-measurement-benchmark.md)
+
+## 2026-04-28 生产测算客户选择与订单ID语义
+
+- 页面 `GET/POST /production/calc` 的客户选择改为“输入搜索 + 下拉选择”，调用 `GET /api/production/customers-search?q=...&limit=20`，返回 `{id,label}`，其中 `label` 仅展示客户名称。
+- 客户搜索命中字段包含：客户名称、客户编码、简称、主体编码；但展示字段固定为客户名称。
+- `order_id` 在生产测算中的语义调整为“校验/定位”：
+  - 若填写 `order_id`，先校验订单存在且属于所选客户；
+  - 测算取数仍按该客户全部 `remaining_qty > 0` 的订单行合并，不再对测算结果做单订单硬过滤。
+- 该调整仅作用于生产测算链路，不改变送货与 OpenClaw 的 `order_id` 精确过滤语义。

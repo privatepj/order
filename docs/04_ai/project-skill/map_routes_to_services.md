@@ -34,3 +34,8 @@
 | `app/openclaw/routes.py` | 对外 API → 各 `*_svc` |
 | `app/auth/routes.py` | 登录/注册/登出 |
 | `app/cli_commands.py` | Flask CLI（OpenClaw token、编排任务等） |
+
+## 2026-04-28 update
+
+- `routes_production.py` 新增 `GET /api/production/customers-search`（生产测算客户模糊搜索）。
+- `routes_production.py` 的 `/production/calc` 将 `order_id` 作为“归属校验 + 定位”使用，测算仍汇总客户全部未完成订单行。

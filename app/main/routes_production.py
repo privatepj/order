@@ -6,7 +6,7 @@ from io import BytesIO
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Set
 
-from flask import flash, redirect, render_template, request, send_file, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -17,6 +17,7 @@ from app.auth.decorators import capability_required, menu_required
 from app.utils.decimal_scale import quantize_decimal
 from app.utils.form_display import clean_optional_text
 from app.utils.hr_user import resolve_user_hr_department_id
+from app.utils.query import is_valid_customer_search_keyword
 from app.utils.visibility import is_admin
 from app.models import (
     Company,
@@ -956,6 +957,46 @@ def register_production_routes(bp):
     # ----------------------------
     # 测算：合并预计划 + 订单缺货（生成新的测算预生产计划）
     # ----------------------------
+    @bp.route("/api/production/customers-search", methods=["GET"])
+    @login_required
+    @menu_required("production_preplan")
+    def production_customers_search():
+        if not current_user_can_cap("production.calc.action.run"):
+            abort(403)
+
+        qstr = (request.args.get("q") or "").strip()
+        limit = request.args.get("limit", 20, type=int)
+        limit = max(1, min(limit, 20))
+        if not is_valid_customer_search_keyword(qstr):
+            return jsonify({"items": []})
+
+        like = f"%{qstr}%"
+        rows = (
+            Customer.query.outerjoin(Company, Customer.company_id == Company.id)
+            .filter(
+                db.or_(
+                    Customer.name.like(like),
+                    Customer.customer_code.like(like),
+                    Customer.short_code.like(like),
+                    Company.code.like(like),
+                )
+            )
+            .order_by(Customer.name.asc(), Customer.id.asc())
+            .limit(limit)
+            .all()
+        )
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "id": int(c.id),
+                        "label": (c.name or "").strip(),
+                    }
+                    for c in rows
+                ]
+            }
+        )
+
     @bp.route("/production/calc", methods=["GET", "POST"])
     @login_required
     @menu_required("production_preplan")
@@ -974,6 +1015,10 @@ def register_production_routes(bp):
                 base_preplan_id = request.form.get("preplan_id", type=int)
                 order_id = request.form.get("order_id", type=int)
                 remark = clean_optional_text(request.form.get("remark"), max_len=255)
+                if order_id:
+                    so_chk = db.session.get(SalesOrder, int(order_id))
+                    if not so_chk or int(so_chk.customer_id or 0) != int(customer_id):
+                        raise ValueError("订单不属于所选客户。")
 
                 new_preplan = ProductionPreplan(
                     source_type="combined",
@@ -1006,9 +1051,16 @@ def register_production_routes(bp):
                         line_no += 1
 
                 # 订单缺货：remaining > 0 的行
-                pending_items = delivery_svc.get_pending_order_items(
-                    customer_id=customer_id, order_id=order_id
-                )
+                pending_items = delivery_svc.get_pending_order_items(customer_id=customer_id)
+                if order_id:
+                    pending_items = sorted(
+                        pending_items,
+                        key=lambda x: (
+                            0 if int(getattr(x.get("order"), "id", 0) or 0) == int(order_id) else 1,
+                            str(getattr(x.get("order"), "order_no", "") or ""),
+                            int(getattr(x.get("order_item"), "id", 0) or 0),
+                        ),
+                    )
                 if not pending_items:
                     flash("未发现订单缺货（remaining <= 0）。", "warning")
                     db.session.rollback()
@@ -1067,13 +1119,23 @@ def register_production_routes(bp):
             except IntegrityError:
                 db.session.rollback()
                 flash("保存失败：数据冲突。", "danger")
-        customers = Customer.query.order_by(Customer.customer_code).all()
+        selected_customer_id = request.form.get("customer_id", type=int) or 0
+        selected_customer_name = ""
+        if selected_customer_id > 0:
+            selected_customer = db.session.get(Customer, selected_customer_id)
+            if selected_customer:
+                selected_customer_name = (selected_customer.name or "").strip()
         preplans = ProductionPreplan.query.order_by(ProductionPreplan.id.desc()).limit(50).all()
         return render_template(
             "production/calc.html",
-            customers=customers,
             preplans=preplans,
             today=date.today().isoformat(),
+            selected_customer_id=selected_customer_id,
+            selected_customer_name=selected_customer_name,
+            form_plan_date=(request.form.get("plan_date") or date.today().isoformat()),
+            form_preplan_id=(request.form.get("preplan_id") or ""),
+            form_order_id=(request.form.get("order_id") or ""),
+            form_remark=(request.form.get("remark") or ""),
         )
 
     # ----------------------------

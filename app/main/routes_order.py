@@ -129,11 +129,11 @@ def register_order_routes(bp):
         shipped_map, in_transit_map = order_item_shipped_and_in_transit_maps(item_ids)
         rows = []
         for item in order.items:
-            shipped = shipped_map.get(item.id, 0.0)
-            in_transit = in_transit_map.get(item.id, 0.0)
-            need = float(item.quantity or 0)
+            shipped = shipped_map.get(item.id, Decimal(0))
+            in_transit = in_transit_map.get(item.id, Decimal(0))
+            need = Decimal(str(item.quantity or 0))
             allocated = shipped + in_transit
-            remaining = max(0, need - allocated)
+            remaining = max(Decimal(0), need - allocated)
             rows.append(
                 {
                     "item": order_item_view(item),

@@ -1,5 +1,25 @@
 {% extends "base.html" %}
 {% block title %}生产测算 - 工厂订单系统{% endblock %}
+{% block extra_css %}
+<style>
+.customer-dropdown {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    z-index: 1060;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, .1);
+}
+.customer-dropdown .list-group-item-action {
+    cursor: pointer;
+}
+</style>
+{% endblock %}
 {% block content %}
 <h2 class="mb-4">生产测算（合并订单缺货 + 预生产计划）</h2>
 
@@ -7,23 +27,29 @@
     <div class="row g-3 mb-3">
         <div class="col-md-3">
             <label class="form-label">计划日期 <span class="text-danger">*</span></label>
-            <input type="date" class="form-control" name="plan_date" required value="{{ today }}">
+            <input type="date" class="form-control" name="plan_date" required value="{{ form_plan_date or today }}">
         </div>
         <div class="col-md-4">
             <label class="form-label">客户 <span class="text-danger">*</span></label>
-            <select class="form-select" name="customer_id" required>
-                <option value="">请选择客户</option>
-                {% for c in customers %}
-                <option value="{{ c.id }}">{{ c.customer_code or c.short_code or c.name }}</option>
-                {% endfor %}
-            </select>
+            <div class="position-relative">
+                <input
+                    type="text"
+                    class="form-control"
+                    id="customerSearch"
+                    autocomplete="off"
+                    placeholder="输入客户名称/编码模糊搜索..."
+                    value="{{ selected_customer_name or '' }}"
+                >
+                <div id="customerDropdown" class="list-group customer-dropdown d-none"></div>
+            </div>
+            <input type="hidden" name="customer_id" id="customerIdHidden" value="{{ selected_customer_id if selected_customer_id else '' }}">
         </div>
         <div class="col-md-5">
             <label class="form-label">合并预生产计划（可选）</label>
             <select class="form-select" name="preplan_id">
-                <option value="">— 不合并 —</option>
+                <option value="" {% if not form_preplan_id %}selected{% endif %}>— 不合并 —</option>
                 {% for p in preplans %}
-                <option value="{{ p.id }}">#{{ p.id }} / {{ p.plan_date.isoformat() if p.plan_date else '-' }} / {{ p.status|status_zh('production_preplan_status') }}</option>
+                <option value="{{ p.id }}" {% if form_preplan_id and (form_preplan_id|string) == (p.id|string) %}selected{% endif %}>#{{ p.id }} / {{ p.plan_date.isoformat() if p.plan_date else '-' }} / {{ p.status|status_zh('production_preplan_status') }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -31,12 +57,12 @@
 
     <div class="row g-3 mb-3">
         <div class="col-md-6">
-            <label class="form-label">订单 ID 过滤（可选）</label>
-            <input type="number" class="form-control" name="order_id" placeholder="不填表示该客户所有订单缺货汇总">
+            <label class="form-label">订单 ID 定位（可选）</label>
+            <input type="number" class="form-control" name="order_id" value="{{ form_order_id or '' }}" placeholder="用于定位订单，测算仍会合并该客户全部未完成订单">
         </div>
         <div class="col-md-6">
             <label class="form-label">备注（可选）</label>
-            <input type="text" class="form-control" name="remark" maxlength="255">
+            <input type="text" class="form-control" name="remark" maxlength="255" value="{{ form_remark or '' }}">
         </div>
     </div>
 
@@ -45,6 +71,80 @@
         <a href="{{ url_for('main.production_preplan_list') }}" class="btn btn-outline-secondary">返回</a>
     </div>
 </form>
-
 {% endblock %}
 
+{% block extra_js %}
+<script>
+(function () {
+    var searchInput = document.getElementById('customerSearch');
+    var dropdown = document.getElementById('customerDropdown');
+    var hiddenId = document.getElementById('customerIdHidden');
+    var apiUrl = {{ url_for("main.production_customers_search")|tojson }};
+    var timer = null;
+
+    if (!searchInput || !dropdown || !hiddenId) return;
+
+    function hideDropdown() {
+        dropdown.classList.add('d-none');
+        dropdown.innerHTML = '';
+    }
+
+    function renderItems(items) {
+        dropdown.innerHTML = '';
+        if (!items || !items.length) {
+            dropdown.innerHTML = '<div class="list-group-item text-muted">无匹配客户</div>';
+            dropdown.classList.remove('d-none');
+            return;
+        }
+        items.forEach(function (it) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'list-group-item list-group-item-action';
+            btn.textContent = it.label || '';
+            btn.addEventListener('click', function () {
+                hiddenId.value = it.id || '';
+                searchInput.value = it.label || '';
+                hideDropdown();
+            });
+            dropdown.appendChild(btn);
+        });
+        dropdown.classList.remove('d-none');
+    }
+
+    function fetchCustomers(keyword) {
+        fetch(apiUrl + '?q=' + encodeURIComponent(keyword) + '&limit=20')
+            .then(function (resp) { return resp.json(); })
+            .then(function (data) { renderItems((data && data.items) || []); })
+            .catch(function () { hideDropdown(); });
+    }
+
+    searchInput.addEventListener('input', function () {
+        clearTimeout(timer);
+        var q = (searchInput.value || '').trim();
+        hiddenId.value = '';
+        if (!q || q.length < 1) {
+            hideDropdown();
+            return;
+        }
+        timer = setTimeout(function () {
+            fetchCustomers(q);
+        }, 250);
+    });
+
+    searchInput.addEventListener('focus', function () {
+        var q = (searchInput.value || '').trim();
+        if (!q) return;
+        fetchCustomers(q);
+    });
+
+    searchInput.addEventListener('blur', function () {
+        setTimeout(hideDropdown, 150);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (e.target === searchInput || searchInput.contains(e.target) || dropdown.contains(e.target)) return;
+        hideDropdown();
+    });
+})();
+</script>
+{% endblock %}
