@@ -702,12 +702,15 @@ def _parse_supplier_map_rows(company_id: int) -> list[dict]:
     for idx, raw_material_id in enumerate(material_ids):
         raw_material_id = (raw_material_id or "").strip()
         raw_price = (prices[idx] if idx < len(prices) else "").strip()
-        raw_remark = ((remarks[idx] if idx < len(remarks) else "") or "").strip()
+        raw_remark = clean_optional_text(
+            remarks[idx] if idx < len(remarks) else "",
+            max_len=500,
+        )
         raw_preferred = (
             preferred_values[idx] if idx < len(preferred_values) else "0"
         ) == "1"
         if not raw_material_id:
-            if raw_price or raw_remark or raw_preferred:
+            if raw_price or raw_remark is not None or raw_preferred:
                 raise ValueError(f"供应物料第 {idx + 1} 行必须从物料表选择物料。")
             continue
         material_id = int(raw_material_id)
@@ -724,7 +727,7 @@ def _parse_supplier_map_rows(company_id: int) -> list[dict]:
                 "company_id": company_id,
                 "material_id": material_id,
                 "is_preferred": raw_preferred,
-                "remark": raw_remark[:500] or None,
+                "remark": raw_remark,
                 "last_unit_price": price,
             }
         )
@@ -845,14 +848,17 @@ def _parse_supplier_map_rows(company_id: int) -> list[dict]:
     for idx, raw_material_id in enumerate(material_ids):
         raw_material_id = (raw_material_id or "").strip()
         raw_price = (prices[idx] if idx < len(prices) else "").strip()
-        raw_remark = ((remarks[idx] if idx < len(remarks) else "") or "").strip()
+        raw_remark = clean_optional_text(
+            remarks[idx] if idx < len(remarks) else "",
+            max_len=500,
+        )
         raw_preferred = (
             (preferred_values[idx] if idx < len(preferred_values) else "0") == "1"
             if has_preferred_values
             else None
         )
         if not raw_material_id:
-            if raw_price or raw_remark or raw_preferred:
+            if raw_price or raw_remark is not None or raw_preferred:
                 raise ValueError(f"供应物料第 {idx + 1} 行必须从物料表选择物料。")
             continue
         material_id = int(raw_material_id)
@@ -869,7 +875,7 @@ def _parse_supplier_map_rows(company_id: int) -> list[dict]:
                 "company_id": company_id,
                 "material_id": material_id,
                 "is_preferred": raw_preferred,
-                "remark": raw_remark[:500] or None,
+                "remark": raw_remark,
                 "last_unit_price": price,
             }
         )
@@ -967,10 +973,12 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
             is_active = (
                 True if not supplier_status_s else _parse_int01(supplier_status, field_name="供应商状态")
             )
-            contact_name_s = _cell_to_str(contact_name)[:64] or None
-            phone_s = _cell_to_str(phone)[:32] or None
-            address_s = _cell_to_str(address)[:255] or None
-            supplier_remark_s = _cell_to_str(supplier_remark)[:500] or None
+            contact_name_s = clean_optional_text(_cell_to_str(contact_name), max_len=64)
+            phone_s = clean_optional_text(_cell_to_str(phone), max_len=32)
+            address_s = clean_optional_text(_cell_to_str(address), max_len=255)
+            supplier_remark_s = clean_optional_text(
+                _cell_to_str(supplier_remark), max_len=500
+            )
         except ValueError as exc:
             errors.append(f"第 {idx} 行：{str(exc)}")
             continue
@@ -1026,7 +1034,7 @@ def _parse_supplier_import_excel_ws(ws, company_id: int) -> tuple[dict, list[str
 
         try:
             price = _parse_optional_decimal(last_unit_price, field_name="最近单价")
-            mapping_remark_s = _cell_to_str(map_remark)[:500] or None
+            mapping_remark_s = clean_optional_text(_cell_to_str(map_remark), max_len=500)
             preferred_flag = _parse_optional_int01(
                 is_preferred, field_name="是否默认供应商"
             )
@@ -1086,7 +1094,10 @@ def _parse_requisition_lines(company_id: int) -> list[dict]:
         raw_expected = (
             expected_dates[idx] if idx < len(expected_dates) else ""
         ).strip()
-        raw_remark = ((remarks[idx] if idx < len(remarks) else "") or "").strip()
+        raw_remark = clean_optional_text(
+            remarks[idx] if idx < len(remarks) else "",
+            max_len=500,
+        )
         if not any(
             [
                 raw_supplier_id,
@@ -1126,7 +1137,7 @@ def _parse_requisition_lines(company_id: int) -> list[dict]:
                 "expected_date": _parse_optional_date(
                     raw_expected, f"请购第 {idx + 1} 行到货日期"
                 ),
-                "remark": raw_remark[:500] or None,
+                "remark": raw_remark,
             }
         )
     if not rows:
@@ -1270,9 +1281,9 @@ def register_procurement_routes(bp):
         company_id, companies = _resolve_company_id()
         if request.method == "POST":
             name = (request.form.get("name") or "").strip()
-            spec = (request.form.get("spec") or "").strip() or None
-            base_unit = (request.form.get("base_unit") or "").strip() or None
-            remark = (request.form.get("remark") or "").strip() or None
+            spec = clean_optional_text(request.form.get("spec"))
+            base_unit = clean_optional_text(request.form.get("base_unit"))
+            remark = clean_optional_text(request.form.get("remark"))
             if not name:
                 flash("名称为必填。", "danger")
                 return render_template(
@@ -1331,9 +1342,9 @@ def register_procurement_routes(bp):
         if request.method == "POST":
             try:
                 name = (request.form.get("name") or "").strip()
-                spec = (request.form.get("spec") or "").strip() or None
-                base_unit = (request.form.get("base_unit") or "").strip() or None
-                remark = (request.form.get("remark") or "").strip() or None
+                spec = clean_optional_text(request.form.get("spec"))
+                base_unit = clean_optional_text(request.form.get("base_unit"))
+                remark = clean_optional_text(request.form.get("remark"))
                 default_supplier_raw = (
                     request.form.get("default_supplier_id") or ""
                 ).strip()
@@ -1706,13 +1717,13 @@ def register_procurement_routes(bp):
                 row = Supplier(
                     company_id=company_id,
                     name=((request.form.get("name") or "").strip()[:128]),
-                    contact_name=(
-                        (request.form.get("contact_name") or "").strip()[:64] or None
+                    contact_name=clean_optional_text(
+                        request.form.get("contact_name"), max_len=64
                     ),
-                    phone=((request.form.get("phone") or "").strip()[:32] or None),
-                    address=((request.form.get("address") or "").strip()[:255] or None),
+                    phone=clean_optional_text(request.form.get("phone"), max_len=32),
+                    address=clean_optional_text(request.form.get("address"), max_len=255),
                     is_active=request.form.get("is_active") == "1",
-                    remark=((request.form.get("remark") or "").strip()[:500] or None),
+                    remark=clean_optional_text(request.form.get("remark"), max_len=500),
                 )
                 if not row.name:
                     raise ValueError("供应商名称不能为空。")
@@ -1755,13 +1766,13 @@ def register_procurement_routes(bp):
         if request.method == "POST":
             try:
                 row.name = (request.form.get("name") or "").strip()[:128]
-                row.contact_name = (request.form.get("contact_name") or "").strip()[
-                    :64
-                ] or None
-                row.phone = (request.form.get("phone") or "").strip()[:32] or None
-                row.address = (request.form.get("address") or "").strip()[:255] or None
+                row.contact_name = clean_optional_text(
+                    request.form.get("contact_name"), max_len=64
+                )
+                row.phone = clean_optional_text(request.form.get("phone"), max_len=32)
+                row.address = clean_optional_text(request.form.get("address"), max_len=255)
                 row.is_active = request.form.get("is_active") == "1"
-                row.remark = (request.form.get("remark") or "").strip()[:500] or None
+                row.remark = clean_optional_text(request.form.get("remark"), max_len=500)
                 if not row.name:
                     raise ValueError("供应商名称不能为空。")
                 new_rows = _parse_supplier_map_rows(row.company_id)
@@ -1950,7 +1961,7 @@ def register_procurement_routes(bp):
                     company_id=company_id,
                     req_no=_next_no("REQ", PurchaseRequisition, "req_no"),
                     requester_user_id=int(current_user.get_id()),
-                    remark=((request.form.get("remark") or "").strip()[:500] or None),
+                    remark=clean_optional_text(request.form.get("remark"), max_len=500),
                 )
                 db.session.add(row)
                 db.session.flush()
@@ -1999,7 +2010,7 @@ def register_procurement_routes(bp):
             return redirect(url_for("main.procurement_requisition_list"))
         if request.method == "POST":
             try:
-                row.remark = (request.form.get("remark") or "").strip()[:500] or None
+                row.remark = clean_optional_text(request.form.get("remark"), max_len=500)
                 row.lines[:] = []
                 db.session.flush()
                 for item in _parse_requisition_lines(row.company_id):
@@ -2219,7 +2230,7 @@ def register_procurement_routes(bp):
                     status=(request.form.get("status") or "draft").strip()
                     if (request.form.get("status") or "").strip() in PO_STATUS
                     else "draft",
-                    remark=((request.form.get("remark") or "").strip()[:500] or None),
+                    remark=clean_optional_text(request.form.get("remark"), max_len=500),
                     reconcile_status="pending",
                 )
                 if row.status == "ordered":
@@ -2334,7 +2345,7 @@ def register_procurement_routes(bp):
                 row.expected_date = _parse_optional_date(
                     request.form.get("expected_date"), "到货日期"
                 )
-                row.remark = (request.form.get("remark") or "").strip()[:500] or None
+                row.remark = clean_optional_text(request.form.get("remark"), max_len=500)
                 if row.status != "received":
                     row.status = (
                         (request.form.get("status") or row.status).strip()
@@ -2540,7 +2551,7 @@ def register_procurement_routes(bp):
                     if (request.form.get("status") or "").strip() in RECEIPT_STATUS
                     else "draft",
                     reconcile_status="pending",
-                    remark=((request.form.get("remark") or "").strip()[:500] or None),
+                    remark=clean_optional_text(request.form.get("remark"), max_len=500),
                 )
                 db.session.add(row)
                 db.session.flush()
@@ -2611,7 +2622,7 @@ def register_procurement_routes(bp):
                     in RECEIPT_STATUS
                     else row.status
                 )
-                row.remark = (request.form.get("remark") or "").strip()[:500] or None
+                row.remark = clean_optional_text(request.form.get("remark"), max_len=500)
                 row.reconcile_status = "pending"
                 row.reconcile_note = None
                 row.reconciled_at = None
@@ -2704,7 +2715,7 @@ def register_procurement_routes(bp):
                 url_for("main.procurement_receipt_compare", receipt_id=row.id)
             )
         summary = _build_compare_summary(row)
-        note = (request.form.get("reconcile_note") or "").strip()[:500] or None
+        note = clean_optional_text(request.form.get("reconcile_note"), max_len=500)
         approval_status = "matched" if summary["is_matched"] else "exception"
         if approval_status == "exception" and not note:
             flash("数量不一致时必须填写差异说明。", "danger")

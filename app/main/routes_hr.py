@@ -35,6 +35,7 @@ from app.services.hr_work_type_svc import (
     secondary_work_type_ids,
     sync_employee_work_types,
 )
+from app.utils.form_display import clean_optional_text
 from app.utils.hr_privacy import display_id_card, display_phone
 
 
@@ -292,7 +293,7 @@ def register_hr_routes(bp):
             name = (request.form.get("name") or "").strip()
             sort_order = request.form.get("sort_order", type=int) or 0
             is_active = (request.form.get("is_active") or "1") == "1"
-            remark = (request.form.get("remark") or "").strip() or None
+            remark = clean_optional_text(request.form.get("remark"), max_len=500)
             if not company_id:
                 flash("请先设置默认经营主体。", "danger")
                 return render_template("hr/work_type_form.html", row=None, companies=companies, company_id=None)
@@ -343,7 +344,7 @@ def register_hr_routes(bp):
             name = (request.form.get("name") or "").strip()
             sort_order = request.form.get("sort_order", type=int) or 0
             is_active = (request.form.get("is_active") or "1") == "1"
-            remark = (request.form.get("remark") or "").strip() or None
+            remark = clean_optional_text(request.form.get("remark"), max_len=500)
             if not name:
                 flash("工种名称为必填。", "danger")
                 return render_template(

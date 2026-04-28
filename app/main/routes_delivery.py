@@ -47,6 +47,7 @@ from app.services.order_svc import (
     recompute_orders_status_for_order_ids,
 )
 from app.services import inventory_svc
+from app.utils.form_display import clean_optional_text
 from app.utils.delivery_print_scale import (
     get_delivery_print_font_scale,
     set_delivery_print_font_scale,
@@ -739,7 +740,7 @@ def register_delivery_routes(bp):
             "delivery_date": request.form.get("delivery_date"),
             "driver": None,
             "plate_no": None,
-            "remark": (request.form.get("remark") or "").strip() or None,
+            "remark": clean_optional_text(request.form.get("remark"), max_len=255),
             "lines": lines,
         }
         delivery, err = create_delivery_from_data(data)

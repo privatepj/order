@@ -51,9 +51,10 @@ def create_app(config_class=Config):
 
     app.jinja_env.filters["status_zh"] = status_zh
 
-    from app.utils.form_display import form_blank
+    from app.utils.form_display import form_blank, form_finalize
 
     app.jinja_env.filters["form_blank"] = form_blank
+    app.jinja_env.finalize = form_finalize
 
     @app.context_processor
     def inject_menu_permissions():

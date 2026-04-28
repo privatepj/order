@@ -33,6 +33,7 @@ from app.services.crm_ticket_svc import (
     set_ticket_status,
     update_ticket_from_data,
 )
+from app.utils.form_display import clean_optional_text
 
 
 def register_crm_routes(bp):
@@ -213,7 +214,7 @@ def register_crm_routes(bp):
                 quantity = request.form.get("quantity")
                 is_sample = request.form.get("is_sample") == "on"
                 is_spare = request.form.get("is_spare") == "on"
-                line_remark = (request.form.get("remark") or "").strip() or None
+                line_remark = clean_optional_text(request.form.get("remark"), max_len=500)
                 line, err = add_opportunity_line(
                     opp,
                     customer_product_id=cp_id,

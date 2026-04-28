@@ -15,6 +15,7 @@ from app import db
 from app.auth.capabilities import current_user_can_cap
 from app.auth.decorators import capability_required, menu_required
 from app.utils.decimal_scale import quantize_decimal
+from app.utils.form_display import clean_optional_text
 from app.utils.hr_user import resolve_user_hr_department_id
 from app.utils.visibility import is_admin
 from app.models import (
@@ -101,8 +102,7 @@ def _parse_occurred_at(raw: Any) -> Optional[datetime]:
 
 
 def _text_or_none(raw: Any) -> Optional[str]:
-    s = (raw or "").strip()
-    return s if s else None
+    return clean_optional_text(raw)
 
 
 def _parse_plan_date(raw: Any) -> Optional[date]:
@@ -768,7 +768,7 @@ def register_production_routes(bp):
                 if customer_id is None:
                     customer_id = 0
 
-                remark = (request.form.get("remark") or "").strip() or None
+                remark = clean_optional_text(request.form.get("remark"), max_len=255)
                 rows = _parse_preplan_lines_from_form()
                 if not rows:
                     raise ValueError("请至少录入一条预生产计划明细（数量 > 0）。")
@@ -847,7 +847,7 @@ def register_production_routes(bp):
                     raise ValueError("请选择计划日期。")
 
                 customer_id = request.form.get("customer_id", type=int) or 0
-                remark = (request.form.get("remark") or "").strip() or None
+                remark = clean_optional_text(request.form.get("remark"), max_len=255)
 
                 rows = _parse_preplan_lines_from_form()
                 if not rows:
@@ -973,7 +973,7 @@ def register_production_routes(bp):
 
                 base_preplan_id = request.form.get("preplan_id", type=int)
                 order_id = request.form.get("order_id", type=int)
-                remark = (request.form.get("remark") or "").strip() or None
+                remark = clean_optional_text(request.form.get("remark"), max_len=255)
 
                 new_preplan = ProductionPreplan(
                     source_type="combined",
@@ -1742,7 +1742,7 @@ def register_production_routes(bp):
                     raise ValueError("请填写模板名称。")
                 version = (request.form.get("version") or "").strip() or "v1"
                 is_active = (request.form.get("is_active") or "1") == "1"
-                remark = (request.form.get("remark") or "").strip() or None
+                remark = clean_optional_text(request.form.get("remark"), max_len=255)
 
                 steps = _parse_process_template_steps_from_form()
                 edges = _parse_process_edges_from_form(
@@ -1813,7 +1813,7 @@ def register_production_routes(bp):
                     raise ValueError("请填写模板名称。")
                 version = (request.form.get("version") or "").strip() or "v1"
                 is_active = (request.form.get("is_active") or "1") == "1"
-                remark = (request.form.get("remark") or "").strip() or None
+                remark = clean_optional_text(request.form.get("remark"), max_len=255)
 
                 steps = _parse_process_template_steps_from_form()
                 edges = _parse_process_edges_from_form(

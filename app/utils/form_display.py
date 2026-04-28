@@ -31,3 +31,17 @@ def form_blank(value: Any) -> str:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+def form_finalize(value: Any) -> Any:
+    """
+    Jinja 全局 finalize：
+    - None -> ""
+    - 字面量 none/None/NONE（忽略前后空白与大小写）-> ""
+    其余类型保持原值，避免影响数值/日期在模板中的后续处理。
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str) and value.strip().lower() == "none":
+        return ""
+    return value
